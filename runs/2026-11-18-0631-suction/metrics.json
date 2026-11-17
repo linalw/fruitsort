@@ -1,0 +1,63 @@
+{
+  "classes": [
+    "pear"
+  ],
+  "belt": 0.3,
+  "control_freq": 30,
+  "overall": {
+    "n_episodes": 6,
+    "n_success": 6,
+    "success_rate": 1.0,
+    "success_rate_ci95": [
+      0.6097,
+      1.0
+    ],
+    "avg_duration_s": 2.517,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "pear": {
+      "n_episodes": 6,
+      "n_success": 6,
+      "success_rate": 1.0,
+      "success_rate_ci95": [
+        0.6097,
+        1.0
+      ],
+      "avg_duration_s": 2.517,
+      "failure_counts": {}
+    }
+  },
+  "records": [
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 79
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 76
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 74
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 75
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 75
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 74
+    }
+  ]
+}

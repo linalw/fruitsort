@@ -1,0 +1,85 @@
+{
+  "classes": [
+    "banana",
+    "pear"
+  ],
+  "belt": 0.3,
+  "control_freq": 30,
+  "overall": {
+    "n_episodes": 8,
+    "n_success": 4,
+    "success_rate": 0.5,
+    "success_rate_ci95": [
+      0.2152,
+      0.7848
+    ],
+    "avg_duration_s": 12.975,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "banana": {
+      "n_episodes": 4,
+      "n_success": 2,
+      "success_rate": 0.5,
+      "success_rate_ci95": [
+        0.15,
+        0.85
+      ],
+      "avg_duration_s": 12.217,
+      "failure_counts": {}
+    },
+    "pear": {
+      "n_episodes": 4,
+      "n_success": 2,
+      "success_rate": 0.5,
+      "success_rate_ci95": [
+        0.15,
+        0.85
+      ],
+      "avg_duration_s": 13.733,
+      "failure_counts": {}
+    }
+  },
+  "records": [
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": true,
+      "steps": 130
+    },
+    {
+      "kind": "banana",
+      "success": true,
+      "steps": 136
+    },
+    {
+      "kind": "pear",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 241
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 207
+    },
+    {
+      "kind": "pear",
+      "success": false,
+      "steps": 600
+    }
+  ]
+}

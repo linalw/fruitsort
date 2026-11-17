@@ -1,0 +1,69 @@
+{
+  "classes": [
+    "apple"
+  ],
+  "belt": 0.3,
+  "control_freq": 30,
+  "disturb": "push",
+  "overall": {
+    "n_episodes": 5,
+    "n_success": 5,
+    "success_rate": 1.0,
+    "success_rate_ci95": [
+      0.5655,
+      1.0
+    ],
+    "avg_duration_s": 1.52,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "apple": {
+      "n_episodes": 5,
+      "n_success": 5,
+      "success_rate": 1.0,
+      "success_rate_ci95": [
+        0.5655,
+        1.0
+      ],
+      "avg_duration_s": 1.52,
+      "failure_counts": {}
+    }
+  },
+  "records": [
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 44,
+      "cycle_s": null,
+      "disturb": "push"
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 46,
+      "cycle_s": null,
+      "disturb": "push"
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 46,
+      "cycle_s": null,
+      "disturb": "push"
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 47,
+      "cycle_s": null,
+      "disturb": "push"
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 45,
+      "cycle_s": null,
+      "disturb": "push"
+    }
+  ]
+}

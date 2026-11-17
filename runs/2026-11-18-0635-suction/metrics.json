@@ -1,0 +1,189 @@
+{
+  "classes": [
+    "apple",
+    "strawberry",
+    "banana",
+    "pear"
+  ],
+  "belt": 0.3,
+  "control_freq": 30,
+  "overall": {
+    "n_episodes": 24,
+    "n_success": 8,
+    "success_rate": 0.3333,
+    "success_rate_ci95": [
+      0.1797,
+      0.5329
+    ],
+    "avg_duration_s": 14.486,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "apple": {
+      "n_episodes": 6,
+      "n_success": 6,
+      "success_rate": 1.0,
+      "success_rate_ci95": [
+        0.6097,
+        1.0
+      ],
+      "avg_duration_s": 1.65,
+      "failure_counts": {}
+    },
+    "strawberry": {
+      "n_episodes": 6,
+      "n_success": 1,
+      "success_rate": 0.1667,
+      "success_rate_ci95": [
+        0.0301,
+        0.5635
+      ],
+      "avg_duration_s": 17.856,
+      "failure_counts": {}
+    },
+    "banana": {
+      "n_episodes": 6,
+      "n_success": 0,
+      "success_rate": 0.0,
+      "success_rate_ci95": [
+        0.0,
+        0.3903
+      ],
+      "avg_duration_s": 20.0,
+      "failure_counts": {}
+    },
+    "pear": {
+      "n_episodes": 6,
+      "n_success": 1,
+      "success_rate": 0.1667,
+      "success_rate_ci95": [
+        0.0301,
+        0.5635
+      ],
+      "avg_duration_s": 18.439,
+      "failure_counts": {}
+    }
+  },
+  "records": [
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 53
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 52
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 48
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 48
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 48
+    },
+    {
+      "kind": "apple",
+      "success": true,
+      "steps": 48
+    },
+    {
+      "kind": "strawberry",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "strawberry",
+      "success": true,
+      "steps": 214
+    },
+    {
+      "kind": "strawberry",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "strawberry",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "strawberry",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "strawberry",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "banana",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "pear",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "pear",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "pear",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "pear",
+      "success": true,
+      "steps": 319
+    },
+    {
+      "kind": "pear",
+      "success": false,
+      "steps": 600
+    },
+    {
+      "kind": "pear",
+      "success": false,
+      "steps": 600
+    }
+  ]
+}
