@@ -51,6 +51,20 @@ python scripts/benchmark.py --scenario per_class --episodes 6
 | `docs/` | 任务定义、方案、资产、基准、文献、ManiSkill3 API |
 | `notes/papers/` | 论文精读笔记（12 篇 + 补充） |
 
+## 模仿学习（v0.4）
+
+```bash
+# 采集 40 条专家示教（成功才保存）
+python scripts/record_demos.py --kinds apple strawberry --episodes 40
+# 训练 BC（5 帧历史 + 动作分块）
+python scripts/train_bc.py --data data/datasets/fruitsort-XXXX --out runs/bc --epochs 80
+# 闭环评测（seed 100+，与训练不重叠）
+python scripts/eval_bc.py --ckpt runs/bc/ckpt.pt --kinds apple strawberry --episodes 10
+```
+
+当前结果：专家 100%，BC 10%（1/10）。离线拟合很好但闭环漂移，说明需要 DAgger / 时序策略，
+详见 [docs/learning.md](docs/learning.md)。
+
 ## 视觉感知（v0.3，实验性）
 
 ```bash

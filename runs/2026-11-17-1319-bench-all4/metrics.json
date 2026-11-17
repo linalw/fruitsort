@@ -1,0 +1,103 @@
+{
+  "scenario": "all4",
+  "perception": "oracle",
+  "belt_speed_nominal": 0.04,
+  "episodes": 3,
+  "overall": {
+    "n_episodes": 3,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.5615
+    ],
+    "avg_duration_s": 90.0,
+    "failure_counts": {
+      "banana": 3
+    }
+  },
+  "per_combo": {
+    "apple+strawberry+banana+pear": {
+      "n_episodes": 3,
+      "n_success": 0,
+      "success_rate": 0.0,
+      "success_rate_ci95": [
+        0.0,
+        0.5615
+      ],
+      "avg_duration_s": 90.0,
+      "failure_counts": {
+        "banana": 3
+      }
+    }
+  },
+  "per_class": {},
+  "records": [
+    {
+      "kinds": [
+        "apple",
+        "strawberry",
+        "banana",
+        "pear"
+      ],
+      "seed": 0,
+      "success": false,
+      "steps": 1800,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [
+        "banana",
+        "pear"
+      ],
+      "dropped": false,
+      "belt_speed": 0.03999999910593033,
+      "episode": 0
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry",
+        "banana",
+        "pear"
+      ],
+      "seed": 1,
+      "success": false,
+      "steps": 1800,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [
+        "banana",
+        "pear"
+      ],
+      "dropped": false,
+      "belt_speed": 0.03999999910593033,
+      "episode": 1
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry",
+        "banana",
+        "pear"
+      ],
+      "seed": 2,
+      "success": false,
+      "steps": 1800,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [
+        "banana",
+        "pear"
+      ],
+      "dropped": false,
+      "belt_speed": 0.03999999910593033,
+      "episode": 2
+    }
+  ]
+}

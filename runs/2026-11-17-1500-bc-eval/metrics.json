@@ -1,0 +1,20 @@
+{
+  "ckpt": "runs/bc-pair-tgt/ckpt.pt",
+  "kinds": [
+    "apple",
+    "strawberry"
+  ],
+  "episodes": 5,
+  "belt_speed": 0.06,
+  "summary": {
+    "n_episodes": 5,
+    "n_success": 1,
+    "success_rate": 0.2,
+    "success_rate_ci95": [
+      0.0362,
+      0.6245
+    ],
+    "avg_duration_s": 39.76,
+    "failure_counts": {}
+  }
+}

@@ -52,6 +52,7 @@ class ScriptedSorter:
         self._grasp_ok = False
         self._via_done = False
         self._last_pv = None
+        self.last_target = None
         self._state_steps = 0
         self._prev_state = None
 
@@ -81,6 +82,8 @@ class ScriptedSorter:
         dist = float(np.linalg.norm(err))
         if dist > self.cfg.max_step:
             tgt = tcp + err / dist * self.cfg.max_step
+        # 记录未限速的世界目标（BC 的回归标签更平滑）
+        self.last_target = np.array([tgt[0], tgt[1], tgt[2], gripper], dtype=np.float32)
         # 世界系 → 机器人基座系（基座绕 z 旋转 +90°）
         x, y, z = tgt
         cmd = np.array([y + 0.5, -x, z], dtype=np.float32)

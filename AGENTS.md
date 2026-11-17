@@ -92,6 +92,18 @@ python scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06
   当前闭环未跑通，默认仍用 oracle 位姿，见 `docs/perception.md`。
 - 修改网格后必须 `build_all(force=True)`；否则沿用旧 GLB。
 
+## 模仿学习（v0.4）
+
+```bash
+python scripts/record_demos.py --kinds apple strawberry --episodes 40   # 示教（只存成功）
+python scripts/train_bc.py --data data/datasets/<name> --out runs/bc --epochs 80
+python scripts/eval_bc.py --ckpt runs/bc/ckpt.pt --kinds apple strawberry --episodes 10
+```
+
+- 观测 49 维、回归目标 4 维（世界目标位姿 + 夹爪），详见 `docs/learning.md`。
+- 数据放 `data/datasets/`（不入库）；`runs/**/*.pt` 被 gitignore，checkpoint 只留本地。
+- 当前 BC 闭环 10%，专家 100%；瓶颈是分布漂移，优先做 DAgger / ACT。
+
 ## 版本与发布约定
 
 - 语义化版本：`vMAJOR.MINOR.PATCH`，tag 与 `CHANGELOG.md` 同步。

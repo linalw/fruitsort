@@ -6,10 +6,39 @@
 ## [Unreleased]
 
 ### Planned
+- DAgger / ACT / Diffusion Policy
+- 图像观测（overhead + wrist）
 - RGB-D 感知（颜色+形状分类、深度反投影、手眼标定）
 - ACT / Diffusion Policy 模仿学习基线（脚本专家生成示教）
 - 30–50 Hz 残差纠偏与异步执行（DSDyn / FASTER 思路）
 - 四类同场 ≥ 60%
+
+---
+
+## [0.4.0] - 2026-11-17
+
+### Added
+- **示教采集** `scripts/record_demos.py`
+  - 49 维状态观测（TCP / 关节 / 带速 / 四类水果位姿速度）
+  - 4 维回归目标（世界坐标目标位姿 + 夹爪），只保存成功 episode
+  - `--noise` 支持鲁棒化数据采集
+- **BC 基线** `src/fruitsort/learning/bc.py`
+  - 5 帧历史 + 3 层 MLP + 动作分块（K=8）
+  - 目标位姿回归（比增量动作更平滑）
+- **训练 / 评测脚本** `scripts/train_bc.py`、`scripts/eval_bc.py`
+  - 多数据集合并、episode 级划分、EMA 平滑、闭环保留视频
+- 文档 `docs/learning.md`
+
+### Results
+| 策略 | 场景 | 成功率 |
+| --- | --- | --- |
+| 脚本专家 | 苹果+草莓，10 episodes | 100% |
+| BC（目标位姿 + 历史） | 苹果+草莓，10 episodes | 10%（1/10） |
+
+### Known Issues
+- BC 闭环成功率远低于专家：复合误差 + 阶段不可观测 + 动作限速导致的敏感性
+- 观测仍是 oracle 位姿，不含图像
+- 仅 2 类场景
 
 ---
 
