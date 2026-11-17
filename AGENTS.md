@@ -88,6 +88,8 @@ python scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06
 - 环境：`FruitSort-v1`（`src/fruitsort/sim/tasks/fruit_sort.py`），控制模式 `pd_ee_pose`（20 Hz）。
 - 资产：`assets/meshes/*.glb` 由 `python -m fruitsort.sim.assets.fruit_meshes` 生成。
 - 结果：`runs/<id>/metrics.json`，协议见 `docs/benchmark.md`。
+- 视觉模式（实验性）：先 `python scripts/calibrate_camera.py`，再 `--perception vision`；
+  当前闭环未跑通，默认仍用 oracle 位姿，见 `docs/perception.md`。
 - 修改网格后必须 `build_all(force=True)`；否则沿用旧 GLB。
 
 ## 版本与发布约定

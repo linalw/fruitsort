@@ -51,6 +51,16 @@ python scripts/benchmark.py --scenario per_class --episodes 6
 | `docs/` | 任务定义、方案、资产、基准、文献、ManiSkill3 API |
 | `notes/papers/` | 论文精读笔记（12 篇 + 补充） |
 
+## 视觉感知（v0.3，实验性）
+
+```bash
+python scripts/calibrate_camera.py          # 标定 overhead 相机（单应）
+python scripts/benchmark.py --scenario pair --perception vision
+```
+
+位置估计：苹果 4 mm、草莓 8 mm、香蕉 21 mm、梨 15 mm。闭环控制尚未跑通（遮挡/分类歧义），
+详见 [docs/perception.md](docs/perception.md)；默认评测仍用 oracle 位姿。
+
 ## 文档
 
 - [解决方案与架构](docs/solution-architecture.md) — 分层、选型、论文→模块映射

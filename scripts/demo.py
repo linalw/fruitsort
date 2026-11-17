@@ -31,11 +31,12 @@ def main() -> None:
     ap.add_argument("--fps", type=int, default=20)
     ap.add_argument("--render-every", type=int, default=2)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--perception", choices=["oracle", "vision"], default="oracle")
     args = ap.parse_args()
 
     speed = args.belt_speed
     kw = dict(
-        obs_mode="state",
+        obs_mode="state" if args.perception == "oracle" else "rgbd",
         control_mode="pd_ee_pose",
         sim_backend=args.device,
         active_kinds=tuple(args.kinds),
@@ -45,14 +46,26 @@ def main() -> None:
         kw["belt_speed_range"] = (speed, speed)
     env = gym.make("FruitSort-v1", **kw)
 
+    vs = None
+    if args.perception == "vision":
+        from fruitsort.perception.vision import BeltHomography, VisionState
+        from fruitsort.sim.assets.fruits import load_specs
+
+        specs = load_specs()
+        vs = VisionState(BeltHomography.load(cam_h=2.0),
+                         {k: sp.half_height for k, sp in specs.items()})
+
     writer = None
     results = []
     for ep in range(args.episodes):
-        env.reset(seed=args.seed + ep)
-        policy = ScriptedSorter(env)
+        obs, _ = env.reset(seed=args.seed + ep)
+        policy = ScriptedSorter(env, source=vs)
         frames, info = [], {}
         for t in range(args.max_steps):
-            env.step(policy.act())
+            if vs is not None:
+                vs.update(obs["sensor_data"]["overhead"]["rgb"][0].cpu().numpy(),
+                          tuple(args.kinds))
+            obs, _, _, _, _ = env.step(policy.act())
             info = env.unwrapped.evaluate()
             if args.video and t % args.render_every == 0:
                 img = env.render()

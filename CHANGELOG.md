@@ -13,6 +13,30 @@
 
 ---
 
+## [0.3.0] - 2026-11-17
+
+### Added
+- **RGB-D 感知模块** `src/fruitsort/perception/vision.py`
+  - HSV 连通域 + 颜色族分类（红/黄/绿）
+  - Hungarian 多目标分配（颜色 + 形状先验 + 历史位置）
+  - 平面单应反投影 + 高度视差修正
+  - 遮挡时恒速外推（`max_lost=15` 帧）
+- **相机标定脚本** `scripts/calibrate_camera.py` → `assets/calib/overhead_homography.npy`
+  - 32 个对应点，重投影误差 0.38 px
+- `scripts/benchmark.py --perception vision`（默认仍为 oracle）
+
+### Results
+- 视觉位置精度：苹果 4 mm、草莓 8 mm、香蕉 21 mm、梨 15 mm（均值）
+- 闭环视觉控制：0/5（未达标，原因见 `docs/perception.md`）
+- oracle 基线保持：苹果+草莓 5/5、10/10
+
+### Known Issues
+- 机械臂遮挡导致下降阶段目标丢失
+- 香蕉/梨色相接近，依赖进料顺序先验
+- 视觉模式尚未接入残差纠偏
+
+---
+
 ## [0.2.0] - 2026-11-17
 
 ### Added

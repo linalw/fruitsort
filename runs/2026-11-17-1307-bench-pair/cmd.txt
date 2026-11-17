@@ -1,0 +1,1 @@
+scripts/benchmark.py --scenario pair --episodes 5 --belt-speed 0.06 --perception vision

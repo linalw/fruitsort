@@ -1,0 +1,111 @@
+{
+  "scenario": "pair",
+  "perception": "vision",
+  "belt_speed_nominal": 0.06,
+  "episodes": 5,
+  "overall": {
+    "n_episodes": 5,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.4345
+    ],
+    "avg_duration_s": 60.0,
+    "failure_counts": {
+      "strawberry": 2
+    }
+  },
+  "per_combo": {
+    "apple+strawberry": {
+      "n_episodes": 5,
+      "n_success": 0,
+      "success_rate": 0.0,
+      "success_rate_ci95": [
+        0.0,
+        0.4345
+      ],
+      "avg_duration_s": 60.0,
+      "failure_counts": {
+        "strawberry": 2
+      }
+    }
+  },
+  "per_class": {},
+  "records": [
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 0,
+      "success": false,
+      "steps": 1200,
+      "done": [],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 0
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 1,
+      "success": false,
+      "steps": 1200,
+      "done": [],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 1
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 2,
+      "success": false,
+      "steps": 1200,
+      "done": [],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 2
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 3,
+      "success": false,
+      "steps": 1200,
+      "done": [],
+      "missed": [
+        "strawberry"
+      ],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 3
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 4,
+      "success": false,
+      "steps": 1200,
+      "done": [],
+      "missed": [
+        "strawberry"
+      ],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 4
+    }
+  ]
+}

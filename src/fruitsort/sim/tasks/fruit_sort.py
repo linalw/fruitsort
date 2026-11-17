@@ -63,6 +63,7 @@ class FruitSortEnv(BaseEnv):
         robot_uids="panda",
         robot_init_qpos_noise=0.02,
         active_kinds: tuple[str, ...] = ALL_KINDS,
+        with_bins: bool = True,
         belt_speed_range=(0.08, 0.18),
         spawn_x: float = -0.75,
         spawn_spacing: float = 0.45,
@@ -70,6 +71,7 @@ class FruitSortEnv(BaseEnv):
     ):
         self.robot_init_qpos_noise = robot_init_qpos_noise
         self.active_kinds = tuple(active_kinds)
+        self.with_bins = with_bins
         self.belt_speed_range = belt_speed_range
         self.spawn_x = spawn_x
         self.spawn_spacing = spawn_spacing
@@ -83,8 +85,8 @@ class FruitSortEnv(BaseEnv):
         return [
             CameraConfig(
                 "overhead",
-                sapien_utils.look_at([0.0, -0.08, 1.35], [0.0, -0.08, self.belt_top_z]),
-                640, 480, np.pi / 3.2, 0.01, 10,
+                sapien_utils.look_at([0.0, -0.05, 2.45], [0.0, -0.05, self.belt_top_z]),
+                640, 480, 1.02, 0.01, 12,
             ),
             CameraConfig(
                 "side",
@@ -108,7 +110,7 @@ class FruitSortEnv(BaseEnv):
     def _load_scene(self, options: dict):
         self.conveyor_spec = ConveyorSpec(top_z=self.belt_top_z)
         self.conveyor_actor = build_conveyor(self.scene, self.conveyor_spec)
-        self.bins = build_bins(self.scene)
+        self.bins = build_bins(self.scene) if self.with_bins else {}
 
         # 地面
         ground_mat = sapien.physx.PhysxMaterial(0.9, 0.8, 0.0)
@@ -182,6 +184,8 @@ class FruitSortEnv(BaseEnv):
         """
         if getattr(self, "fruit_actors", None) is None:
             return
+        if float(self.belt_speed[0]) <= 0:  # 标定/静态场景：不驱动
+            return
         for kind, actor in self.fruit_actors.items():
             p = actor.pose.p
             vel = actor.linear_velocity
@@ -239,6 +243,10 @@ class FruitSortEnv(BaseEnv):
         )
 
     def evaluate(self):
+        if not self.bins:
+            zero = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            return {"success": zero, "fail": zero, "dropped": zero,
+                    "belt_speed": self.belt_speed, "instruction": self.instruction}
         in_bin = {k: self._in_bin(k) for k in self.active_kinds}
         success = torch.stack(list(in_bin.values()), dim=1).all(dim=1)
         dropped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -259,6 +267,8 @@ class FruitSortEnv(BaseEnv):
         return info
 
     def compute_dense_reward(self, obs: Any, action: torch.Tensor, info: dict):
+        if not self.bins:
+            return torch.zeros(self.num_envs, device=self.device)
         reward = torch.zeros(self.num_envs, device=self.device)
         for kind, actor in self.fruit_actors.items():
             tcp = self.agent.tcp_pose.p

@@ -38,11 +38,12 @@ class PolicyConfig:
 class ScriptedSorter:
     """有限状态机：WAIT → TRACK → DESCEND → CLOSE → LIFT → MOVE → RELEASE。"""
 
-    def __init__(self, env, cfg: PolicyConfig | None = None, verbose: bool = False):
+    def __init__(self, env, cfg: PolicyConfig | None = None, verbose: bool = False, source=None):
         self.env = env
         self.u = env.unwrapped
         self.cfg = cfg or PolicyConfig()
         self.verbose = verbose
+        self.source = source  # None = 仿真真值；否则需提供 .get(kind) -> (pos, vel) | None
         self.state = "WAIT"
         self.target: str | None = None
         self.done: set[str] = set()
@@ -50,6 +51,7 @@ class ScriptedSorter:
         self.counter = 0
         self._grasp_ok = False
         self._via_done = False
+        self._last_pv = None
         self._state_steps = 0
         self._prev_state = None
 
@@ -58,8 +60,18 @@ class ScriptedSorter:
         return self.u.agent.tcp_pose.p[0].cpu().numpy()
 
     def _fruit(self, kind: str) -> tuple[np.ndarray, np.ndarray]:
+        if self.source is not None:
+            est = self.source.get(kind)
+            if est is None:
+                raise LookupError(kind)
+            return est
         a = self.u.fruit_actors[kind]
         return a.pose.p[0].cpu().numpy(), a.linear_velocity[0].cpu().numpy()
+
+    def _visible(self, kind: str) -> bool:
+        if self.source is None:
+            return True
+        return self.source.get(kind) is not None
 
     def _action(self, target: np.ndarray, gripper: float = 1.0) -> np.ndarray:
         """绝对位姿控制（robot root 坐标系），单步限速避免猛冲。"""
@@ -78,6 +90,8 @@ class ScriptedSorter:
         return self._action(np.array(self.cfg.ready_pose), gripper)
 
     def _in_zone(self, kind: str, margin: float = 0.0) -> bool:
+        if not self._visible(kind):
+            return False
         p, _ = self._fruit(kind)
         return self.u.pick_zone[0] - margin <= p[0] <= self.u.pick_zone[1] + margin
 
@@ -104,6 +118,8 @@ class ScriptedSorter:
             for k in self.u.active_kinds:
                 if k in self.done or k in self.missed:
                     continue
+                if not self._visible(k):
+                    continue
                 p, _ = self._fruit(k)
                 if p[2] < self.u.belt_top_z - 0.2:  # 已掉落
                     self.missed.add(k)
@@ -121,7 +137,17 @@ class ScriptedSorter:
         if self.target is None:
             return self._home()
 
-        p, v = self._fruit(self.target)
+        try:
+            p, v = self._fruit(self.target)
+            self._last_pv = (p, v)
+        except LookupError:
+            # 目标被机械臂遮挡：用最后一次估计 + 恒速外推继续执行
+            if self._last_pv is None:
+                self.state = "WAIT"
+                self.target = None
+                return self._home()
+            p, v = self._last_pv
+            p = p + v * 0.05
         x_pred = p[0] + v[0] * cfg.lead_time
         x_cmd = float(np.clip(x_pred, self.u.pick_zone[0] - 0.02, self.u.pick_zone[1]))
         y = p[1]
@@ -135,7 +161,7 @@ class ScriptedSorter:
                 self.state = "WAIT"
                 return self._home()
             tcp = self._tcp()
-            if abs(p[0] - tcp[0]) < 0.032 and abs(y - tcp[1]) < 0.032 and \
+            if abs(x_cmd - tcp[0]) < 0.055 and abs(y - tcp[1]) < 0.055 and \
                     self.u.pick_zone[0] <= p[0] <= self.u.pick_zone[1]:
                 self.state = "DESCEND"
                 self.counter = 0
@@ -151,7 +177,7 @@ class ScriptedSorter:
             y_g = p[1]
             grasp_z = p[2] + cfg.grasp_depth
             tcp = self._tcp()
-            aligned = abs(x_g - tcp[0]) < 0.018 and abs(y_g - tcp[1]) < 0.018
+            aligned = abs(x_g - tcp[0]) < 0.035 and abs(y_g - tcp[1]) < 0.035
             if tcp[2] <= grasp_z + 0.015 and aligned:
                 self.state = "CLOSE"
                 self.counter = 0

@@ -37,9 +37,9 @@ SCENARIOS = {
 }
 
 
-def run_episode(kinds, seed, belt_speed, max_steps, video=None):
+def run_episode(kinds, seed, belt_speed, max_steps, video=None, perception="oracle"):
     kw = dict(
-        obs_mode="state",
+        obs_mode="state" if perception == "oracle" else "rgbd",
         control_mode="pd_ee_pose",
         sim_backend="cpu",
         active_kinds=tuple(kinds),
@@ -48,11 +48,21 @@ def run_episode(kinds, seed, belt_speed, max_steps, video=None):
     if belt_speed is not None:
         kw["belt_speed_range"] = (belt_speed, belt_speed)
     env = gym.make("FruitSort-v1", **kw)
-    env.reset(seed=seed)
-    policy = ScriptedSorter(env)
+    obs, _ = env.reset(seed=seed)
+    vs = None
+    if perception == "vision":
+        from fruitsort.perception.vision import BeltHomography, VisionState
+        from fruitsort.sim.assets.fruits import load_specs
+
+        specs = load_specs()
+        vs = VisionState(BeltHomography.load(cam_h=2.0),
+                         {k: sp.half_height for k, sp in specs.items()})
+    policy = ScriptedSorter(env, source=vs)
     frames, info, t = [], {}, 0
     for t in range(max_steps):
-        env.step(policy.act())
+        if vs is not None:
+            vs.update(obs["sensor_data"]["overhead"]["rgb"][0].cpu().numpy(), tuple(kinds))
+        obs, _, _, _, _ = env.step(policy.act())
         info = env.unwrapped.evaluate()
         if video and t % 4 == 0:
             img = env.render()
@@ -93,6 +103,7 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=1200)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--video", default="", help="仅对第一个 episode 录制")
+    ap.add_argument("--perception", choices=["oracle", "vision"], default="oracle")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
@@ -108,6 +119,7 @@ def main() -> None:
             rec = run_episode(
                 combo, seed, args.belt_speed, args.max_steps,
                 video=args.video if (ep == 0 and combo is combos[0]) else None,
+                perception=args.perception,
             )
             rec["episode"] = ep
             records.append(rec)
@@ -135,6 +147,7 @@ def main() -> None:
 
     metrics = {
         "scenario": args.scenario,
+        "perception": args.perception,
         "belt_speed_nominal": args.belt_speed,
         "episodes": len(records),
         "overall": overall,
