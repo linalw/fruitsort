@@ -38,12 +38,13 @@ class PolicyConfig:
 class ScriptedSorter:
     """有限状态机：WAIT → TRACK → DESCEND → CLOSE → LIFT → MOVE → RELEASE。"""
 
-    def __init__(self, env, cfg: PolicyConfig | None = None, verbose: bool = False, source=None):
+    def __init__(self, env, cfg: PolicyConfig | None = None, verbose: bool = False, source=None, only_kind=None):
         self.env = env
         self.u = env.unwrapped
         self.cfg = cfg or PolicyConfig()
         self.verbose = verbose
         self.source = source  # None = 仿真真值；否则需提供 .get(kind) -> (pos, vel) | None
+        self.only_kind = only_kind  # 指令：只抓这一类
         self.state = "WAIT"
         self.target: str | None = None
         self.done: set[str] = set()
@@ -119,6 +120,8 @@ class ScriptedSorter:
             # 选最靠前（x 最大）且未处理、未进入框的水果
             cands = []
             for k in self.u.active_kinds:
+                if self.only_kind is not None and k != self.only_kind:
+                    continue
                 if k in self.done or k in self.missed:
                     continue
                 if not self._visible(k):

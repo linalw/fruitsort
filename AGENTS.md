@@ -104,6 +104,20 @@ python scripts/eval_bc.py --ckpt runs/bc/ckpt.pt --kinds apple strawberry --epis
 - 数据放 `data/datasets/`（不入库）；`runs/**/*.pt` 被 gitignore，checkpoint 只留本地。
 - 当前 BC 闭环 10%，专家 100%；瓶颈是分布漂移，优先做 DAgger / ACT。
 
+## 多视角策略（v0.5）
+
+```bash
+python scripts/record_demos.py --kinds apple strawberry --episodes 12 \
+    --images --robot panda_wristcam --instruction apple
+python scripts/train_vision_policy.py --data <dirs...> --out runs/vpolicy --epochs 40
+python scripts/bench_latency.py --ckpt runs/vpolicy/ckpt.pt
+python scripts/eval_hybrid.py --ckpt runs/vpolicy/ckpt.pt --episodes 10
+```
+
+- 模型 0.41M：双视角 96×96 + 4 帧历史 + 2 层 Transformer + 选择头
+- GPU 1.9 ms / CPU 单线程 6.1 ms；指令选择 100%；分层执行 10/10
+- 纯视觉闭环仍不稳，见 `docs/model-architecture.md`
+
 ## 版本与发布约定
 
 - 语义化版本：`vMAJOR.MINOR.PATCH`，tag 与 `CHANGELOG.md` 同步。

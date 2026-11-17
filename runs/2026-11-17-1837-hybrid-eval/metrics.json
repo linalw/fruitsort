@@ -1,0 +1,17 @@
+{
+  "ckpt": "runs/vpolicy-sel3/ckpt.pt",
+  "episodes": 10,
+  "belt_speed": 0.06,
+  "selection_acc": 1.0,
+  "summary": {
+    "n_episodes": 10,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.2775
+    ],
+    "avg_duration_s": 60.0,
+    "failure_counts": {}
+  }
+}

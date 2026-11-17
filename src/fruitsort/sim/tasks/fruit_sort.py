@@ -50,7 +50,7 @@ DOC = """**任务**：动态传送带水果分拣。
 
 @register_env("FruitSort-v1", max_episode_steps=1200)
 class FruitSortEnv(BaseEnv):
-    SUPPORTED_ROBOTS = ["panda"]
+    SUPPORTED_ROBOTS = ["panda", "panda_wristcam"]
     agent: Panda
 
     belt_top_z = 0.45
@@ -64,6 +64,7 @@ class FruitSortEnv(BaseEnv):
         robot_init_qpos_noise=0.02,
         active_kinds: tuple[str, ...] = ALL_KINDS,
         with_bins: bool = True,
+        instruction_kind: str | None = None,
         belt_speed_range=(0.08, 0.18),
         spawn_x: float = -0.75,
         spawn_spacing: float = 0.45,
@@ -72,6 +73,7 @@ class FruitSortEnv(BaseEnv):
         self.robot_init_qpos_noise = robot_init_qpos_noise
         self.active_kinds = tuple(active_kinds)
         self.with_bins = with_bins
+        self.instruction_kind = instruction_kind
         self.belt_speed_range = belt_speed_range
         self.spawn_x = spawn_x
         self.spawn_spacing = spawn_spacing
@@ -249,7 +251,10 @@ class FruitSortEnv(BaseEnv):
             return {"success": zero, "fail": zero, "dropped": zero,
                     "belt_speed": self.belt_speed, "instruction": self.instruction}
         in_bin = {k: self._in_bin(k) for k in self.active_kinds}
-        success = torch.stack(list(in_bin.values()), dim=1).all(dim=1)
+        if self.instruction_kind is not None:
+            success = in_bin[self.instruction_kind]
+        else:
+            success = torch.stack(list(in_bin.values()), dim=1).all(dim=1)
         dropped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         for kind, actor in self.fruit_actors.items():
             z = actor.pose.p[:, 2]
@@ -262,6 +267,7 @@ class FruitSortEnv(BaseEnv):
             "dropped": dropped,
             "belt_speed": self.belt_speed,
             "instruction": self.instruction,
+            "instruction_kind": self.instruction_kind,
         }
         for kind, v in in_bin.items():
             info[f"in_bin_{kind}"] = v

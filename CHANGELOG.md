@@ -15,6 +15,37 @@
 
 ---
 
+## [0.5.0] - 2026-11-17
+
+### Added
+- **多视角指令条件策略** `src/fruitsort/models/vision_policy.py`
+  - 双视角（overhead + 腕部）共享 CNN，RGB + 帧差 4 通道，96×96
+  - 4 帧历史 + 2 层 Transformer（d=96, 4 头）
+  - 动作分块头（K=8）、未来状态辅助头（H=3）、**指针式水果选择头**
+  - 参数 **405,248（0.41M）**
+- **指令跟随任务**：环境支持 `instruction_kind`，专家支持 `only_kind`
+- **示教采集**：`--instruction` 分指令录制（12 条抓苹果 + 12 条抓草莓）
+- **DAgger**：`scripts/dagger_collect.py` + Markov 几何标注器 `policies/markov.py`
+- **训练/评测/基准**：`train_vision_policy.py`、`eval_vision_policy.py`、`eval_hybrid.py`、`bench_latency.py`
+- 文档 `docs/model-architecture.md`
+
+### Results
+| 指标 | 值 |
+| --- | --- |
+| 参数量 | 0.41M |
+| GPU 延迟（batch=1） | 1.9 ms（p95 4.9 ms） |
+| CPU 延迟（单线程） | 6.1 ms（p95 10.1 ms） |
+| 指令选择准确率 | 100%（64/64） |
+| 分层执行成功率 | 10/10（14.3 s/件） |
+| 纯视觉闭环 | 0/5（抓取时机不稳） |
+
+### Known Issues
+- 纯视觉端到端仍未跑通：夹爪闭合时机与目标位姿误差叠加
+- 仅 2 类、24 条指令示教；香蕉/梨未覆盖
+- 分层执行依赖脚本专家，不是端到端学习
+
+---
+
 ## [0.4.0] - 2026-11-17
 
 ### Added

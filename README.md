@@ -51,6 +51,22 @@ python scripts/benchmark.py --scenario per_class --episodes 6
 | `docs/` | 任务定义、方案、资产、基准、文献、ManiSkill3 API |
 | `notes/papers/` | 论文精读笔记（12 篇 + 补充） |
 
+## 多视角指令条件策略（v0.5）
+
+- **0.41M 参数**，2 层 Transformer + 共享 CNN
+- 输入：overhead + 腕部两路 RGB（各 96×96，4 帧历史）+ 49 维状态 + 水果指令
+- 输出：8 步动作块（世界目标位姿 + 夹爪）、未来 3 步状态、4 类水果选择 logits
+- **实测**：GPU 1.9 ms / CPU 单线程 6.1 ms；指令选择 100%；分层执行 10/10
+
+```bash
+python scripts/train_vision_policy.py --data data/datasets/instr-apple \
+    data/datasets/instr-strawberry --out runs/vpolicy --epochs 40
+python scripts/bench_latency.py --ckpt runs/vpolicy/ckpt.pt
+python scripts/eval_hybrid.py --ckpt runs/vpolicy/ckpt.pt --episodes 10
+```
+
+详见 [docs/model-architecture.md](docs/model-architecture.md)。
+
 ## 模仿学习（v0.4）
 
 ```bash
