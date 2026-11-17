@@ -77,14 +77,13 @@ class ScriptedSorter:
 
     def _action(self, target: np.ndarray, gripper: float = 1.0) -> np.ndarray:
         """绝对位姿控制（robot root 坐标系），单步限速避免猛冲。"""
-        tgt = np.asarray(target, dtype=np.float64)
+        raw = np.asarray(target, dtype=np.float64)
         tcp = self._tcp()
-        err = tgt - tcp
+        err = raw - tcp
         dist = float(np.linalg.norm(err))
-        if dist > self.cfg.max_step:
-            tgt = tcp + err / dist * self.cfg.max_step
-        # 记录未限速的世界目标（BC 的回归标签更平滑）
-        self.last_target = np.array([tgt[0], tgt[1], tgt[2], gripper], dtype=np.float32)
+        # 标签 = FSM 的真实目标（未限速）；否则 BC 会学成"目标≈当前 TCP"的悬停不动点
+        self.last_target = np.array([raw[0], raw[1], raw[2], gripper], dtype=np.float32)
+        tgt = raw if dist <= self.cfg.max_step else tcp + err / dist * self.cfg.max_step
         # 世界系 → 机器人基座系（基座绕 z 旋转 +90°）
         x, y, z = tgt
         cmd = np.array([y + 0.5, -x, z], dtype=np.float32)

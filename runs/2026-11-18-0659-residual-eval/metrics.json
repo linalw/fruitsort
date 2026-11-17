@@ -1,0 +1,171 @@
+{
+  "ckpt": "runs/vpolicy-raw/ckpt.pt",
+  "residual": "runs/residual-raw/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 5,
+  "belt_speed": 0.08,
+  "spawn_x": -0.55,
+  "seed": 400,
+  "fix_norm": true,
+  "groups": {
+    "model_only": {
+      "summary": {
+        "n_episodes": 5,
+        "n_success": 0,
+        "success_rate": 0.0,
+        "success_rate_ci95": [
+          0.0,
+          0.4345
+        ],
+        "avg_duration_s": 41.47,
+        "failure_counts": {
+          "dropped": 2,
+          "never_reached": 1,
+          "carry_place_timeout": 1,
+          "closed_missed": 1
+        }
+      },
+      "episodes": [
+        {
+          "success": false,
+          "duration_s": 10.55,
+          "failure": "dropped",
+          "steps": 211,
+          "grasped": true,
+          "min_dist": 0.02,
+          "residual_mean_m": null,
+          "residual_max_m": null
+        },
+        {
+          "success": false,
+          "duration_s": 16.8,
+          "failure": "dropped",
+          "steps": 336,
+          "grasped": true,
+          "min_dist": 0.006,
+          "residual_mean_m": null,
+          "residual_max_m": null
+        },
+        {
+          "success": false,
+          "duration_s": 60.0,
+          "failure": "never_reached",
+          "steps": 1200,
+          "grasped": false,
+          "min_dist": 0.139,
+          "residual_mean_m": null,
+          "residual_max_m": null
+        },
+        {
+          "success": false,
+          "duration_s": 60.0,
+          "failure": "carry_place_timeout",
+          "steps": 1200,
+          "grasped": true,
+          "min_dist": 0.007,
+          "residual_mean_m": null,
+          "residual_max_m": null
+        },
+        {
+          "success": false,
+          "duration_s": 60.0,
+          "failure": "closed_missed",
+          "steps": 1200,
+          "grasped": false,
+          "min_dist": 0.044,
+          "residual_mean_m": null,
+          "residual_max_m": null
+        }
+      ]
+    },
+    "model_residual": {
+      "summary": {
+        "n_episodes": 5,
+        "n_success": 1,
+        "success_rate": 0.2,
+        "success_rate_ci95": [
+          0.0362,
+          0.6245
+        ],
+        "avg_duration_s": 49.42,
+        "failure_counts": {
+          "carry_place_timeout": 2,
+          "closed_missed": 1,
+          "never_closed": 1
+        }
+      },
+      "episodes": [
+        {
+          "success": false,
+          "duration_s": 60.0,
+          "failure": "carry_place_timeout",
+          "steps": 1200,
+          "grasped": true,
+          "min_dist": 0.008,
+          "residual_mean_m": [
+            -0.0295,
+            -0.023,
+            0.0056
+          ],
+          "residual_max_m": 0.0903
+        },
+        {
+          "success": false,
+          "duration_s": 60.0,
+          "failure": "closed_missed",
+          "steps": 1200,
+          "grasped": false,
+          "min_dist": 0.02,
+          "residual_mean_m": [
+            -0.013,
+            -0.0107,
+            0.0077
+          ],
+          "residual_max_m": 0.0943
+        },
+        {
+          "success": false,
+          "duration_s": 60.0,
+          "failure": "never_closed",
+          "steps": 1200,
+          "grasped": false,
+          "min_dist": 0.01,
+          "residual_mean_m": [
+            -0.0238,
+            -0.0136,
+            -0.0021
+          ],
+          "residual_max_m": 0.1347
+        },
+        {
+          "success": false,
+          "duration_s": 60.0,
+          "failure": "carry_place_timeout",
+          "steps": 1200,
+          "grasped": true,
+          "min_dist": 0.028,
+          "residual_mean_m": [
+            -0.0206,
+            -0.0112,
+            -0.0018
+          ],
+          "residual_max_m": 0.0968
+        },
+        {
+          "success": true,
+          "duration_s": 7.1,
+          "failure": null,
+          "steps": 142,
+          "grasped": true,
+          "min_dist": 0.01,
+          "residual_mean_m": [
+            -0.0218,
+            -0.0185,
+            0.0017
+          ],
+          "residual_max_m": 0.0625
+        }
+      ]
+    }
+  }
+}
