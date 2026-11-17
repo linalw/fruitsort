@@ -22,9 +22,9 @@ HOME_EULER = (-3.126, -0.017, -1.606)
 
 @dataclass
 class PolicyConfig:
-    lead_time: float = 0.35      # 预瞄时间（秒）
+    lead_time: float = 0.18      # 预瞄时间（秒）
     above_height: float = 0.09   # 抓取前悬停高度
-    grasp_depth: float = 0.0     # 相对水果中心的额外下探
+    grasp_depth: float = -0.01     # 相对水果中心的额外下探
     lift_height: float = 0.24
     carry_height: float = 0.60
     via_point: tuple = (0.0, -0.34)
@@ -183,8 +183,10 @@ class ScriptedSorter:
             y_g = p[1]
             grasp_z = p[2] + cfg.grasp_depth
             tcp = self._tcp()
-            aligned = abs(x_g - tcp[0]) < 0.035 and abs(y_g - tcp[1]) < 0.035
-            if tcp[2] <= grasp_z + 0.015 and aligned:
+            # 香蕉/梨较薄，且下探会顶到带面：放宽触底判定，避免永远不闭爪
+            tol = 0.03 if self.only_kind in ("banana", "pear") else 0.018
+            aligned = abs(x_g - tcp[0]) < tol and abs(y_g - tcp[1]) < tol
+            if tcp[2] <= grasp_z + (0.045 if self.only_kind in ("banana", "pear") else 0.015) and aligned:
                 self.state = "CLOSE"
                 self.counter = 0
             return self._action([x_g, y_g, grasp_z], gripper=1.0)
@@ -225,7 +227,9 @@ class ScriptedSorter:
                 self.state = "WAIT"
                 self.target = None
                 return self._home()
-            # 直接斜向移动到身前中转点（纯垂直抬升在某些构型下会顶到关节限位）
+            # 先慢速垂直抬 5cm（避免刚抓住就以 6cm/步 斜向甩飞），再走中转点
+            if tcp[2] < self.u.belt_top_z + 0.13 and self.counter < 40:
+                return self._action([tcp[0], tcp[1], tcp[2] + 0.015], gripper=-1.0)
             vx, vy = cfg.via_point
             if abs(tcp[0] - vx) > 0.06 or abs(tcp[1] - vy) > 0.06:
                 if not self._via_done:

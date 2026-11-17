@@ -59,6 +59,8 @@ def main() -> None:
                     choices=["all", "apple", "strawberry", "banana", "pear"])
     ap.add_argument("--episodes", type=int, default=5)
     ap.add_argument("--belt-speed", type=float, default=0.06)
+    ap.add_argument("--spawn-x", type=float, default=-0.75)
+    ap.add_argument("--spawn-spacing", type=float, default=0.45)
     ap.add_argument("--seed", type=int, default=300)
     ap.add_argument("--max-steps", type=int, default=1200)
     ap.add_argument("--near", type=float, default=0.45, help="<=0 表示禁用近距伺服，全用模型")
@@ -79,6 +81,7 @@ def main() -> None:
             "FruitSort-v1", obs_mode="rgbd", control_mode="pd_ee_pose", sim_backend="cpu",
             robot_uids="panda_wristcam", active_kinds=tuple(args.kinds),
             belt_speed_range=(args.belt_speed, args.belt_speed),
+            spawn_x=args.spawn_x, spawn_spacing=args.spawn_spacing,
             instruction_kind=None if args.instruction == "all" else args.instruction)
         obs, _ = env.reset(seed=args.seed + ep)
         u = env.unwrapped

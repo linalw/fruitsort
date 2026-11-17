@@ -97,6 +97,9 @@ class HybridTeacher:
             bx, by = BIN_LAYOUT[self.carrying]
             if dist > 0.10 or self.carry_steps > 200:
                 self.carrying = None
+            elif self.carry_steps <= 5:
+                # 抓后先垂直慢抬（1.5cm/步），避免刚咬合就以 6cm/步 斜向甩飞
+                tgt, grip = np.array([tcp[0], tcp[1], tcp[2] + 0.015]), -1.0
             elif not self.via_done and (abs(tcp[0]) > 0.06 or abs(tcp[1] + 0.34) > 0.06):
                 tgt, grip = np.array([0.0, -0.34, 0.60]), -1.0
             else:

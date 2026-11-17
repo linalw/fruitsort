@@ -130,7 +130,7 @@ class FruitSortEnv(BaseEnv):
         self.fruit_actors = {}
         for kind in self.active_kinds:
             actor = build_fruit(self.scene, kind, f"fruit_{kind}", sapien.Pose(p=[0, 0, -5]))
-            actor.set_angular_damping(1.0)
+            actor.set_angular_damping(3.0 if kind in ("pear", "banana") else 1.0)
             actor.set_linear_damping(0.05)
             self.fruit_actors[kind] = actor
 

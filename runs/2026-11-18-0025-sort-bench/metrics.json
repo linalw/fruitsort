@@ -1,0 +1,195 @@
+{
+  "classes": [
+    "banana",
+    "pear"
+  ],
+  "policy": "teacher",
+  "single_class": false,
+  "belt": 0.08,
+  "spawn_x": -0.55,
+  "overall": {
+    "n_episodes": 20,
+    "n_success": 14,
+    "success_rate": 0.7,
+    "success_rate_ci95": [
+      0.481,
+      0.8545
+    ],
+    "avg_duration_s": 27.065,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "banana": {
+      "success": {
+        "n_episodes": 10,
+        "n_success": 4,
+        "success_rate": 0.4,
+        "success_rate_ci95": [
+          0.1682,
+          0.6873
+        ],
+        "avg_duration_s": 33.8,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 2.8875,
+      "p90_cycle_s": 3.005
+    },
+    "pear": {
+      "success": {
+        "n_episodes": 10,
+        "n_success": 10,
+        "success_rate": 1.0,
+        "success_rate_ci95": [
+          0.7225,
+          1.0
+        ],
+        "avg_duration_s": 20.33,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 2.9650000000000003,
+      "p90_cycle_s": 3.105
+    }
+  },
+  "records": [
+    {
+      "kind": "banana",
+      "episode": 0,
+      "success": true,
+      "cycle_s": 2.8,
+      "total_s": 7.4
+    },
+    {
+      "kind": "banana",
+      "episode": 1,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 7.4
+    },
+    {
+      "kind": "banana",
+      "episode": 2,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 3,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 4,
+      "success": true,
+      "cycle_s": 2.9,
+      "total_s": 8.7
+    },
+    {
+      "kind": "banana",
+      "episode": 5,
+      "success": true,
+      "cycle_s": 3.05,
+      "total_s": 7.3
+    },
+    {
+      "kind": "banana",
+      "episode": 6,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 7,
+      "success": true,
+      "cycle_s": 2.8,
+      "total_s": 7.2
+    },
+    {
+      "kind": "banana",
+      "episode": 8,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 9,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "pear",
+      "episode": 0,
+      "success": true,
+      "cycle_s": 3.1,
+      "total_s": 13.35
+    },
+    {
+      "kind": "pear",
+      "episode": 1,
+      "success": true,
+      "cycle_s": 2.95,
+      "total_s": 33.2
+    },
+    {
+      "kind": "pear",
+      "episode": 2,
+      "success": true,
+      "cycle_s": 3.05,
+      "total_s": 13.4
+    },
+    {
+      "kind": "pear",
+      "episode": 3,
+      "success": true,
+      "cycle_s": 2.85,
+      "total_s": 12.65
+    },
+    {
+      "kind": "pear",
+      "episode": 4,
+      "success": true,
+      "cycle_s": 3.1,
+      "total_s": 51.55
+    },
+    {
+      "kind": "pear",
+      "episode": 5,
+      "success": true,
+      "cycle_s": 3.15,
+      "total_s": 26.25
+    },
+    {
+      "kind": "pear",
+      "episode": 6,
+      "success": true,
+      "cycle_s": 2.95,
+      "total_s": 14.05
+    },
+    {
+      "kind": "pear",
+      "episode": 7,
+      "success": true,
+      "cycle_s": 2.95,
+      "total_s": 13.05
+    },
+    {
+      "kind": "pear",
+      "episode": 8,
+      "success": true,
+      "cycle_s": 2.75,
+      "total_s": 12.65
+    },
+    {
+      "kind": "pear",
+      "episode": 9,
+      "success": true,
+      "cycle_s": 2.8,
+      "total_s": 13.15
+    }
+  ]
+}

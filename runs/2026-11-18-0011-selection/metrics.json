@@ -1,0 +1,31 @@
+{
+  "ckpt": "runs/vpolicy-4c-v3/ckpt.pt",
+  "kinds": [
+    "apple",
+    "strawberry",
+    "banana",
+    "pear"
+  ],
+  "overall": [
+    96,
+    96
+  ],
+  "per_kind": {
+    "apple": [
+      24,
+      24
+    ],
+    "strawberry": [
+      24,
+      24
+    ],
+    "banana": [
+      24,
+      24
+    ],
+    "pear": [
+      24,
+      24
+    ]
+  }
+}

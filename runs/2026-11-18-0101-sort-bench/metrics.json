@@ -1,0 +1,247 @@
+{
+  "classes": [
+    "apple",
+    "strawberry",
+    "banana",
+    "pear"
+  ],
+  "policy": "teacher",
+  "single_class": false,
+  "belt": 0.08,
+  "spawn_x": -0.55,
+  "overall": {
+    "n_episodes": 20,
+    "n_success": 19,
+    "success_rate": 0.95,
+    "success_rate_ci95": [
+      0.7639,
+      0.9911
+    ],
+    "avg_duration_s": 21.188,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "apple": {
+      "success": {
+        "n_episodes": 5,
+        "n_success": 5,
+        "success_rate": 1.0,
+        "success_rate_ci95": [
+          0.5655,
+          1.0
+        ],
+        "avg_duration_s": 6.23,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 2.5200000000000005,
+      "p90_cycle_s": 2.67
+    },
+    "strawberry": {
+      "success": {
+        "n_episodes": 5,
+        "n_success": 5,
+        "success_rate": 1.0,
+        "success_rate_ci95": [
+          0.5655,
+          1.0
+        ],
+        "avg_duration_s": 13.31,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 2.94,
+      "p90_cycle_s": 3.08
+    },
+    "banana": {
+      "success": {
+        "n_episodes": 5,
+        "n_success": 4,
+        "success_rate": 0.8,
+        "success_rate_ci95": [
+          0.3755,
+          0.9638
+        ],
+        "avg_duration_s": 32.52,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 2.9125,
+      "p90_cycle_s": 2.985
+    },
+    "pear": {
+      "success": {
+        "n_episodes": 5,
+        "n_success": 5,
+        "success_rate": 1.0,
+        "success_rate_ci95": [
+          0.5655,
+          1.0
+        ],
+        "avg_duration_s": 32.69,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 2.91,
+      "p90_cycle_s": 3.06
+    }
+  },
+  "records": [
+    {
+      "kind": "apple",
+      "episode": 0,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 2.5,
+      "total_s": 6.35
+    },
+    {
+      "kind": "apple",
+      "episode": 1,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 2.75,
+      "total_s": 6.1
+    },
+    {
+      "kind": "apple",
+      "episode": 2,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 2.4,
+      "total_s": 6.2
+    },
+    {
+      "kind": "apple",
+      "episode": 3,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 2.4,
+      "total_s": 6.1
+    },
+    {
+      "kind": "apple",
+      "episode": 4,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 2.55,
+      "total_s": 6.4
+    },
+    {
+      "kind": "strawberry",
+      "episode": 0,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 2.9,
+      "total_s": 13.5
+    },
+    {
+      "kind": "strawberry",
+      "episode": 1,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 2.85,
+      "total_s": 13.05
+    },
+    {
+      "kind": "strawberry",
+      "episode": 2,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 3.2,
+      "total_s": 13.65
+    },
+    {
+      "kind": "strawberry",
+      "episode": 3,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 2.85,
+      "total_s": 13.15
+    },
+    {
+      "kind": "strawberry",
+      "episode": 4,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 2.9,
+      "total_s": 13.2
+    },
+    {
+      "kind": "banana",
+      "episode": 0,
+      "success": true,
+      "selected": "banana",
+      "cycle_s": 2.85,
+      "total_s": 25.45
+    },
+    {
+      "kind": "banana",
+      "episode": 1,
+      "success": true,
+      "selected": "banana",
+      "cycle_s": 2.95,
+      "total_s": 25.7
+    },
+    {
+      "kind": "banana",
+      "episode": 2,
+      "success": false,
+      "selected": "banana",
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 3,
+      "success": true,
+      "selected": "banana",
+      "cycle_s": 3.0,
+      "total_s": 25.65
+    },
+    {
+      "kind": "banana",
+      "episode": 4,
+      "success": true,
+      "selected": "banana",
+      "cycle_s": 2.85,
+      "total_s": 25.8
+    },
+    {
+      "kind": "pear",
+      "episode": 0,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 2.7,
+      "total_s": 30.95
+    },
+    {
+      "kind": "pear",
+      "episode": 1,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 2.85,
+      "total_s": 31.85
+    },
+    {
+      "kind": "pear",
+      "episode": 2,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 3.1,
+      "total_s": 39.15
+    },
+    {
+      "kind": "pear",
+      "episode": 3,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 2.9,
+      "total_s": 30.9
+    },
+    {
+      "kind": "pear",
+      "episode": 4,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 3.0,
+      "total_s": 30.6
+    }
+  ]
+}

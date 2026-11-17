@@ -28,6 +28,24 @@ python scripts/benchmark.py --scenario pair --episodes 10
 python scripts/benchmark.py --scenario all4 --episodes 10
 ```
 
+## 结果 v0.8.0（四类同场，模型选择 + 伺服/几何执行）
+
+| 执行形态 | 成功率 | 节拍 |
+| --- | --- | --- |
+| 模型选择 + 伺服（teacher） | 19/20 = 95.0% | 2.82 s / P90 3.02 s |
+| 模型选择 + 几何执行器（hybrid） | 39/40 = 97.5% | 3.97 s / P90 4.21 s |
+
+复现：
+
+```bash
+python scripts/train_vision_policy.py --data data/datasets/instr-apple-4c \
+    data/datasets/instr-strawberry-4c data/datasets/instr-banana \
+    data/datasets/instr-pear-single --out runs/vpolicy-4c --epochs 40
+python scripts/eval_selection.py --ckpt runs/vpolicy-4c/ckpt.pt
+python scripts/benchmark_sorting.py --policy teacher --ckpt runs/vpolicy-4c/ckpt.pt \
+    --classes apple strawberry banana pear --episodes 5 --belt 0.08 --spawn-x -0.55 --spawn-spacing 0.6
+```
+
 ## 结果 v0.2.0（脚本专家，oracle 位姿）
 
 ### 单类（每类 6 episodes，带速 0.06 m/s）

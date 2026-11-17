@@ -1,0 +1,109 @@
+{
+  "classes": [
+    "banana"
+  ],
+  "policy": "teacher",
+  "single_class": false,
+  "belt": 0.08,
+  "spawn_x": -0.55,
+  "overall": {
+    "n_episodes": 10,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.2775
+    ],
+    "avg_duration_s": 60.0,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "banana": {
+      "success": {
+        "n_episodes": 10,
+        "n_success": 0,
+        "success_rate": 0.0,
+        "success_rate_ci95": [
+          0.0,
+          0.2775
+        ],
+        "avg_duration_s": 60.0,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": null,
+      "p90_cycle_s": null
+    }
+  },
+  "records": [
+    {
+      "kind": "banana",
+      "episode": 0,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 1,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 2,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 3,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 4,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 5,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 6,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 7,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 8,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    },
+    {
+      "kind": "banana",
+      "episode": 9,
+      "success": false,
+      "cycle_s": null,
+      "total_s": 60.0
+    }
+  ]
+}

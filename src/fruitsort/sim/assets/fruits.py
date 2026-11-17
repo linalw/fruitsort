@@ -60,7 +60,7 @@ def _load_specs_cached() -> dict[str, FruitSpec]:
         "apple": dict(mass=0.150, roughness=0.32, metallic=0.0,
                       static_friction=0.70, dynamic_friction=0.60, restitution=0.03),
         "pear": dict(mass=0.160, roughness=0.40, metallic=0.0,
-                     static_friction=1.10, dynamic_friction=1.00, restitution=0.03),
+                     static_friction=0.80, dynamic_friction=0.70, restitution=0.03),
         "strawberry": dict(mass=0.018, roughness=0.45, metallic=0.0,
                            static_friction=0.60, dynamic_friction=0.50, restitution=0.03),
         "banana": dict(mass=0.110, roughness=0.55, metallic=0.0,
