@@ -1,0 +1,185 @@
+{
+  "ckpt": "runs/vpolicy-4c-v3/ckpt.pt",
+  "params": 8068,
+  "cfg": {
+    "obs_dim": 49,
+    "n_kinds": 4,
+    "hidden": 64,
+    "max_pos": 0.03,
+    "max_grip": 3.0
+  },
+  "dataset": {
+    "episodes": 16,
+    "train": 5394,
+    "val": 1399,
+    "train_eps": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      10,
+      11,
+      12,
+      13
+    ],
+    "val_eps": [
+      8,
+      9,
+      14,
+      15
+    ]
+  },
+  "best_val": 0.01973093510241597,
+  "delta_tgt_norm_mean": 0.008659621700644493,
+  "teacher_close_rate": 0.01594364084303379,
+  "episodes": [
+    {
+      "episode": 0,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.08972132951021194
+    },
+    {
+      "episode": 1,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.047657717019319534
+    },
+    {
+      "episode": 2,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.10979466885328293
+    },
+    {
+      "episode": 3,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.03481973707675934
+    },
+    {
+      "episode": 4,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.10708833485841751
+    },
+    {
+      "episode": 5,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.08624785393476486
+    },
+    {
+      "episode": 6,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.10538485646247864
+    },
+    {
+      "episode": 7,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.10090789943933487
+    },
+    {
+      "episode": 8,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.0995735451579094
+    },
+    {
+      "episode": 9,
+      "mode": "model",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.06721464544534683
+    },
+    {
+      "episode": 10,
+      "mode": "teacher",
+      "success": true,
+      "steps": 205,
+      "kind": "apple",
+      "n": 205,
+      "delta_mean": 0.18733881413936615
+    },
+    {
+      "episode": 11,
+      "mode": "teacher",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.1706383377313614
+    },
+    {
+      "episode": 12,
+      "mode": "teacher",
+      "success": true,
+      "steps": 189,
+      "kind": "apple",
+      "n": 189,
+      "delta_mean": 0.18996378779411316
+    },
+    {
+      "episode": 13,
+      "mode": "teacher",
+      "success": false,
+      "steps": 500,
+      "kind": "apple",
+      "n": 500,
+      "delta_mean": 0.15997540950775146
+    },
+    {
+      "episode": 14,
+      "mode": "teacher",
+      "success": true,
+      "steps": 190,
+      "kind": "apple",
+      "n": 190,
+      "delta_mean": 0.18004658818244934
+    },
+    {
+      "episode": 15,
+      "mode": "teacher",
+      "success": true,
+      "steps": 209,
+      "kind": "apple",
+      "n": 209,
+      "delta_mean": 0.19607941806316376
+    }
+  ]
+}

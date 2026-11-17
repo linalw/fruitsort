@@ -1,0 +1,151 @@
+{
+  "classes": [
+    "apple",
+    "strawberry"
+  ],
+  "policy": "scripted",
+  "single_class": false,
+  "belt": 0.3,
+  "spawn_x": -0.55,
+  "overall": {
+    "n_episodes": 12,
+    "n_success": 6,
+    "success_rate": 0.5,
+    "success_rate_ci95": [
+      0.2538,
+      0.7462
+    ],
+    "avg_duration_s": 22.817,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "apple": {
+      "success": {
+        "n_episodes": 6,
+        "n_success": 6,
+        "success_rate": 1.0,
+        "success_rate_ci95": [
+          0.6097,
+          1.0
+        ],
+        "avg_duration_s": 5.633,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 4.688888888888889,
+      "p90_cycle_s": 5.366666666666666
+    },
+    "strawberry": {
+      "success": {
+        "n_episodes": 6,
+        "n_success": 0,
+        "success_rate": 0.0,
+        "success_rate_ci95": [
+          0.0,
+          0.3903
+        ],
+        "avg_duration_s": 40.0,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": null,
+      "p90_cycle_s": null
+    }
+  },
+  "records": [
+    {
+      "kind": "apple",
+      "episode": 0,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 3.566666666666667,
+      "total_s": 4.566666666666666
+    },
+    {
+      "kind": "apple",
+      "episode": 1,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 5.366666666666666,
+      "total_s": 6.2
+    },
+    {
+      "kind": "apple",
+      "episode": 2,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 5.066666666666666,
+      "total_s": 6.066666666666666
+    },
+    {
+      "kind": "apple",
+      "episode": 3,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 3.8,
+      "total_s": 4.766666666666667
+    },
+    {
+      "kind": "apple",
+      "episode": 4,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 4.966666666666667,
+      "total_s": 5.966666666666667
+    },
+    {
+      "kind": "apple",
+      "episode": 5,
+      "success": true,
+      "selected": "apple",
+      "cycle_s": 5.366666666666666,
+      "total_s": 6.233333333333333
+    },
+    {
+      "kind": "strawberry",
+      "episode": 0,
+      "success": false,
+      "selected": "strawberry",
+      "cycle_s": null,
+      "total_s": 40.0
+    },
+    {
+      "kind": "strawberry",
+      "episode": 1,
+      "success": false,
+      "selected": "strawberry",
+      "cycle_s": null,
+      "total_s": 40.0
+    },
+    {
+      "kind": "strawberry",
+      "episode": 2,
+      "success": false,
+      "selected": "strawberry",
+      "cycle_s": null,
+      "total_s": 40.0
+    },
+    {
+      "kind": "strawberry",
+      "episode": 3,
+      "success": false,
+      "selected": "strawberry",
+      "cycle_s": null,
+      "total_s": 40.0
+    },
+    {
+      "kind": "strawberry",
+      "episode": 4,
+      "success": false,
+      "selected": "strawberry",
+      "cycle_s": null,
+      "total_s": 40.0
+    },
+    {
+      "kind": "strawberry",
+      "episode": 5,
+      "success": false,
+      "selected": "strawberry",
+      "cycle_s": null,
+      "total_s": 40.0
+    }
+  ]
+}

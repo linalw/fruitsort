@@ -31,7 +31,7 @@ import torch.nn.functional as F
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.learning.bc import Normalizer, build_obs
 from fruitsort.learning.residual import (ResidualConfig, ResidualRefiner, featurize,
-                                         onehot, save_residual)
+                                         onehot, safe_normalizer, save_residual)
 from fruitsort.models.vision_policy import MultiViewTemporalPolicy, PolicyConfig
 from fruitsort.policies.hybrid_teacher import HybridTeacher
 from fruitsort.policies.scripted import HOME_EULER
@@ -102,69 +102,90 @@ def collect(args, model, cfg, ns, na, device) -> list[dict]:
     out_dir = Path(args.out) / "dataset"
     out_dir.mkdir(parents=True, exist_ok=True)
     eps = []
-    for ep in range(args.episodes):
-        env, obs = make_env(args, ep)
-        u = env.unwrapped
-        kind = select_kind(model, cfg, ns, obs, u, args.instruction, device)
-        teacher = HybridTeacher(env, args.ckpt, args.instruction, device=device)
-        teacher.selected = kind  # 选择对齐：同一个模型、同一个观测 → 同一颗水果
+    plan = [("model", i) for i in range(args.episodes)]
+    plan += [("teacher", i) for i in range(args.teacher_episodes)]
+    for ep, (mode, i) in enumerate(plan):
+        eps.append(collect_episode(args, ep, mode, i, model, cfg, ns, na, device, out_dir))
+    return eps
 
-        oh_h, wr_h, st_h = [], [], []
-        rec = {k: [] for k in ("state", "model_tgt", "model_logit", "teacher_tgt", "teacher_grip")}
-        info, t = {}, 0
-        for t in range(args.max_steps):
-            sd = obs["sensor_data"]
-            oh_h.append(prep_img(sd["overhead"]["rgb"][0].cpu().numpy(), cfg.img_size))
-            wr_h.append(prep_img(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
-            st_h.append(build_obs(u).astype(np.float32))
-            for h in (oh_h, wr_h, st_h):
-                if len(h) > cfg.hist:
-                    h.pop(0)
-            while len(oh_h) < cfg.hist:
-                oh_h.insert(0, oh_h[0]); wr_h.insert(0, wr_h[0]); st_h.insert(0, st_h[0])
 
-            tcp = u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
-            # --- 纯模型前向（与 eval_vision_geo --near 0 完全一致）---
-            with torch.no_grad():
-                pred, _, _ = model(
-                    torch.from_numpy(np.stack(oh_h)[None]).float().to(device),
-                    torch.from_numpy(np.stack(wr_h)[None]).float().to(device),
-                    torch.from_numpy(ns.obs(np.stack(st_h).astype(np.float32))[None]).float().to(device),
-                    torch.tensor([INSTR_ID[args.instruction]], device=device))
-            p4 = pred[0, 0].cpu().numpy()
-            model_tgt = np.clip(na.unact(p4[:3]), -2, 2).astype(np.float64)
-            model_logit = float(p4[3])
+def collect_episode(args, ep, mode, seed_i, model, cfg, ns, na, device, out_dir) -> dict:
+    """mode='model'：执行纯模型；mode='teacher'：执行 HybridTeacher（DAgger 聚合）。
 
-            # --- teacher 在同一条观测上打标（DAgger）---
-            _, label = teacher.act(obs)
-            teacher_tgt = np.asarray(label[:3], dtype=np.float64)
-            teacher_grip = 1.0 if float(label[3]) < 0 else 0.0
+    两者都在同一条观测上记录 (模型目标, teacher 目标)。teacher 轨迹提供近距
+    抓取/搬运阶段的密集监督，纯模型轨迹提供 on-policy 失败状态。
+    """
+    env, obs = make_env(args, seed_i)
+    u = env.unwrapped
+    kind = select_kind(model, cfg, ns, obs, u, args.instruction, device)
+    teacher = HybridTeacher(env, args.ckpt, args.instruction, device=device)
+    if args.fix_norm:
+        teacher.ns = safe_normalizer(teacher.ns)   # teacher 内部也用同一套修复（不改它源码）
+    teacher.selected = kind  # 选择对齐：同一个模型、同一个观测 → 同一颗水果
 
-            rec["state"].append(ns.obs(st_h[-1][None])[0].astype(np.float32))
-            rec["model_tgt"].append(model_tgt.astype(np.float32))
-            rec["model_logit"].append(np.float32(model_logit))
-            rec["teacher_tgt"].append(teacher_tgt.astype(np.float32))
-            rec["teacher_grip"].append(np.float32(teacher_grip))
+    oh_h, wr_h, st_h = [], [], []
+    rec = {k: [] for k in ("state", "model_tgt", "model_logit", "teacher_tgt", "teacher_grip",
+                            "tcp", "fruit")}
+    info, t = {}, 0
+    for t in range(args.max_steps):
+        sd = obs["sensor_data"]
+        oh_h.append(prep_img(sd["overhead"]["rgb"][0].cpu().numpy(), cfg.img_size))
+        wr_h.append(prep_img(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
+        st_h.append(build_obs(u).astype(np.float32))
+        for h in (oh_h, wr_h, st_h):
+            if len(h) > cfg.hist:
+                h.pop(0)
+        while len(oh_h) < cfg.hist:
+            oh_h.insert(0, oh_h[0]); wr_h.insert(0, wr_h[0]); st_h.insert(0, st_h[0])
 
+        tcp = u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
+        # --- 纯模型前向（与 eval_vision_geo --near 0 完全一致）---
+        with torch.no_grad():
+            pred, _, _ = model(
+                torch.from_numpy(np.stack(oh_h)[None]).float().to(device),
+                torch.from_numpy(np.stack(wr_h)[None]).float().to(device),
+                torch.from_numpy(ns.obs(np.stack(st_h).astype(np.float32))[None]).float().to(device),
+                torch.tensor([INSTR_ID[args.instruction]], device=device))
+        p4 = pred[0, 0].cpu().numpy()
+        model_tgt = np.clip(na.unact(p4[:3]), -2, 2).astype(np.float64)
+        model_logit = float(p4[3])
+
+        # --- teacher 在同一条观测上打标（DAgger）---
+        t_cmd, label = teacher.act(obs)
+        teacher_tgt = np.asarray(label[:3], dtype=np.float64)
+        teacher_grip = 1.0 if float(label[3]) < 0 else 0.0
+
+        rec["state"].append(ns.obs(st_h[-1][None])[0].astype(np.float32))
+        rec["model_tgt"].append(model_tgt.astype(np.float32))
+        rec["model_logit"].append(np.float32(model_logit))
+        rec["teacher_tgt"].append(teacher_tgt.astype(np.float32))
+        rec["teacher_grip"].append(np.float32(teacher_grip))
+        rec["tcp"].append(tcp.astype(np.float32))
+        rec["fruit"].append(u.fruit_actors[kind].pose.p[0].cpu().numpy().astype(np.float32))
+
+        if mode == "teacher":
+            obs, _, term, trunc, info = env.step(t_cmd)
+        else:
             grip = -1.0 if model_logit > 0 else 1.0   # 纯模型夹爪：logit 符号
             obs, _, term, trunc, info = env.step(to_cmd(model_tgt, tcp, grip))
-            if bool(info.get("success") or info.get("fail")):
-                break
+        if bool(info.get("success") or info.get("fail")):
+            break
 
-        ok = bool(info.get("success", False))
-        arrs = {k: np.asarray(v, dtype=np.float32) for k, v in rec.items()}
-        arrs["kind_slot"] = np.full(len(arrs["state"]), KIND_SLOT.get(kind, 0), dtype=np.int64)
-        arrs["success"] = np.array(ok)
-        np.savez_compressed(out_dir / f"ep_{ep:03d}.npz", **arrs)
-        d = np.linalg.norm(arrs["teacher_tgt"] - arrs["model_tgt"], axis=1)
-        print(f"[{'✓' if ok else '✗'}] ep {ep:02d} kind={kind} steps={t + 1} "
-              f"|Δxyz| mean={d.mean():.3f} m  p90={np.percentile(d, 90):.3f}  "
-              f"teacher_close={arrs['teacher_grip'].mean() * 100:.0f}%  "
-              f"model_close={(arrs['model_logit'] > 0).mean() * 100:.0f}%")
-        eps.append({"episode": ep, "success": ok, "steps": t + 1, "kind": kind,
-                    "n": int(len(d)), "delta_mean": float(d.mean())})
-        env.close()
-    return eps
+    ok = bool(info.get("success", False))
+    arrs = {k: np.asarray(v, dtype=np.float32) for k, v in rec.items()}
+    arrs["kind_slot"] = np.full(len(arrs["state"]), KIND_SLOT.get(kind, 0), dtype=np.int64)
+    arrs["success"] = np.array(ok)
+    arrs["source"] = np.array(mode)
+    np.savez_compressed(out_dir / f"ep_{ep:03d}.npz", **arrs)
+    d = np.linalg.norm(arrs["teacher_tgt"] - arrs["model_tgt"], axis=1)
+    print(f"[{'✓' if ok else '✗'}] ep {ep:02d} {mode:7s} kind={kind} steps={t + 1} "
+          f"|Δxyz| mean={d.mean():.3f} m  p90={np.percentile(d, 90):.3f}  "
+          f"teacher_close={arrs['teacher_grip'].mean() * 100:.0f}%  "
+          f"model_close={(arrs['model_logit'] > 0).mean() * 100:.0f}%")
+    env.close()
+    return {"episode": ep, "mode": mode, "success": ok, "steps": t + 1, "kind": kind,
+            "n": int(len(d)), "delta_mean": float(d.mean())}
+
 
 
 # ---------------------------------------------------------------------- #
@@ -179,8 +200,13 @@ def train(args, eps_meta: list[dict], device) -> dict:
     ds = sorted((Path(args.out) / "dataset").glob("ep_*.npz"))
     data = [np.load(f) for f in ds]
     n_ep = len(data)
-    n_val = max(1, int(round(n_ep * args.val_frac)))
-    val_idx = set(range(n_ep - n_val, n_ep))  # 按 episode 划分，最后 n_val 条做验证
+    # 按 episode 划分验证集，且按数据来源分层（纯模型 / teacher 各留一部分）
+    src = [str(d["source"]) for d in data]
+    val_idx = set()
+    for s in ("model", "teacher"):
+        idx = [i for i in range(n_ep) if src[i] == s]
+        k = max(1, int(round(len(idx) * args.val_frac))) if len(idx) > 1 else 0
+        val_idx |= set(idx[-k:]) if k else set()
 
     def stack(idx):
         st = np.concatenate([data[i]["state"] for i in idx])
@@ -193,9 +219,12 @@ def train(args, eps_meta: list[dict], device) -> dict:
 
     tr = [i for i in range(n_ep) if i not in val_idx]
     te = [i for i in range(n_ep) if i in val_idx]
+    if not tr or not te:   # 数据太少（链路自检情形）：全部当训练，同时全部当验证
+        tr, te = list(range(n_ep)), list(range(n_ep))
     st_tr, mt_tr, ml_tr, tt_tr, tg_tr, oh_tr = stack(tr)
     st_te, mt_te, ml_te, tt_te, tg_te, oh_te = stack(te)
-    print(f"训练样本 {len(st_tr)}（{len(tr)} ep）/ 验证 {len(st_te)}（{len(te)} ep）")
+    print(f"训练样本 {len(st_tr)}（{len(tr)} ep）/ 验证 {len(st_te)}（{len(te)} ep）"
+          f"  来源: 纯模型 {src.count('model')} ep, teacher {src.count('teacher')} ep")
 
     cfg = ResidualConfig(obs_dim=st_tr.shape[1], n_kinds=oh_tr.shape[1],
                          hidden=args.hidden, max_pos=args.max_pos, max_grip=args.max_grip)
@@ -225,7 +254,7 @@ def train(args, eps_meta: list[dict], device) -> dict:
             loss = F.mse_loss(dxyz, d_tgt_tr[idx]) + args.grip_w * F.binary_cross_entropy_with_logits(
                 t["ml"][idx] + dgrip, t["tg"][idx])
             opt.zero_grad(); loss.backward(); opt.step()
-            tot += float(loss) * len(idx)
+            tot += float(loss.detach()) * len(idx)
         sched.step()
         net.eval()
         with torch.no_grad():
@@ -266,6 +295,11 @@ def main() -> None:
     ap.add_argument("--instruction", default="apple",
                     choices=["all", "apple", "strawberry", "banana", "pear"])
     ap.add_argument("--episodes", type=int, default=10)
+    ap.add_argument("--teacher-episodes", type=int, default=6,
+                    help="额外用 teacher 自己跑闭环采数据（DAgger 聚合，提供近距/搬运监督）")
+    ap.add_argument("--fix-norm", action="store_true", default=True,
+                    help="修掉状态归一化的退化维度（默认开；关掉可复现 0/5 的饱和输出）")
+    ap.add_argument("--no-fix-norm", dest="fix_norm", action="store_false")
     ap.add_argument("--belt-speed", type=float, default=0.06)
     ap.add_argument("--spawn-x", type=float, default=-0.75)
     ap.add_argument("--spawn-spacing", type=float, default=0.45)
@@ -285,10 +319,17 @@ def main() -> None:
     Path(args.out).mkdir(parents=True, exist_ok=True)
 
     model, cfg, ns, na = load_policy(args.ckpt, args.device)
+    if args.fix_norm:
+        ns = safe_normalizer(ns)
+        print(f"状态归一化：忽略退化维度 {ns.degenerate_dims}")
+    else:
+        print("状态归一化：原样使用（含退化维度，模型输出会饱和）")
     t0 = time.time()
     eps_meta = collect(args, model, cfg, ns, na, args.device)
-    print(f"采集耗时 {time.time() - t0:.0f}s，纯模型成功率 "
-          f"{sum(e['success'] for e in eps_meta)}/{len(eps_meta)}")
+    n_model = [e for e in eps_meta if e["mode"] == "model"]
+    n_teach = [e for e in eps_meta if e["mode"] == "teacher"]
+    print(f"采集耗时 {time.time() - t0:.0f}s；纯模型 {sum(e['success'] for e in n_model)}/{len(n_model)}，"
+          f"teacher {sum(e['success'] for e in n_teach)}/{len(n_teach)}")
     train(args, eps_meta, args.device)
 
 

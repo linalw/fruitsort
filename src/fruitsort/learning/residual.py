@@ -25,6 +25,7 @@
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -101,6 +102,28 @@ class ResidualRefiner(nn.Module):
         return (np.asarray(model_tgt, dtype=np.float64) + dxyz[0].cpu().numpy().astype(np.float64),
                 float(model_logit) + float(dgrip[0].item()),
                 dxyz[0].cpu().numpy(), float(dgrip[0].item()))
+
+
+# ---------------------------------------------------------------------- #
+# 归一化修复
+# ---------------------------------------------------------------------- #
+def safe_normalizer(ns, floor: float = 1e-3):
+    """修掉状态归一化里的退化维度（**不改现有代码**，只在本地拷贝上打补丁）。
+
+    训练集里恒定的观测维度 std == 1e-6（Normalizer 的 eps），推理时只要该维度
+    的值与训练集均值不同，就会被放大到 1e6 量级。`runs/vpolicy-4c-v3` 的
+    `pear_active`（索引 47）就是这种维度：四个数据集的 active_kinds 都含梨 →
+    恒为 1.0，而评测只用 apple+strawberry → 值 0.0 → 归一化后 -1e6 → 策略输出
+    饱和成常数 [2,-2,-2]、夹爪 logit ≈ 700，整条闭环 0/5。
+
+    这里把退化的维度置成恒等（mean=0, std=1），即"忽略该维度"。
+    """
+    out = copy.copy(ns)
+    bad = np.asarray(ns.obs_std) < floor
+    out.obs_mean = np.where(bad, 0.0, np.asarray(ns.obs_mean))
+    out.obs_std = np.where(bad, 1.0, np.asarray(ns.obs_std))
+    out.degenerate_dims = np.flatnonzero(bad).tolist()
+    return out
 
 
 # ---------------------------------------------------------------------- #

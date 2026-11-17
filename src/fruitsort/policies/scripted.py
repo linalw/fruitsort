@@ -178,13 +178,17 @@ class ScriptedSorter:
                 self.missed.add(self.target)
                 self.state = "WAIT"
                 return self._home()
-            # 下探时用短预瞄，避免超前于物体
-            x_g = float(np.clip(p[0] + v[0] * 0.12, self.u.pick_zone[0] - 0.02, self.u.pick_zone[1]))
+            # 下探预瞄随带速自适应：高速时目标要更靠前，否则永远追不上
+            speed = float(self.u.belt_speed[0])
+            lead_desc = 0.12 if speed < 0.15 else (0.20 if speed < 0.25 else 0.28)
+            x_g = float(np.clip(p[0] + v[0] * lead_desc, self.u.pick_zone[0] - 0.02, self.u.pick_zone[1]))
             y_g = p[1]
             grasp_z = p[2] + cfg.grasp_depth
             tcp = self._tcp()
             # 香蕉/梨较薄，且下探会顶到带面：放宽触底判定，避免永远不闭爪
             tol = 0.03 if self.only_kind in ("banana", "pear") else 0.018
+            if speed >= 0.15:
+                tol = max(tol, 0.055)  # 高速：每步水果移动 1cm，容差必须放宽
             aligned = abs(x_g - tcp[0]) < tol and abs(y_g - tcp[1]) < tol
             if tcp[2] <= grasp_z + (0.045 if self.only_kind in ("banana", "pear") else 0.015) and aligned:
                 self.state = "CLOSE"

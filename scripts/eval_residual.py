@@ -24,7 +24,7 @@ import torch
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.eval import format_summary, summarize
 from fruitsort.learning.bc import Normalizer, build_obs
-from fruitsort.learning.residual import load_residual, onehot
+from fruitsort.learning.residual import load_residual, onehot, safe_normalizer
 from fruitsort.models.vision_policy import MultiViewTemporalPolicy, PolicyConfig
 from fruitsort.policies.scripted import HOME_EULER
 
@@ -186,6 +186,11 @@ def main() -> None:
     ap.add_argument("--spawn-spacing", type=float, default=0.45)
     ap.add_argument("--seed", type=int, default=400)
     ap.add_argument("--max-steps", type=int, default=1200)
+    ap.add_argument("--fix-norm", action="store_true", default=True,
+                    help="修掉状态归一化的退化维度（默认开）")
+    ap.add_argument("--no-fix-norm", dest="fix_norm", action="store_false")
+    ap.add_argument("--broken-norm", action="store_true",
+                    help="额外跑一组「原样归一化」（复现 0/5 的退化情形）作诊断")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -194,6 +199,10 @@ def main() -> None:
     model = MultiViewTemporalPolicy(cfg).to(args.device)
     model.load_state_dict(ck["model"]); model.eval()
     ns = Normalizer.from_state(ck["norm_state"]); na = Normalizer.from_state(ck["norm_act"])
+    ns_broken = ns
+    if args.fix_norm:
+        ns = safe_normalizer(ns)
+        print(f"状态归一化：忽略退化维度 {ns.degenerate_dims}")
 
     residual = None
     if args.residual.lower() not in ("none", ""):
@@ -203,14 +212,20 @@ def main() -> None:
 
     out = {"ckpt": str(args.ckpt), "residual": str(args.residual), "instruction": args.instruction,
            "episodes": args.episodes, "belt_speed": args.belt_speed, "spawn_x": args.spawn_x,
-           "seed": args.seed, "groups": {}}
+           "seed": args.seed, "fix_norm": args.fix_norm, "groups": {}}
+    if args.broken_norm:
+        b = run_group(False, args, model, cfg, ns_broken, na, None)
+        out["groups"]["model_only_broken_norm"] = {"summary": summarize(b), "episodes": b}
     base = run_group(False, args, model, cfg, ns, na, None)
     out["groups"]["model_only"] = {"summary": summarize(base), "episodes": base}
     if residual is not None:
         res = run_group(True, args, model, cfg, ns, na, residual)
         out["groups"]["model_residual"] = {"summary": summarize(res), "episodes": res}
 
-    print("\n===== 纯模型（无任何几何伺服/脚本执行器）=====")
+    if args.broken_norm:
+        print("\n===== 纯模型（原样归一化，退化维度放大 1e6）=====")
+        print(format_summary(out["groups"]["model_only_broken_norm"]["summary"]))
+    print("===== 纯模型（修掉退化维度，无任何几何伺服/脚本执行器）=====")
     print(format_summary(out["groups"]["model_only"]["summary"]))
     if residual is not None:
         print("===== 模型 + 学习式残差 =====")
