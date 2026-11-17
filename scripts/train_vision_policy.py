@@ -34,6 +34,7 @@ def main() -> None:
     ap.add_argument("--future", type=int, default=3)
     ap.add_argument("--future-weight", type=float, default=0.2)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--delay-prob", type=float, default=0.0, help="延迟增强概率（替换最后一帧）")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
@@ -45,7 +46,8 @@ def main() -> None:
         p = Path(d)
         data_dirs.append(p if p.is_absolute() else ROOT / p)
 
-    ds = ImageDemoDataset(data_dirs, hist=args.hist, chunk=args.chunk, future=args.future)
+    ds = ImageDemoDataset(data_dirs, hist=args.hist, chunk=args.chunk, future=args.future,
+                          delay_prob=args.delay_prob)
     n_val = max(1, int(len(ds) * 0.15))
     train_idx = list(range(0, len(ds) - n_val))
     val_idx = list(range(len(ds) - n_val, len(ds)))

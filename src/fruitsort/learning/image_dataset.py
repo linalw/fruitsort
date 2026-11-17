@@ -21,8 +21,9 @@ def _decode(buf: bytes) -> np.ndarray:
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0):
         self.hist, self.chunk, self.future = hist, chunk, future
+        self.delay_prob = delay_prob
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
         for d in dirs:
@@ -60,7 +61,12 @@ class ImageDemoDataset(Dataset):
 
         oh = ep["oh"][idx].astype(np.float32) / 255.0
         wr = ep["wr"][idx].astype(np.float32) / 255.0 if ep["wr"] is not None else oh
-        states = ep["obs"][idx]
+        states = ep["obs"][idx].copy()
+        # 延迟增强：随机把最后一帧替换成上一帧，模拟 1 帧推理/感知延迟
+        if self.delay_prob > 0 and np.random.rand() < self.delay_prob:
+            if len(oh) > 1:
+                oh[-1] = oh[-2]
+                states[-1] = states[-2]
 
         # 动作块（末尾重复）
         K = self.chunk
