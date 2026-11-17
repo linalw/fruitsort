@@ -1,0 +1,1 @@
+scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06

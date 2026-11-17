@@ -73,8 +73,28 @@ Fruitsort/
 | `python scripts/new_run.py --name <名> [-c cfg.yaml]` | 新建一次实验目录 + 登记 |
 | `python scripts/arxiv_digest.py` | 抓 cs.RO 新论文，生成 `notes/digests/<日期>.md`（去重） |
 | `bash scripts/fetch_weights.sh <url> <file>` | 断点续传下载权重到 `data/checkpoints/` |
+| `python scripts/demo.py` | 跑仿真 + 录制视频（`--kinds` 选水果） |
+| `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
 
 `Makefile` 里提供了短命令：`make doctor` / `make digest` / `make run NAME=xxx`。
+
+## 仿真与评测（v0.2）
+
+```bash
+source scripts/env.sh maniskill3
+python scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06
+```
+
+- 环境：`FruitSort-v1`（`src/fruitsort/sim/tasks/fruit_sort.py`），控制模式 `pd_ee_pose`（20 Hz）。
+- 资产：`assets/meshes/*.glb` 由 `python -m fruitsort.sim.assets.fruit_meshes` 生成。
+- 结果：`runs/<id>/metrics.json`，协议见 `docs/benchmark.md`。
+- 修改网格后必须 `build_all(force=True)`；否则沿用旧 GLB。
+
+## 版本与发布约定
+
+- 语义化版本：`vMAJOR.MINOR.PATCH`，tag 与 `CHANGELOG.md` 同步。
+- 每个版本写 GitHub Release，内容包含：做了什么 / 怎么验证 / 结果数字 / 已知问题 / 下一步。
+- 破坏性改动（场景布局、动作空间、成功判据）必须升 MINOR 并在 `docs/decisions.md` 记录。
 
 ## 可用能力（MCP / Skills）
 

@@ -1,54 +1,73 @@
 # Fruitsort
 
-机器人水果分拣的具身智能研究：感知 → 抓取 → 操作策略（模仿学习 / VLA）→ 真机评测。
+**动态传送带水果分拣**的具身智能研究项目：单 Franka Panda 从运动中的传送带上抓取苹果 / 草莓 / 香蕉 / 梨，
+按类别放入料框。仓库包含可复现的 ManiSkill3 仿真、程序化水果资产、预测拦截基线、基准评测与论文笔记。
 
-本仓库只做**研究工程化**：统一环境、实验管理、数据落盘、文献沉淀。算法代码放 `src/fruitsort/`。
+![demo](assets/videos/demo_pair.gif)
+
+## 当前结果（v0.2.0）
+
+| 场景 | 成功率 | 95% CI | 平均耗时 |
+| --- | --- | --- | --- |
+| 苹果 + 草莓（10 episodes） | **100%** (10/10) | 72.2–100% | 18.5 s |
+| 苹果单类（6） | 100% (6/6) | 61.0–100% | 10.9 s |
+| 草莓单类（6） | 100% (6/6) | 61.0–100% | 10.6 s |
+| 香蕉单类（6） | 33.3% (2/6) | 9.7–70.0% | 36.8 s |
+| 梨单类（6） | 50.0% (3/6) | 18.8–81.2% | 36.4 s |
+
+> 基线是**脚本专家 + 仿真真值位姿**（性能上界与示教源）。香蕉/梨的滑落是 v0.3 的主要改进点。
 
 ## 快速开始
 
 ```bash
-# 1. 环境（非交互 shell 必须，ros2 才会进 PATH）
-source scripts/env.sh maniskill3
+source scripts/env.sh maniskill3    # ROS 2 Humble + conda 环境
+make doctor                          # 环境体检 → docs/env-report.md
 
-# 2. 体检，生成 docs/env-report.md
-make doctor
+# 跑一段演示并录像
+python scripts/demo.py --kinds apple strawberry --belt-speed 0.06 \
+    --video data/eval/demo.mp4
 
-# 3. 新建一次实验（自动生成 meta/config/cmd/metrics/notes 并登记）
-make run NAME=baseline-dp
-
-# 4. 文献日报（去重，写入 notes/digests/）
-make digest
+# 基准评测
+python scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06
+python scripts/benchmark.py --scenario per_class --episodes 6
 ```
 
-## 目录
+## 系统结构
+
+```
+感知（v0.3: RGB-D） → 目标选择（TTC + 可达性） → 拦截点预测（恒速/卡尔曼）
+        → 抓取状态机（TRACK → DESCEND → CLOSE → CARRY → LOWER → RELEASE）
+        → 20 Hz 绝对位姿控制（Franka Panda）
+```
 
 | 路径 | 内容 |
 | --- | --- |
-| `AGENTS.md` | 机器环境、坑、工作约定（**先读这个**） |
-| `docs/task-spec.md` | 任务定义、成功判据、评测协议（待填） |
-| `docs/roadmap.md` | 四阶段研究路线与验收指标 |
-| `docs/baselines.md` | 感知/策略/VLA/仿真/数据集清单与复现状态 |
-| `docs/decisions.md` | 长期决策记录（D1：仿真优先） |
-| `docs/env-report.md` | `make doctor` 自动生成 |
-| `notes/papers/` | 论文笔记（`_template.md`） |
-| `notes/digests/` | arXiv 日报 |
-| `notes/ideas.md` | 想法与待验证假设 |
-| `runs/` | 实验：`<日期>-<简述>/`，`registry.csv` 总表 |
-| `src/fruitsort/` | 代码包：`paths`（路径）、`eval`（Wilson CI / episode 汇总） |
-| `data/` | 软链到 9.1T 盘：datasets / checkpoints / raw / rosbags / eval |
+| `src/fruitsort/sim/` | 仿真环境、传送带、料框、程序化水果资产 |
+| `src/fruitsort/policies/` | 脚本专家（预测拦截 + 抓放状态机） |
+| `src/fruitsort/eval.py` | Wilson 置信区间、episode 汇总 |
+| `scripts/benchmark.py` | 官方评测入口（per_class / pair / all4） |
+| `scripts/demo.py` | 运行 + 录像 |
+| `assets/meshes/` | 程序化生成的水果 GLB（可重建） |
+| `docs/` | 任务定义、方案、资产、基准、文献、ManiSkill3 API |
+| `notes/papers/` | 论文精读笔记（12 篇 + 补充） |
 
-## 本机环境
+## 文档
 
-RTX 5090 32GB（sm_120，需 CUDA 12.8+ torch）· 32 核 / 125GB · Ubuntu 22.04 · ROS 2 Humble。
-已有环境：`maniskill3`（仿真）、`dynvla`（LeRobot 0.3.3）、`dynvla-sim51`（Isaac Lab）、`rtools`（剖析/可视化）。
-详见 `AGENTS.md`。
+- [解决方案与架构](docs/solution-architecture.md) — 分层、选型、论文→模块映射
+- [任务定义](docs/task-spec.md) — 成功判据、动作空间、评测协议
+- [仿真资产](docs/sim-assets.md) — 水果尺寸/质量/摩擦、机器人、传送带
+- [基准结果](docs/benchmark.md) — 协议、数字、失败模式
+- [研究路线图](docs/roadmap.md) / [决策记录](docs/decisions.md)
+- [动态抓取文献综述](docs/literature-dynamic-grasping.md)
+- [ManiSkill3 自定义任务 API](docs/maniskill3-api.md)
+- [环境与约定](AGENTS.md)
 
-## 指标约定
+## 版本管理
 
-所有评测用 `fruitsort.eval.summarize` 产出，写入对应 run 的 `metrics.json`：
+- 语义化版本 + git tag（`v0.1.0` / `v0.2.0` …），每个版本对应一个 GitHub Release。
+- 详细变更见 [CHANGELOG.md](CHANGELOG.md)；Release 描述包含「做了什么 / 怎么验证 / 已知问题 / 下一步」。
 
-```python
-from fruitsort.eval import summarize, format_summary
-print(format_summary(summarize(episodes)))
-# 47/50 = 94.0% (95% CI 83.8–97.9%), 平均 5.82s/次
-```
+## 环境
+
+RTX 5090 32GB（sm_120，需 CUDA 12.8+ 的 torch）· Ubuntu 22.04 · ROS 2 Humble ·
+conda 环境 `maniskill3`（ManiSkill3 3.0.1 / SAPIEN 3.0.3）。

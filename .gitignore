@@ -32,3 +32,6 @@ notes/digests/.seen.json
 # 临时文件
 *.log
 !runs/**/*.log
+
+# 论文 PDF 本地保存，不入库（笔记见 notes/papers/*.md）
+notes/papers/*.pdf

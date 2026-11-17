@@ -1,0 +1,198 @@
+{
+  "scenario": "pair",
+  "belt_speed_nominal": 0.06,
+  "episodes": 10,
+  "overall": {
+    "n_episodes": 10,
+    "n_success": 10,
+    "success_rate": 1.0,
+    "success_rate_ci95": [
+      0.7225,
+      1.0
+    ],
+    "avg_duration_s": 18.49,
+    "failure_counts": {}
+  },
+  "per_combo": {
+    "apple+strawberry": {
+      "n_episodes": 10,
+      "n_success": 10,
+      "success_rate": 1.0,
+      "success_rate_ci95": [
+        0.7225,
+        1.0
+      ],
+      "avg_duration_s": 18.49,
+      "failure_counts": {}
+    }
+  },
+  "per_class": {},
+  "records": [
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 0,
+      "success": true,
+      "steps": 375,
+      "done": [
+        "apple"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 0
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 1,
+      "success": true,
+      "steps": 385,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 1
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 2,
+      "success": true,
+      "steps": 364,
+      "done": [
+        "apple"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 2
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 3,
+      "success": true,
+      "steps": 356,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 3
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 4,
+      "success": true,
+      "steps": 366,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 4
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 5,
+      "success": true,
+      "steps": 352,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 5
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 6,
+      "success": true,
+      "steps": 369,
+      "done": [
+        "apple"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 6
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 7,
+      "success": true,
+      "steps": 374,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 7
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 8,
+      "success": true,
+      "steps": 376,
+      "done": [
+        "apple",
+        "strawberry"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 8
+    },
+    {
+      "kinds": [
+        "apple",
+        "strawberry"
+      ],
+      "seed": 9,
+      "success": true,
+      "steps": 381,
+      "done": [
+        "apple"
+      ],
+      "missed": [],
+      "dropped": false,
+      "belt_speed": 0.05999999865889549,
+      "episode": 9
+    }
+  ]
+}
