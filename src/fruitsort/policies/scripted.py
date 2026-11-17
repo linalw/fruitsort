@@ -239,7 +239,7 @@ class ScriptedSorter:
             # 先带前馈地抬离带面：水平跟一小段带速，减少"抓握 vs 带面拖拽"的相对滑移
             if tcp[2] < self.u.belt_top_z + 0.13 and self.counter < 40:
                 vbelt = float(self.u.belt_speed[0])
-                dz = 0.01 if self.only_kind == "pear" else 0.02
+                dz = 0.01 if self.only_kind in ("banana", "pear") else 0.02
                 return self._action([tcp[0] + vbelt * 0.033 * 1.2, tcp[1], tcp[2] + dz], gripper=-1.0)
             vx, vy = cfg.via_point
             if abs(tcp[0] - vx) > 0.06 or abs(tcp[1] - vy) > 0.06:
