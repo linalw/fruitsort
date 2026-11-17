@@ -2,5 +2,5 @@
 
 from .paths import ROOT, data_dir, ckpt_dir, runs_dir, new_run_dir, latest_run
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 __all__ = ["ROOT", "data_dir", "ckpt_dir", "runs_dir", "new_run_dir", "latest_run", "__version__"]

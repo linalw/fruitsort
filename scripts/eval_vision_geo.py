@@ -61,7 +61,8 @@ def main() -> None:
     ap.add_argument("--belt-speed", type=float, default=0.06)
     ap.add_argument("--seed", type=int, default=300)
     ap.add_argument("--max-steps", type=int, default=1200)
-    ap.add_argument("--near", type=float, default=0.45)
+    ap.add_argument("--near", type=float, default=0.45, help="<=0 表示禁用近距伺服，全用模型")
+    ap.add_argument("--grip", choices=["geo", "model"], default="geo")
     ap.add_argument("--lead", type=float, default=0.10)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
@@ -137,7 +138,7 @@ def main() -> None:
                         tgt, grip = np.array([bx, by, 0.60]), 1.0
                     else:
                         tgt, grip = np.array([bx, by, 0.60 if not over else 0.48]), -1.0
-            elif dist <= args.near and fp[2] > 0.3:
+            elif args.near > 0 and dist <= args.near and fp[2] > 0.3:
                 tgt = fp + fv * args.lead
                 grip = -1.0 if (dist < 0.05 and in_zone) else 1.0
             else:
@@ -147,8 +148,9 @@ def main() -> None:
                 with torch.no_grad():
                     pred, _, sel = model(oh_t, wr_t, st_t,
                                          torch.tensor([INSTR_ID[args.instruction]], device=args.device))
-                tgt = np.clip(na.unact(pred[0, 0, :3].cpu().numpy()), -2, 2)
-                grip = 1.0
+                p4 = pred[0, 0].cpu().numpy()
+                tgt = np.clip(na.unact(p4[:3]), -2, 2)
+                grip = (-1.0 if p4[3] > 0 else 1.0) if args.grip == "model" else 1.0
                 selections.append(int(sel[0].argmax().item()))
 
             close_streak = close_streak + 1 if grip < 0 else 0

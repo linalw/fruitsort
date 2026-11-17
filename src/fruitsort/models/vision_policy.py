@@ -82,6 +82,8 @@ class MultiViewTemporalPolicy(nn.Module):
 
         self.act_head = nn.Linear(d, cfg.chunk * 3)
         self.grip_head = nn.Linear(d, cfg.chunk)  # 夹爪单独一个头，避免被 xyz 回归淹没
+        with torch.no_grad():
+            self.grip_head.bias.fill_(-1.5)  # 初始偏向"开"（闭合仅占 ~18%）
         self.future_head = nn.Linear(d, cfg.future_steps * 4 * 6)  # 固定 4 类水果
         self._init_weights()
 
@@ -149,6 +151,9 @@ class MultiViewTemporalPolicy(nn.Module):
         sel_logits = scores
 
         act_xyz = self.act_head(z).view(B, self.cfg.chunk, 3)
+        # z 用相对 TCP 的残差：打破"悬停不动点"（绝对值回归会被悬停帧主导）
+        act_xyz = torch.cat(
+            [act_xyz[..., :2], act_xyz[..., 2:3] + states[:, -1, 2].view(B, 1, 1)], dim=-1)
         grip = self.grip_head(z).view(B, self.cfg.chunk, 1)
         act = torch.cat([act_xyz, grip], dim=-1)
         future = self.future_head(z).view(B, self.cfg.future_steps, 4 * 6)

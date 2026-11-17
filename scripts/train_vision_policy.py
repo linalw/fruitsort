@@ -102,7 +102,7 @@ def main() -> None:
             idx_map = torch.tensor([0, 0, 1, 2, 3], device=kind.device)
             fidx = idx_map[kind]
             loss = mse(pred_a[:, :, :3], act[:, :, :3]) \
-                + 2.0 * torch.nn.functional.binary_cross_entropy_with_logits(pred_a[:, :, 3], act[:, :, 3]) \
+                + 2.0 * torch.nn.functional.binary_cross_entropy_with_logits(pred_a[:, :, 3], act[:, :, 3], pos_weight=torch.tensor(4.5, device=act.device)) \
                 + 0.5 * torch.nn.functional.cross_entropy(sel, fidx) \
                 + args.future_weight * mse(pred_f, fut)
             opt.zero_grad(); loss.backward()
@@ -121,7 +121,7 @@ def main() -> None:
                 idx_map = torch.tensor([0, 0, 1, 2, 3], device=kind.device)
                 fidx = idx_map[kind]
                 vl = mse(pred_a[:, :, :3], va[:, :, :3]) \
-                    + 2.0 * torch.nn.functional.binary_cross_entropy_with_logits(pred_a[:, :, 3], va[:, :, 3]) \
+                    + 2.0 * torch.nn.functional.binary_cross_entropy_with_logits(pred_a[:, :, 3], va[:, :, 3], pos_weight=torch.tensor(4.5, device=va.device)) \
                     + 0.5 * torch.nn.functional.cross_entropy(sel, fidx) \
                     + args.future_weight * mse(pred_f, b["future"].to(args.device))
                 vt += float(vl) * len(oh); vn += len(oh)
