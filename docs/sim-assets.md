@@ -37,6 +37,14 @@
 | 料框 | 4 个，0.24 × 0.24 × 0.22 m，壁厚 8 mm，彩色边沿区分类别 |
 | 料框位置 | 苹果 (−0.46, −0.28)、草莓 (−0.46, −0.60)、香蕉 (0.46, −0.28)、梨 (0.46, −0.60) |
 
+## 场景图
+
+| 视角 | 图 |
+| --- | --- |
+| 全景（人眼相机，机器人 + 传送带 + 四个料框） | ![overview](../assets/images/scene_overview.png) |
+| 俯视感知相机（overhead，注意画面相对世界旋转约 45°，单应矩阵已补偿） | ![overhead](../assets/images/view_overhead.png) |
+| 侧视相机（side） | ![side](../assets/images/view_side.png) |
+
 ## 相机
 
 | 名称 | 位置（look_at） | 分辨率 | FOV |
