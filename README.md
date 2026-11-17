@@ -28,6 +28,7 @@ make digest
 | `docs/task-spec.md` | 任务定义、成功判据、评测协议（待填） |
 | `docs/roadmap.md` | 四阶段研究路线与验收指标 |
 | `docs/baselines.md` | 感知/策略/VLA/仿真/数据集清单与复现状态 |
+| `docs/decisions.md` | 长期决策记录（D1：仿真优先） |
 | `docs/env-report.md` | `make doctor` 自动生成 |
 | `notes/papers/` | 论文笔记（`_template.md`） |
 | `notes/digests/` | arXiv 日报 |

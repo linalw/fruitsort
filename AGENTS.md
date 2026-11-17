@@ -5,6 +5,8 @@
 ## 研究目标（待细化）
 
 机器人水果分拣：感知（检测/位姿/成熟度）→ 抓取规划 → 操作策略（模仿学习 / VLA）→ 真机部署与评测。
+
+**当前策略：仿真优先，真机后接**（见 [`docs/decisions.md`](docs/decisions.md) D1）。
 任务定义、成功判据、评测协议见 [`docs/task-spec.md`](docs/task-spec.md)，路线见 [`docs/roadmap.md`](docs/roadmap.md)。
 
 ## 机器环境
