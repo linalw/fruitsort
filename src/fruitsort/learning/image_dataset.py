@@ -21,9 +21,10 @@ def _decode(buf: bytes) -> np.ndarray:
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
+        self.delta_actions = delta_actions
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
         for d in dirs:
@@ -74,6 +75,9 @@ class ImageDemoDataset(Dataset):
         if len(acts) < K:
             acts = np.concatenate([acts, np.repeat(acts[-1:], K - len(acts), axis=0)])
         acts[:, 3] = (acts[:, 3] < 0).astype(np.float32)  # 夹爪：闭=1 / 开=0
+        if self.delta_actions:
+            # 相对当前 TCP 的增量（消除"目标≈当前位姿"的悬停不动点）
+            acts[:, :3] = acts[:, :3] - ep["obs"][t, :3][None, :]
 
         # 未来 H 步的 4 类 [pos(3)+vel(3)]
         F = self.future

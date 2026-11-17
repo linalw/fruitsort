@@ -15,6 +15,42 @@
 
 ---
 
+## [0.9.0] - 2026-11-18
+
+### Added
+- **测试视频** `scripts/record_video.py` → `data/fruitsort/eval/model_demo_v08.mp4`
+  （798 帧 / 20 fps，四类各一次，4/4）
+- **扰动/泛化评测** `scripts/eval_disturbance.py`
+  （横向偏移 ±0.12 m / 带速抖动 ×U(0.8,1.2) / 1.5 N 侧推，四条件各 5/5）
+- **残差控制器**（智能体产出）：`learning/residual.py`（8068 参数，0.26 ms）、
+  `scripts/train_residual.py`、`scripts/eval_residual.py`
+- **delta 动作**：`--delta-actions` / `--delta`，预测相对 TCP 的增量
+- 控制频率参数 `--control-freq`（20/30/50 Hz）与速度自适应下探预瞄
+
+### Fixed
+- **传送带驱动上界 bug**：`belt_top+0.30` 会让已抓起/搬运中的水果继续被带面拖动；
+  改为 `+0.08`（高速滑落的主因之一）
+- **归一化退化维度**：训练集 `pear_active` 恒为 1，std≈0；2 类场景评测时被放大到 −1e6。
+  `Normalizer` 现在对 std 设 1e-3 下限
+
+### Results
+| 项 | 结果 |
+| --- | --- |
+| 测试视频 | 4/4，798 帧 |
+| 抗扰（0.08 m/s，四类） | none/offset/speed/push 全部 5/5 |
+| 0.30 m/s 苹果（scripted，30 Hz） | 6/6 = 100%，节拍 5.34 s |
+| 0.30 m/s 草莓 | 1/6（瓶颈） |
+| 纯策略（模型直接输出抓取/搬运） | 0/5；策略搬运片段 3/5 |
+| 残差控制器 | 0/5（基座不动点问题，已记录分析） |
+
+### Known Issues
+- 0.3 m/s 仅苹果稳定；草莓/整体未达 85%
+- 纯策略仍卡在"目标≈当前 TCP"的悬停不动点（delta 动作也未能完全消除）
+- 残差限幅 ±3 cm 无法改变吸引域；需要 (a) 修基座 z 头 (b) tcp 相对增量 (c) 在环 DAgger
+- 香蕉在 teacher 的远距分支会被带面走廊卡住（已定位）
+
+---
+
 ## [0.8.0] - 2026-11-18
 
 ### Changed

@@ -19,11 +19,12 @@ ACT_DIM = 4
 
 
 class Normalizer:
-    def __init__(self, obs: np.ndarray, act: np.ndarray, eps: float = 1e-6):
+    def __init__(self, obs: np.ndarray, act: np.ndarray, eps: float = 1e-3):
+        # std floor=1e-3：训练集里恒定的维度（如 pear_active）不再放大成 1e6
         self.obs_mean = obs.mean(0)
-        self.obs_std = obs.std(0) + eps
+        self.obs_std = np.maximum(obs.std(0), eps)
         self.act_mean = act.mean(0)
-        self.act_std = act.std(0) + eps
+        self.act_std = np.maximum(act.std(0), eps)
 
     def obs(self, x):
         return (x - self.obs_mean) / self.obs_std
@@ -41,8 +42,10 @@ class Normalizer:
     @classmethod
     def from_state(cls, d):
         obj = cls.__new__(cls)
-        obj.obs_mean = d["obs_mean"]; obj.obs_std = d["obs_std"]
-        obj.act_mean = d["act_mean"]; obj.act_std = d["act_std"]
+        obj.obs_mean = d["obs_mean"]
+        obj.obs_std = np.maximum(d["obs_std"], 1e-3)
+        obj.act_mean = d["act_mean"]
+        obj.act_std = np.maximum(d["act_std"], 1e-3)
         return obj
 
 

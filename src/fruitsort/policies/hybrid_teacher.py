@@ -26,7 +26,7 @@ def _prep(x, size):
 
 class HybridTeacher:
     def __init__(self, env, ckpt_path, instruction: str, device="cpu",
-                 near: float = 0.45, lead: float = 0.10):
+                 near: float = 0.45, lead: float = 0.10, max_step: float = 0.06):
         ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         self.cfg = PolicyConfig(**ck["cfg"])
         self.model = MultiViewTemporalPolicy(self.cfg).to(device)
@@ -35,7 +35,7 @@ class HybridTeacher:
         self.na = Normalizer.from_state(ck["norm_act"])
         self.env, self.u, self.device = env, env.unwrapped, device
         self.instruction = instruction
-        self.near, self.lead = near, lead
+        self.near, self.lead, self.max_step = near, lead, max_step
         self.reset()
 
     def reset(self):
@@ -127,8 +127,8 @@ class HybridTeacher:
         label = np.array([tgt[0], tgt[1], tgt[2], grip], dtype=np.float32)
         err = np.asarray(tgt) - tcp
         d = float(np.linalg.norm(err))
-        if d > MAX_STEP:
-            tgt = tcp + err / d * MAX_STEP
+        if d > self.max_step:
+            tgt = tcp + err / d * self.max_step
         cmd = np.array([tgt[1] + 0.5, -tgt[0], tgt[2], *HOME_EULER, grip], dtype=np.float32)
         return cmd, label
 

@@ -65,6 +65,7 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=1200)
     ap.add_argument("--near", type=float, default=0.45, help="<=0 表示禁用近距伺服，全用模型")
     ap.add_argument("--grip", choices=["geo", "model"], default="geo")
+    ap.add_argument("--delta", action="store_true", help="模型输出相对 TCP 的增量")
     ap.add_argument("--lead", type=float, default=0.10)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
@@ -152,7 +153,10 @@ def main() -> None:
                     pred, _, sel = model(oh_t, wr_t, st_t,
                                          torch.tensor([INSTR_ID[args.instruction]], device=args.device))
                 p4 = pred[0, 0].cpu().numpy()
-                tgt = np.clip(na.unact(p4[:3]), -2, 2)
+                tgt = na.unact(p4[:3])
+                if args.delta:
+                    tgt = tcp + tgt
+                tgt = np.clip(tgt, -2, 2)
                 grip = (-1.0 if p4[3] > 0 else 1.0) if args.grip == "model" else 1.0
                 selections.append(int(sel[0].argmax().item()))
 
@@ -171,7 +175,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "metrics.json").write_text(json.dumps(
         {"ckpt": str(args.ckpt), "instruction": args.instruction, "episodes": args.episodes,
-         "near": args.near, "lead": args.lead, "summary": s}, ensure_ascii=False, indent=2),
+         "near": args.near, "lead": args.lead, "delta": args.delta, "summary": s}, ensure_ascii=False, indent=2),
         encoding="utf-8")
 
 
