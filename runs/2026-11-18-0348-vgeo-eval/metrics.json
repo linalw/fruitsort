@@ -1,0 +1,18 @@
+{
+  "ckpt": "runs/vpolicy-4c-v3/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 4,
+  "near": 0.45,
+  "lead": 0.1,
+  "summary": {
+    "n_episodes": 4,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.4899
+    ],
+    "avg_duration_s": 60.0,
+    "failure_counts": {}
+  }
+}

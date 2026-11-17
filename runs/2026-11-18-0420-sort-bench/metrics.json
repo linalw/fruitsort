@@ -1,0 +1,63 @@
+{
+  "classes": [
+    "apple"
+  ],
+  "policy": "teacher",
+  "single_class": false,
+  "belt": 0.3,
+  "spawn_x": -0.55,
+  "overall": {
+    "n_episodes": 3,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.5615
+    ],
+    "avg_duration_s": 40.0,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "apple": {
+      "success": {
+        "n_episodes": 3,
+        "n_success": 0,
+        "success_rate": 0.0,
+        "success_rate_ci95": [
+          0.0,
+          0.5615
+        ],
+        "avg_duration_s": 40.0,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": null,
+      "p90_cycle_s": null
+    }
+  },
+  "records": [
+    {
+      "kind": "apple",
+      "episode": 0,
+      "success": false,
+      "selected": "apple",
+      "cycle_s": null,
+      "total_s": 40.0
+    },
+    {
+      "kind": "apple",
+      "episode": 1,
+      "success": false,
+      "selected": "apple",
+      "cycle_s": null,
+      "total_s": 40.0
+    },
+    {
+      "kind": "apple",
+      "episode": 2,
+      "success": false,
+      "selected": "apple",
+      "cycle_s": null,
+      "total_s": 40.0
+    }
+  ]
+}

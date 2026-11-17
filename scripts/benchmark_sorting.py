@@ -34,6 +34,7 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=1200)
     ap.add_argument("--device", default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     ap.add_argument("--policy", choices=["teacher", "scripted", "hybrid"], default="teacher")
+    ap.add_argument("--control-freq", type=int, default=20)
     ap.add_argument("--single-class", action="store_true", help="每个 episode 只放被测类别")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
@@ -47,7 +48,9 @@ def main() -> None:
                 active_kinds=(kind,) if args.single_class else tuple(args.classes),
                 belt_speed_range=(args.belt, args.belt),
                 spawn_x=args.spawn_x, spawn_spacing=args.spawn_spacing,
-                instruction_kind=kind)
+                instruction_kind=kind,
+                sim_config=dict(control_freq=args.control_freq,
+                                sim_freq=120 if args.control_freq == 30 else 100))
             obs, _ = env.reset(seed=args.seed + ci * 100 + ep)
             teacher = (HybridTeacher(env, args.ckpt, kind, device=args.device)
                        if args.policy in ("teacher", "hybrid") else None)
@@ -71,8 +74,8 @@ def main() -> None:
                     t_end = t + 1
                     break
             ok = bool(info.get("success", False))
-            cycle = (t_end - t_enter) / 20.0 if (ok and t_enter is not None and t_end is not None) else None
-            total = (t_end or args.max_steps) / 20.0
+            cycle = (t_end - t_enter) / float(args.control_freq) if (ok and t_enter is not None and t_end is not None) else None
+            total = (t_end or args.max_steps) / float(args.control_freq)
             records.append({"kind": kind, "episode": ep, "success": ok, "selected": selected,
                             "cycle_s": cycle, "total_s": total})
             print(f"[{'✓' if ok else '✗'}] {kind:11s} ep {ep:02d} "
