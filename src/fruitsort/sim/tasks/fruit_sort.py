@@ -99,8 +99,9 @@ class FruitSortEnv(BaseEnv):
     def _default_human_render_camera_configs(self):
         return CameraConfig(
             "render_camera",
-            sapien_utils.look_at([1.45, -1.50, 1.25], [0.0, -0.15, self.belt_top_z]),
-            1280, 720, np.pi / 3, 0.01, 10,
+            sapien_utils.look_at([1.25, -1.35, 1.10], [0.0, -0.18, self.belt_top_z]),
+            1920, 1080, np.pi / 3, 0.01, 10,
+            shader_pack="default",   # PBR + 阴影；"minimal" 更快但画面偏平
         )
 
     def _load_agent(self, options: dict):

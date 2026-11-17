@@ -44,6 +44,8 @@
 | 全景（人眼相机，机器人 + 传送带 + 四个料框） | ![overview](../assets/images/scene_overview.png) |
 | 俯视感知相机（overhead，注意画面相对世界旋转约 45°，单应矩阵已补偿） | ![overhead](../assets/images/view_overhead.png) |
 | 侧视相机（side） | ![side](../assets/images/view_side.png) |
+| 高清渲染（1920×1080，`shader_pack="default"`） | ![hd](../assets/images/scene_hd.png) |
+| 感知模块的输入（overhead 640×480，绿框为检测结果） | ![model input](../assets/images/model_input_annotated.png) |
 
 ## 相机
 
