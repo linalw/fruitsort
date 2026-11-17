@@ -1,0 +1,34 @@
+# 大数据（软链到 9.1T 盘，内容不进仓库）
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 实验大产物（元数据仍然跟踪）
+runs/**/artifacts/
+runs/**/*.mp4
+runs/**/*.avi
+runs/**/*.pt
+runs/**/*.pth
+runs/**/*.safetensors
+runs/**/*.ckpt
+
+# 文献去重状态（本地）
+notes/digests/.seen.json
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# 临时文件
+*.log
+!runs/**/*.log
