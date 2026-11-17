@@ -116,7 +116,7 @@ python scripts/eval_hybrid.py --ckpt runs/vpolicy/ckpt.pt --episodes 10
 
 - 模型 0.41M：双视角 96×96 + 4 帧历史 + 2 层 Transformer + 选择头
 - GPU 1.9 ms / CPU 单线程 6.1 ms；指令选择 100%；分层执行 10/10
-- 纯视觉闭环仍不稳，见 `docs/model-architecture.md`
+- 纯视觉闭环：苹果/草莓 5/5（`scripts/eval_vision_geo.py`）；夹爪时序见 `docs/gripper-timing.md`
 
 ## 版本与发布约定
 

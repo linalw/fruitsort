@@ -1,0 +1,17 @@
+{
+  "ckpt": "runs/vpolicy-sel3/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 3,
+  "model_approach": false,
+  "summary": {
+    "n_episodes": 3,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.5615
+    ],
+    "avg_duration_s": 11.933,
+    "failure_counts": {}
+  }
+}

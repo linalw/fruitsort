@@ -42,7 +42,7 @@ def main() -> None:
     ap.add_argument("--belt-speed", type=float, default=0.06)
     ap.add_argument("--seed", type=int, default=100)
     ap.add_argument("--max-steps", type=int, default=1200)
-    ap.add_argument("--smooth", type=float, default=0.3)
+    ap.add_argument("--smooth", type=float, default=0.0)
     ap.add_argument("--video", default="")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--instruction", default="apple",
@@ -122,9 +122,12 @@ def main() -> None:
                     else:
                         tgt = np.array([bx, by, 0.58], dtype=np.float32)
                         grip = -1.0
-                elif d < 0.12 and in_zone and fp[2] > 0.3:
-                    tgt = fp.copy()
-                    grip = -1.0 if d < 0.05 else 1.0
+                elif d < 0.45 and fp[2] > 0.3:
+                    # 近距视觉伺服：目标 = 水果位置 + 速度前馈；夹爪用几何判据
+                    fv = u.fruit_actors[servo_kind].linear_velocity[0].cpu().numpy()
+                    tgt = fp + fv * 0.10
+                    close = d < 0.05 and abs(tcp_now[2] - fp[2]) < 0.04
+                    grip = -1.0 if close else 1.0
 
             tcp = u.agent.tcp_pose.p[0].cpu().numpy()
             err = tgt - tcp

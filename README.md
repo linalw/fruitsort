@@ -56,7 +56,8 @@ python scripts/benchmark.py --scenario per_class --episodes 6
 - **0.41M 参数**，2 层 Transformer + 共享 CNN
 - 输入：overhead + 腕部两路 RGB（各 96×96，4 帧历史）+ 49 维状态 + 水果指令
 - 输出：8 步动作块（世界目标位姿 + 夹爪）、未来 3 步状态、4 类水果选择 logits
-- **实测**：GPU 1.9 ms / CPU 单线程 6.1 ms；指令选择 100%；分层执行 10/10
+- **实测**：GPU 1.9 ms / CPU 单线程 6.1 ms；指令选择 100%（苹果/草莓/香蕉）
+- **纯视觉**：苹果 5/5、草莓 5/5（10.6 / 17.0 s 每件）；分层执行 10/10
 
 ```bash
 python scripts/train_vision_policy.py --data data/datasets/instr-apple \
