@@ -1,0 +1,87 @@
+{
+  "classes": [
+    "strawberry"
+  ],
+  "policy": "scripted",
+  "single_class": false,
+  "belt": 0.3,
+  "spawn_x": -0.55,
+  "overall": {
+    "n_episodes": 6,
+    "n_success": 6,
+    "success_rate": 1.0,
+    "success_rate_ci95": [
+      0.6097,
+      1.0
+    ],
+    "avg_duration_s": 4.689,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "strawberry": {
+      "success": {
+        "n_episodes": 6,
+        "n_success": 6,
+        "success_rate": 1.0,
+        "success_rate_ci95": [
+          0.6097,
+          1.0
+        ],
+        "avg_duration_s": 4.689,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 3.755555555555556,
+      "p90_cycle_s": 4.2
+    }
+  },
+  "records": [
+    {
+      "kind": "strawberry",
+      "episode": 0,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 4.8,
+      "total_s": 5.8
+    },
+    {
+      "kind": "strawberry",
+      "episode": 1,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 3.6,
+      "total_s": 4.433333333333334
+    },
+    {
+      "kind": "strawberry",
+      "episode": 2,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 3.3333333333333335,
+      "total_s": 4.3
+    },
+    {
+      "kind": "strawberry",
+      "episode": 3,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 3.6,
+      "total_s": 4.566666666666666
+    },
+    {
+      "kind": "strawberry",
+      "episode": 4,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 3.6,
+      "total_s": 4.566666666666666
+    },
+    {
+      "kind": "strawberry",
+      "episode": 5,
+      "success": true,
+      "selected": "strawberry",
+      "cycle_s": 3.6,
+      "total_s": 4.466666666666667
+    }
+  ]
+}

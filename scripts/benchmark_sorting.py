@@ -35,6 +35,7 @@ def main() -> None:
     ap.add_argument("--device", default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     ap.add_argument("--policy", choices=["teacher", "scripted", "hybrid"], default="teacher")
     ap.add_argument("--control-freq", type=int, default=20)
+    ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--single-class", action="store_true", help="每个 episode 只放被测类别")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
@@ -52,13 +53,13 @@ def main() -> None:
                 sim_config=dict(control_freq=args.control_freq,
                                 sim_freq=120 if args.control_freq == 30 else 100))
             obs, _ = env.reset(seed=args.seed + ci * 100 + ep)
-            teacher = (HybridTeacher(env, args.ckpt, kind, device=args.device)
+            teacher = (HybridTeacher(env, args.ckpt, kind, device=args.device, max_step=args.max_step)
                        if args.policy in ("teacher", "hybrid") else None)
-            from fruitsort.policies.scripted import ScriptedSorter
+            from fruitsort.policies.scripted import ScriptedSorter, PolicyConfig as _PC
             selected = kind
             if args.policy == "hybrid":
                 selected = teacher._select_kind(obs)
-            scripted = ScriptedSorter(env, only_kind=selected) if args.policy in ("scripted", "hybrid") else None
+            scripted = ScriptedSorter(env, only_kind=selected, cfg=_PC(max_step=args.max_step)) if args.policy in ("scripted", "hybrid") else None
             u = env.unwrapped
             t_enter, t_end, info = None, None, {}
             for t in range(args.max_steps):

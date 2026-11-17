@@ -1,0 +1,87 @@
+{
+  "classes": [
+    "pear"
+  ],
+  "policy": "hybrid",
+  "single_class": false,
+  "belt": 0.08,
+  "spawn_x": -0.55,
+  "overall": {
+    "n_episodes": 6,
+    "n_success": 6,
+    "success_rate": 1.0,
+    "success_rate_ci95": [
+      0.6097,
+      1.0
+    ],
+    "avg_duration_s": 8.733,
+    "failure_counts": {}
+  },
+  "by_kind": {
+    "pear": {
+      "success": {
+        "n_episodes": 6,
+        "n_success": 6,
+        "success_rate": 1.0,
+        "success_rate_ci95": [
+          0.6097,
+          1.0
+        ],
+        "avg_duration_s": 8.733,
+        "failure_counts": {}
+      },
+      "mean_cycle_s": 4.641666666666667,
+      "p90_cycle_s": 4.8
+    }
+  },
+  "records": [
+    {
+      "kind": "pear",
+      "episode": 0,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 4.45,
+      "total_s": 8.8
+    },
+    {
+      "kind": "pear",
+      "episode": 1,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 4.55,
+      "total_s": 8.3
+    },
+    {
+      "kind": "pear",
+      "episode": 2,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 4.75,
+      "total_s": 8.95
+    },
+    {
+      "kind": "pear",
+      "episode": 3,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 4.7,
+      "total_s": 8.9
+    },
+    {
+      "kind": "pear",
+      "episode": 4,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 4.85,
+      "total_s": 9.15
+    },
+    {
+      "kind": "pear",
+      "episode": 5,
+      "success": true,
+      "selected": "pear",
+      "cycle_s": 4.55,
+      "total_s": 8.3
+    }
+  ]
+}

@@ -183,14 +183,19 @@ class ScriptedSorter:
             lead_desc = 0.12 if speed < 0.15 else (0.20 if speed < 0.25 else 0.28)
             x_g = float(np.clip(p[0] + v[0] * lead_desc, self.u.pick_zone[0] - 0.02, self.u.pick_zone[1]))
             y_g = p[1]
-            grasp_z = p[2] + cfg.grasp_depth
+            grasp_z = p[2] + cfg.grasp_depth - (0.01 if self.only_kind == "pear" else 0.0)
             tcp = self._tcp()
             # 香蕉/梨较薄，且下探会顶到带面：放宽触底判定，避免永远不闭爪
             tol = 0.03 if self.only_kind in ("banana", "pear") else 0.018
             if speed >= 0.15:
                 tol = max(tol, 0.055)  # 高速：每步水果移动 1cm，容差必须放宽
             aligned = abs(x_g - tcp[0]) < tol and abs(y_g - tcp[1]) < tol
-            if tcp[2] <= grasp_z + (0.045 if self.only_kind in ("banana", "pear") else 0.015) and aligned:
+            # 高速预测闭爪：水果即将到达/刚过夹爪时闭爪，不等到"位姿完全对齐"
+            dx = float(tcp[0] - p[0])   # >0: 夹爪在水果前方
+            pred_close = (speed >= 0.15 and self.only_kind != "pear"
+                          and tcp[2] <= grasp_z + 0.06
+                          and -0.01 <= dx <= 0.08 and abs(y_g - tcp[1]) < 0.04)
+            if tcp[2] <= grasp_z + (0.045 if self.only_kind in ("banana", "pear") else 0.015) and aligned or pred_close:
                 self.state = "CLOSE"
                 self.counter = 0
             return self._action([x_g, y_g, grasp_z], gripper=1.0)
@@ -231,9 +236,11 @@ class ScriptedSorter:
                 self.state = "WAIT"
                 self.target = None
                 return self._home()
-            # 先慢速垂直抬 5cm（避免刚抓住就以 6cm/步 斜向甩飞），再走中转点
+            # 先带前馈地抬离带面：水平跟一小段带速，减少"抓握 vs 带面拖拽"的相对滑移
             if tcp[2] < self.u.belt_top_z + 0.13 and self.counter < 40:
-                return self._action([tcp[0], tcp[1], tcp[2] + 0.015], gripper=-1.0)
+                vbelt = float(self.u.belt_speed[0])
+                dz = 0.01 if self.only_kind == "pear" else 0.02
+                return self._action([tcp[0] + vbelt * 0.033 * 1.2, tcp[1], tcp[2] + dz], gripper=-1.0)
             vx, vy = cfg.via_point
             if abs(tcp[0] - vx) > 0.06 or abs(tcp[1] - vy) > 0.06:
                 if not self._via_done:

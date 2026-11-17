@@ -194,7 +194,7 @@ class FruitSortEnv(BaseEnv):
             vel = actor.linear_velocity
             on_belt = (
                 (p[:, 2] > self.belt_top_z - 0.02)
-                & (p[:, 2] < self.belt_top_z + 0.08)  # 只驱动贴在带面上的水果，别拽已抓起/搬运中的
+                & (p[:, 2] < self.belt_top_z + 0.05)  # 只驱动贴在带面上的水果，别拽已抓起/搬运中的
                 & (p[:, 0] < self.pick_zone[1] + 0.20)
                 & (p[:, 0] > self.conveyor_spec.x_min)
                 & (p[:, 1].abs() < self.conveyor_spec.width / 2)
