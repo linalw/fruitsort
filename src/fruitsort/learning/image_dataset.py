@@ -52,11 +52,12 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
         self.use_phase = use_phase
+        self.delta_clip = delta_clip
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
         for d in dirs:
@@ -121,8 +122,18 @@ class ImageDemoDataset(Dataset):
             acts = np.concatenate([acts, np.repeat(acts[-1:], K - len(acts), axis=0)])
         acts[:, 3] = (acts[:, 3] < 0).astype(np.float32)  # 夹爪：闭=1 / 开=0
         if self.delta_actions:
-            # 相对当前 TCP 的增量（消除"目标≈当前位姿"的悬停不动点）
-            acts[:, :3] = acts[:, :3] - ep["obs"][t, :3][None, :]
+            # 相对当前 TCP 的增量 = **实际执行的位移**（与执行端同样裁剪到 ±max_step）。
+            # 用未裁剪的原始目标差会让每一步都饱和成 6cm（收敛不了），
+            # 而执行位移在到位后自然衰减到 0，闭环因此有负反馈。
+            # 每个 chunk 步用各自的 TCP（t+k），而不是统一起点。
+            tcp_future = ep["obs"][t:t + K, :3].copy()
+            if len(tcp_future) == 0:
+                tcp_future = ep["obs"][t, :3][None].copy()
+            if len(tcp_future) < K:
+                tcp_future = np.concatenate(
+                    [tcp_future, np.repeat(tcp_future[-1:], K - len(tcp_future), axis=0)])
+            acts[:, :3] = np.clip(acts[:, :3] - tcp_future,
+                                  -self.delta_clip, self.delta_clip)
 
         # 未来 H 步的 4 类 [pos(3)+vel(3)]
         F = self.future
