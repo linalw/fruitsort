@@ -52,6 +52,10 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=900)
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--z-gate", action="store_true")
+    ap.add_argument("--lead", type=float, default=0.0,
+                    help="前馈超前补偿（秒）：目标 x 加上 v*lead，抵消策略的固定跟踪滞后（残差项）")
+    ap.add_argument("--chunk-exec", type=int, default=1,
+                    help="每 s 步重规划一次，其余步执行已预测的动作块（增量模式下有意义）")
     ap.add_argument("--no-phase-fb", action="store_true",
                     help="关闭相位反馈（对照：模型输入恒为 0）")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -81,6 +85,8 @@ def main() -> None:
         oh, wr, st = [], [], []
         info, t = {}, 0
         phase_state, phase_cand, same, grasp_lost = 0, 0, 0, 0
+        queue = []          # 已预测但未执行的动作块（增量）
+        replan = 0
         n_close, n_dec, n_carry = 0, 0, 0
         for t in range(args.max_steps):
             actor = u.fruit_actors.get(kind)
@@ -111,7 +117,11 @@ def main() -> None:
             while len(oh) < cfg.hist:
                 oh.insert(0, oh[0]); wr.insert(0, wr[0]); st.insert(0, st[0])
 
-            with torch.no_grad():
+            if queue:
+                p4 = queue.pop(0)
+                logits = queue_logits
+            else:
+              with torch.no_grad():
                 if cfg.n_phase:
                     act, _, _, logits = model(
                         torch.from_numpy(np.stack(oh)[None]).float().to(args.device),
@@ -127,7 +137,11 @@ def main() -> None:
                         torch.tensor([INSTR_ID[args.instruction]], device=args.device),
                         use_prior=True)
                     logits = None
-            p4 = act[0, 0].cpu().numpy()
+              acts_np = act[0].cpu().numpy()
+              if args.chunk_exec > 1 and delta_actions:
+                  queue = [a for a in acts_np[: args.chunk_exec]]
+                  queue_logits = logits
+              p4 = acts_np[0]
             tcp = u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
             tgt = na.unact(p4[:3])
             if delta_actions:
@@ -136,6 +150,9 @@ def main() -> None:
                 tgt = tcp + np.clip(tgt, -args.max_step, args.max_step)
             else:
                 tgt = np.clip(tgt, -2, 2)
+            if args.lead and kind in u.fruit_actors:
+                # 残差控制器的前馈项：策略负责形状，前馈负责相位（补偿固定滞后）
+                tgt[0] += args.lead * args.belt
             if args.z_gate and kind in u.fruit_actors:
                 fz = u.fruit_actors[kind].pose.p[0, 2].item()
                 tgt[2] = float(np.clip(tgt[2], fz - 0.02, 0.90))

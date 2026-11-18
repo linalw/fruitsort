@@ -83,8 +83,12 @@ def teacher_label(u, kind: str):
 
     x_pred = float(np.clip(fp[0] + fv[0] * LEAD, z0 - 0.02, z1))
     if dist <= 0.45 and in_zone:
-        grip = -1.0 if dist < 0.05 else 1.0
-        return np.array([x_pred, fp[1], fp[2]]), grip
+        aligned = abs(tcp[0] - x_pred) < 0.06 and abs(tcp[1] - fp[1]) < 0.05
+        if aligned:
+            # 已对齐 → 下探到果心，贴近后闭爪（预瞄闭爪）
+            return np.array([x_pred, fp[1], fp[2]]), (-1.0 if tcp[2] < fp[2] + 0.05 else 1.0)
+        # 未对齐 → 悬停在果心上方 9cm 追拦截点
+        return np.array([x_pred, fp[1], fp[2] + 0.09]), 1.0
     return np.array([x_pred, fp[1], fp[2] + 0.09]), 1.0
 
 
