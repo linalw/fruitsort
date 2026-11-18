@@ -5,6 +5,24 @@
 
 ![demo](assets/videos/demo_pair.gif)
 
+## 纯策略里程碑（v1.4，0.08 m/s，无脚本执行器）
+
+| 类 | 成功率（两组种子合计） | 单件处理时间 |
+| --- | --- | --- |
+| 苹果 | 18/20 = 90% | 2.6–3.8 s |
+| 草莓 | 12/20 = 60% | 5.1–6.0 s |
+| 香蕉 | 17/20 = 85% | 3.4–4.3 s |
+| 梨 | 11/20 = 55% | 3.8–4.5 s |
+| **合计** | **58/80 = 72.5%** | 均值 4.1 s，79/80 <10 s |
+
+```bash
+python scripts/eval_act_pure.py --ckpt runs/act-008-4c-v2/ckpt.pt \
+  --instruction apple --episodes 10 --belt 0.08 --spawn-spacing 0.35 \
+  --control-freq 30 --fb 0.5 --grip-ema 0.6 --carry-latch
+```
+详见 [`docs/model-architecture.md`](docs/model-architecture.md) 6.6 与
+[`docs/benchmark.md`](docs/benchmark.md)「低速纯策略协议」。
+
 ## 验收结果（v1.0.0，四类同场，平行夹爪）
 
 | 带速 | 成功率 | 单件节拍 |
