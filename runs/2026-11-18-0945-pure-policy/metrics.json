@@ -1,0 +1,19 @@
+{
+  "ckpt": "runs/vpolicy-raw/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 5,
+  "delta": false,
+  "z_gate": true,
+  "phase_gate": true,
+  "summary": {
+    "n_episodes": 5,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.4345
+    ],
+    "avg_duration_s": 50.0,
+    "failure_counts": {}
+  }
+}

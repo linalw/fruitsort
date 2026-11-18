@@ -48,6 +48,7 @@ def main() -> None:
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--delta", action="store_true")
     ap.add_argument("--z-gate", action="store_true", help="用水果高度门控目标 z")
+    ap.add_argument("--phase-gate", action="store_true", help="几何相位门控：未抓住前不许切搬运")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -100,6 +101,22 @@ def main() -> None:
             tgt = np.clip(tgt, -2.0, 2.0)
             grip = -1.0 if p4[3] > 0 else 1.0
 
+            if args.phase_gate and kind in u.fruit_actors:
+                actor2 = u.fruit_actors[kind]
+                fp2 = actor2.pose.p[0].cpu().numpy().astype(np.float64)
+                dist2 = float(np.linalg.norm(fp2 - tcp))
+                holding = bool(u.agent.is_grasping(actor2)[0]) or dist2 < 0.05
+                if not holding:
+                    # 未抓住：只允许接近/下探，禁止提前切到料框
+                    if dist2 > 0.10:
+                        tgt = np.array([fp2[0], fp2[1], fp2[2] + 0.08])
+                        grip = 1.0
+                    else:
+                        tgt = np.array([fp2[0], fp2[1], fp2[2] + 0.02])
+                        grip = -1.0
+                else:
+                    tgt[2] = float(np.clip(tgt[2], 0.45, 0.9))
+
             err = tgt - tcp
             d = float(np.linalg.norm(err))
             if d > args.max_step:
@@ -119,7 +136,8 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "metrics.json").write_text(json.dumps(
         {"ckpt": str(args.ckpt), "instruction": args.instruction, "episodes": args.episodes,
-         "delta": args.delta, "z_gate": args.z_gate, "summary": s}, ensure_ascii=False, indent=2),
+         "delta": args.delta, "z_gate": args.z_gate,
+         "phase_gate": args.phase_gate, "summary": s}, ensure_ascii=False, indent=2),
         encoding="utf-8")
 
 
