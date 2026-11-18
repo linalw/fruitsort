@@ -1,0 +1,57 @@
+{
+  "condition": "all",
+  "classes": [
+    "apple",
+    "strawberry",
+    "banana",
+    "pear"
+  ],
+  "instruction": "pear",
+  "belt": 0.08,
+  "summary": {
+    "none": {
+      "n_episodes": 5,
+      "n_success": 3,
+      "success_rate": 0.6,
+      "success_rate_ci95": [
+        0.2307,
+        0.8824
+      ],
+      "avg_duration_s": 20.733,
+      "failure_counts": {}
+    },
+    "offset": {
+      "n_episodes": 5,
+      "n_success": 4,
+      "success_rate": 0.8,
+      "success_rate_ci95": [
+        0.3755,
+        0.9638
+      ],
+      "avg_duration_s": 25.6,
+      "failure_counts": {}
+    },
+    "speed": {
+      "n_episodes": 5,
+      "n_success": 0,
+      "success_rate": 0.0,
+      "success_rate_ci95": [
+        0.0,
+        0.4345
+      ],
+      "avg_duration_s": 40.0,
+      "failure_counts": {}
+    },
+    "push": {
+      "n_episodes": 5,
+      "n_success": 3,
+      "success_rate": 0.6,
+      "success_rate_ci95": [
+        0.2307,
+        0.8824
+      ],
+      "avg_duration_s": 20.467,
+      "failure_counts": {}
+    }
+  }
+}

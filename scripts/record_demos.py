@@ -51,6 +51,8 @@ def main() -> None:
     ap.add_argument("--kinds", nargs="+", default=["apple", "strawberry"])
     ap.add_argument("--episodes", type=int, default=40)
     ap.add_argument("--belt-speed", type=float, default=None, help="缺省 0.04–0.08 随机")
+    ap.add_argument("--belt-max", type=float, default=None,
+                    help="与 --belt-speed 一起给出速度区间（域随机化用，例如 0.06 0.12）")
     ap.add_argument("--max-steps", type=int, default=1200)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--noise", type=float, default=0.0, help="执行动作上加的高斯噪声（米），用于鲁棒化")
@@ -68,8 +70,12 @@ def main() -> None:
     out = Path(args.out) if args.out else ROOT / "data" / "datasets" / f"fruitsort-{tag}"
     out.mkdir(parents=True, exist_ok=True)
 
-    speed_range = ((args.belt_speed, args.belt_speed) if args.belt_speed is not None
-                   else (0.04, 0.08))
+    if args.belt_speed is not None and args.belt_max is not None:
+        speed_range = (args.belt_speed, args.belt_max)
+    elif args.belt_speed is not None:
+        speed_range = (args.belt_speed, args.belt_speed)
+    else:
+        speed_range = (0.04, 0.08)
     env = gym.make(
         "FruitSort-v1", obs_mode="rgbd" if args.images else "state",
         control_mode="pd_ee_pose", sim_backend="cpu", robot_uids=args.robot,

@@ -85,11 +85,12 @@ def main() -> None:
                 u.fruit_actors[kind].set_pose(Pose.create_from_pq(torch.tensor([p])))
 
             pushed = False
+            nominal_belt = float(args.belt)   # 带速扰动围绕标称值抖动（不能连乘，否则会漂出量级）
             info, t = {}, 0
             for t in range(args.max_steps):
                 # 扰动 2：带速抖动 ±20%
                 if cond in ("speed", "all") and t % 120 == 0 and t > 0:
-                    u.belt_speed = u.belt_speed * float(rng.uniform(0.8, 1.2))
+                    u.belt_speed = u.belt_speed * 0.0 + nominal_belt * float(rng.uniform(0.8, 1.2))
                 # 扰动 3：进入抓取区时侧向推一次
                 fp = u.fruit_actors[kind].pose.p[0].cpu().numpy()
                 if (cond in ("push", "all") and not pushed
