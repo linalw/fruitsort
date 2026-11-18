@@ -53,6 +53,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=13000)
     ap.add_argument("--max-steps", type=int, default=700)
     ap.add_argument("--max-step", type=float, default=0.08)
+    ap.add_argument("--chunk-exec", type=int, default=1, help=">1: 每 K 步推理一次，执行整段")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -79,6 +80,7 @@ def main() -> None:
         bx, by = BIN_LAYOUT[kind]
         oh, wr, st = [], [], []
         attached, offset = False, np.zeros(3)
+        model._chunk_buf = []
         info, t = {}, 0
         for t in range(args.max_steps):
             sd = obs["sensor_data"]
@@ -91,19 +93,25 @@ def main() -> None:
             while len(oh) < cfg.hist:
                 oh.insert(0, oh[0]); wr.insert(0, wr[0]); st.insert(0, st[0])
 
-            with torch.no_grad():
-                pred, _, sel = model(
-                    torch.from_numpy(np.stack(oh)[None]).float().to(args.device),
+            buf = getattr(model, "_chunk_buf", None)
+            if args.chunk_exec > 1 and buf is not None and len(buf) > 0:
+                p4 = buf.pop(0)
+            else:
+                with torch.no_grad():
+                    pred, _, sel = model(
+                        torch.from_numpy(np.stack(oh)[None]).float().to(args.device),
                     torch.from_numpy(np.stack(wr)[None]).float().to(args.device),
                     torch.from_numpy(ns.obs(np.stack(st).astype(np.float32))[None]).float().to(args.device),
-                    torch.tensor([INSTR_ID[args.instruction]], device=args.device))
+                        torch.tensor([INSTR_ID[args.instruction]], device=args.device))
+                if args.chunk_exec > 1:
+                    model._chunk_buf = [pred[0, i].cpu().numpy() for i in range(1, min(args.chunk_exec, pred.shape[1]))]
+                p4 = pred[0, 0].cpu().numpy()
             if ep == 0 and t == 0:
                 kind = ID_KIND.get(int(sel.argmax(-1).item()), args.instruction)
                 if kind in u.fruit_actors:
                     actor = u.fruit_actors[kind]
                     bx, by = BIN_LAYOUT[kind]
 
-            p4 = pred[0, 0].cpu().numpy()
             tcp = u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
             tgt = np.clip(na.unact(p4[:3]), -2, 2)
             grip = -1.0 if p4[3] > 0 else 1.0

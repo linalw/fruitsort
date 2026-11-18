@@ -1,0 +1,17 @@
+{
+  "ckpt": "runs/vpolicy-suction/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 4,
+  "belt": 0.3,
+  "summary": {
+    "n_episodes": 4,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.4899
+    ],
+    "avg_duration_s": 23.333,
+    "failure_counts": {}
+  }
+}
