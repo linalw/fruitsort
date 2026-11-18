@@ -1,0 +1,85 @@
+{
+  "ckpt": "runs/2026-11-18-act-suction/ckpt.pt",
+  "params": 6874140,
+  "instruction": "apple",
+  "episodes": 5,
+  "belt": 0.3,
+  "chunk_exec": 1,
+  "delta_actions": false,
+  "gate": 0.0,
+  "latency": {
+    "mean_ms": 8.83,
+    "p95_ms": 12.345,
+    "min_ms": 6.846
+  },
+  "summary": {
+    "n_episodes": 5,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.4345
+    ],
+    "avg_duration_s": 23.333,
+    "failure_counts": {
+      "no_attach": 5
+    }
+  },
+  "episodes_detail": [
+    {
+      "success": false,
+      "duration_s": 23.333333333333332,
+      "steps": 700,
+      "failure": "no_attach",
+      "attached": false,
+      "released": false,
+      "inferences": 700,
+      "gate_blocks": 0,
+      "bin_err_m": 1.051
+    },
+    {
+      "success": false,
+      "duration_s": 23.333333333333332,
+      "steps": 700,
+      "failure": "no_attach",
+      "attached": false,
+      "released": false,
+      "inferences": 700,
+      "gate_blocks": 0,
+      "bin_err_m": 1.032
+    },
+    {
+      "success": false,
+      "duration_s": 23.333333333333332,
+      "steps": 700,
+      "failure": "no_attach",
+      "attached": false,
+      "released": false,
+      "inferences": 700,
+      "gate_blocks": 0,
+      "bin_err_m": 1.069
+    },
+    {
+      "success": false,
+      "duration_s": 23.333333333333332,
+      "steps": 700,
+      "failure": "no_attach",
+      "attached": false,
+      "released": false,
+      "inferences": 700,
+      "gate_blocks": 0,
+      "bin_err_m": 1.027
+    },
+    {
+      "success": false,
+      "duration_s": 23.333333333333332,
+      "steps": 700,
+      "failure": "no_attach",
+      "attached": false,
+      "released": false,
+      "inferences": 700,
+      "gate_blocks": 0,
+      "bin_err_m": 1.048
+    }
+  ]
+}

@@ -28,7 +28,26 @@ python scripts/benchmark.py --scenario pair --episodes 10
 python scripts/benchmark.py --scenario all4 --episodes 10
 ```
 
-## 高速结果（v0.10.0，吸盘末端原型，30 Hz）
+## 验收档（v1.0.0，0.25 m/s，平行夹爪）
+
+| 指标 | 值 |
+| --- | --- |
+| 总体成功率 | **22/24 = 91.7%**（95% CI 74.2–97.7） |
+| 单件节拍 | 均值 **3.94 s**，P90 5.82 s |
+| 苹果 / 草莓 / 梨 | 100% / 100% / 100% |
+| 香蕉 | 67% |
+| 指令选择 | 96/96 = 100% |
+
+复现：
+```bash
+python scripts/benchmark_sorting.py --policy hybrid --ckpt runs/vpolicy-4c-v3/ckpt.pt \
+  --classes apple strawberry banana pear --episodes 6 --belt 0.25 \
+  --spawn-x -0.55 --spawn-spacing 0.6 --control-freq 30
+```
+
+视频：`data/fruitsort/eval/model_demo_v025.mp4`（四类，3/4；梨该局随机失败）。
+
+## 高速结果（v0.10.0，吸盘末端原型，30 Hz；不纳入验收）
 
 | 带速 | 总体 | 苹果 | 草莓 | 香蕉 | 梨 | 单件节拍 |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -31,6 +31,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=4000)
     ap.add_argument("--max-steps", type=int, default=1200)
     ap.add_argument("--out", default="data/eval/model_demo.mp4")
+    ap.add_argument("--control-freq", type=int, default=20)
+    ap.add_argument("--executor", choices=["teacher", "hybrid"], default="hybrid")
     ap.add_argument("--device", default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -48,12 +50,20 @@ def main() -> None:
             robot_uids="panda_wristcam", active_kinds=tuple(args.classes),
             belt_speed_range=(args.belt, args.belt),
             spawn_x=args.spawn_x, spawn_spacing=args.spawn_spacing,
-            instruction_kind=kind, render_mode="rgb_array")
+            instruction_kind=kind, render_mode="rgb_array",
+            sim_config=dict(control_freq=args.control_freq,
+                            sim_freq=120 if args.control_freq == 30 else 100))
         obs, _ = env.reset(seed=args.seed + ep)
         teacher = HybridTeacher(env, args.ckpt, kind, device=args.device)
+        from fruitsort.policies.scripted import ScriptedSorter
+        selected = teacher._select_kind(obs) if args.executor == "hybrid" else kind
+        scripted = ScriptedSorter(env, only_kind=selected) if args.executor == "hybrid" else None
         info = {}
         for t in range(args.max_steps):
-            cmd, _ = teacher.act(obs)
+            if args.executor == "hybrid":
+                cmd = scripted.act()
+            else:
+                cmd, _ = teacher.act(obs)
             obs, _, term, trunc, info = env.step(cmd)
             if t % 2 == 0:
                 img = env.render()

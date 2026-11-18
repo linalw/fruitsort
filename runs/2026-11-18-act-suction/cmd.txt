@@ -1,0 +1,2 @@
+scripts/new_run.py --name act-suction --note 'ACT-lite chunked policy on suction-030+015'
+# cwd: /media/ubuntu/66A27065A2703B9D/project/Fruitsort

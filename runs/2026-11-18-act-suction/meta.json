@@ -1,0 +1,20 @@
+{
+  "run_id": "2026-11-18-act-suction",
+  "created": "2026-11-18T08:41:59+0800",
+  "cwd": "/media/ubuntu/66A27065A2703B9D/project/Fruitsort",
+  "argv": [
+    "scripts/new_run.py",
+    "--name",
+    "act-suction",
+    "--note",
+    "ACT-lite chunked policy on suction-030+015"
+  ],
+  "host": "ubun",
+  "user": "ubuntu",
+  "python": "3.10.21",
+  "conda_env": "maniskill3",
+  "git_commit": "306e47c083a6b33d8b90e7fc3de8691815d697f0",
+  "git_branch": "master",
+  "git_dirty": true,
+  "gpu": "NVIDIA GeForce RTX 5090, 580.105.08, 32607 MiB"
+}
