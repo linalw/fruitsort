@@ -1,0 +1,18 @@
+{
+  "ckpt": "runs/act-d500-r1/ckpt.pt",
+  "instruction": "strawberry",
+  "episodes": 3,
+  "belt": 0.25,
+  "z_gate": true,
+  "summary": {
+    "n_episodes": 3,
+    "n_success": 0,
+    "success_rate": 0.0,
+    "success_rate_ci95": [
+      0.0,
+      0.5615
+    ],
+    "avg_duration_s": 30.0,
+    "failure_counts": {}
+  }
+}

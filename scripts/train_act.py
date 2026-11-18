@@ -53,6 +53,10 @@ def main() -> None:
     ap.add_argument("--val-frac", type=float, default=0.15, help="按类别分层留出验证 episode 比例")
     ap.add_argument("--no-cvae", action="store_true", help="关闭 CVAE 隐变量（纯确定性 ACT）")
     ap.add_argument("--delta-actions", action="store_true", help="预测相对当前 TCP 的增量")
+    ap.add_argument("--phase", action="store_true",
+                    help="给状态追加 1-hot 相位（接近/下探/搬运），obs_dim 49→52，"
+                         "并训练相位辅助头（策略自己预测相位）")
+    ap.add_argument("--phase-weight", type=float, default=0.5)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0, help="只取前 N 个样本（冒烟测试用）")
@@ -64,7 +68,9 @@ def main() -> None:
     data_dirs = [Path(d) if Path(d).is_absolute() else ROOT / d for d in args.data]
 
     ds = ImageDemoDataset(data_dirs, hist=args.hist, chunk=args.chunk, stride=args.stride,
-                          delay_prob=args.delay_prob, delta_actions=args.delta_actions)
+                          delay_prob=args.delay_prob, delta_actions=args.delta_actions,
+                          use_phase=args.phase)
+    obs_dim = 52 if args.phase else 49
 
     # 分层划分：每组（同一数据集 × 同一指令）留出最后若干个 episode。
     # 现有脚本按窗口顺序切 15%，结果 val 100% 是 pear（文件按类别顺序保存），
@@ -88,7 +94,7 @@ def main() -> None:
 
     # 训练集统计量（子采样估计，避免全量 18k 窗口的 IO）
     sample_idx = train_idx[:: max(1, len(train_idx) // 2000)]
-    states = np.stack([ds[i]["state"].numpy() for i in sample_idx]).reshape(-1, 49)
+    states = np.stack([ds[i]["state"].numpy() for i in sample_idx]).reshape(-1, obs_dim)
     acts = np.stack([ds[i]["act"].numpy() for i in sample_idx]).reshape(-1, 4)
     norm_state = Normalizer(states, states)
     norm_act = Normalizer(acts[:, :3], acts[:, :3])
@@ -130,7 +136,8 @@ def main() -> None:
 
     cfg = ActConfig(hist=args.hist, chunk=args.chunk, d_model=args.d_model,
                     enc_layers=args.enc_layers, dec_layers=args.dec_layers,
-                    dropout=args.dropout, use_cvae=not args.no_cvae)
+                    dropout=args.dropout, use_cvae=not args.no_cvae, obs_dim=obs_dim,
+                    n_phase=3 if args.phase else 0)
     model = ActPolicy(cfg).to(args.device)
     n_params = count_params(model)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -167,15 +174,26 @@ def main() -> None:
             act = b["act"].to(args.device, non_blocking=True)
             with torch.autocast("cuda", dtype=torch.bfloat16,
                                 enabled=args.device.startswith("cuda")):
-                pred, mu, logvar = model(oh, wr, st, kind, act_target=act)
+                if args.phase:
+                    pred, mu, logvar, logits = model(oh, wr, st, kind, act_target=act,
+                                                     phase_out=True)
+                else:
+                    pred, mu, logvar = model(oh, wr, st, kind, act_target=act)
+                    logits = None
                 loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act)
+                l_ph = torch.zeros((), device=args.device)
+                if logits is not None:
+                    l_ph = torch.nn.functional.cross_entropy(
+                        logits.float().reshape(-1, logits.shape[-1]),
+                        b["phase_chunk"].to(args.device).reshape(-1))
+                    loss = loss + args.phase_weight * l_ph
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             tot += float(loss.detach()) * len(oh)
             na += len(oh)
-            for k, v in (("xyz", l_xyz), ("grip", l_grip), ("kl", l_kl)):
+            for k, v in (("xyz", l_xyz), ("grip", l_grip), ("kl", l_kl), ("phase", l_ph)):
                 acc[k] = acc.get(k, 0.0) + float(v.detach()) * len(oh)
         sched.step()
 
@@ -188,8 +206,19 @@ def main() -> None:
                 act = b["act"].to(args.device)
                 with torch.autocast("cuda", dtype=torch.bfloat16,
                                     enabled=args.device.startswith("cuda")):
-                    pred, _, _ = model(oh, wr, st, kind, use_prior=True)
+                    if args.phase:
+                        pred, _, _, vlogits = model(oh, wr, st, kind, use_prior=True,
+                                                    phase_out=True)
+                    else:
+                        pred, _, _ = model(oh, wr, st, kind, use_prior=True)
+                        vlogits = None
                     vl, v_xyz, v_grip, _ = compute_loss(pred.float(), None, None, act)
+                    if vlogits is not None:
+                        v_ph = torch.nn.functional.cross_entropy(
+                            vlogits.float().reshape(-1, vlogits.shape[-1]),
+                            b["phase_chunk"].to(args.device).reshape(-1))
+                        vl = vl + args.phase_weight * v_ph
+                        vacc["phase"] = vacc.get("phase", 0.0) + float(v_ph) * len(oh)
                 vt += float(vl) * len(oh); vn += len(oh)
                 for k, v in (("xyz", v_xyz), ("grip", v_grip)):
                     vacc[k] = vacc.get(k, 0.0) + float(v) * len(oh)
@@ -210,13 +239,15 @@ def main() -> None:
         if ep % 5 == 0 or ep == args.epochs - 1:
             print(f"epoch {ep:3d} train {tot/max(na,1):.4f} "
                   f"(xyz {acc.get('xyz',0)/max(na,1):.4f} grip {acc.get('grip',0)/max(na,1):.4f} "
-                  f"kl {acc.get('kl',0)/max(na,1):.4f}) val {val:.4f} {dt:.1f}s", flush=True)
+                  f"kl {acc.get('kl',0)/max(na,1):.4f} ph {acc.get('phase',0)/max(na,1):.4f}) "
+                  f"val {val:.4f} (ph {vacc.get('phase',0)/max(vn,1):.4f}) {dt:.1f}s", flush=True)
 
     (out / "metrics.json").write_text(json.dumps({
         "model": "ActPolicy", "data": [str(d) for d in data_dirs],
         "samples": len(ds), "train": len(train_idx), "val": len(val_idx),
         "params": n_params, "best_val": best, "cfg": cfg.__dict__,
-        "delta_actions": bool(args.delta_actions), "args": vars(args),
+        "delta_actions": bool(args.delta_actions), "phase": bool(args.phase),
+        "args": vars(args),
         "history": hist_log,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n✓ 参数量 {n_params/1e6:.2f}M，最佳 val {best:.4f}，模型 {out/'ckpt.pt'}")

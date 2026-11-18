@@ -20,11 +20,43 @@ def _decode(buf: bytes) -> np.ndarray:
     return arr
 
 
+BIN_XY = {"apple": (-0.46, -0.28), "strawberry": (-0.46, -0.60),
+          "banana": (0.46, -0.28), "pear": (0.46, -0.60)}
+
+
+def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndarray:
+    """从示教动作里还原 3 类相位标签（0=接近悬停, 1=下探/闭爪, 2=已抓起搬运）。
+
+    为什么需要它
+    ------------
+    纯回归把「悬停 p.z+0.09」「下探到果心」「搬去料框」三个分支平均掉了：
+    模型既不知道自己在哪一段，输出就落在中间解（实测 0.25 m/s 下悬停 10 cm 不下降，
+    直到水果已经过夹爪才闭爪）。把相位显式喂进去 + 让策略自己预测相位，
+    等于把 FSM 交给策略而不是脚本。
+
+    标签来源（teacher-forced，全部可从示教数据算出）：
+    - 目标 xy 落在料框范围内 → 2（一旦出现就锁存，等价于推理端「抓起后不退回接近」）
+    - 目标 z 贴近水果中心（|Δz|<0.06）→ 1（下探/贴地闭爪段）
+    - 其余 → 0
+    """
+    if instruction in ALL:
+        j = ALL.index(instruction)
+    else:
+        j = int(np.argmax([obs[:, 17 + 8 * k + 2].max() for k in range(4)]))
+    fz = obs[:, 17 + 8 * j + 2]
+    bx, by = BIN_XY.get(instruction, (0.0, 0.0))
+    to_bin = (np.abs(act[:, 0] - bx) < 0.20) & (np.abs(act[:, 1] - by) < 0.20)
+    descend = np.abs(act[:, 2] - fz) < 0.06
+    latched = np.maximum.accumulate(to_bin.astype(bool))
+    return np.where(latched, 2, np.where(descend, 1, 0)).astype(np.int64)
+
+
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
+        self.use_phase = use_phase
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
         for d in dirs:
@@ -35,14 +67,18 @@ class ImageDemoDataset(Dataset):
             if "overhead_jpg" not in d:
                 continue
             instr = str(d["instruction"]) if "instruction" in d else "all"
-            self.episodes.append({
+            obs = d["obs"].astype(np.float32)
+            ep = {
                 "instruction": instr,
                 "instruction_id": {"all": 0, "apple": 1, "strawberry": 2, "banana": 3, "pear": 4}.get(instr, 0),
-                "obs": d["obs"].astype(np.float32),
+                "obs": obs,
                 "act": d["action"].astype(np.float32),
                 "oh": np.stack([_decode(b) for b in d["overhead_jpg"]]),
                 "wr": np.stack([_decode(b) for b in d["wrist_jpg"]]) if "wrist_jpg" in d else None,
-            })
+            }
+            if use_phase:
+                ep["phase"] = episode_phase(obs, ep["act"], instr)
+            self.episodes.append(ep)
         if not self.episodes:
             raise FileNotFoundError(f"{data_dir} 下没有带图像的 ep_*.npz")
         self.index = []
@@ -58,11 +94,21 @@ class ImageDemoDataset(Dataset):
         ei, t = self.index[i]
         ep = self.episodes[ei]
         H = self.hist
+        K = self.chunk
         idx = np.arange(t - H + 1, t + 1)
 
         oh = ep["oh"][idx].astype(np.float32) / 255.0
         wr = ep["wr"][idx].astype(np.float32) / 255.0 if ep["wr"] is not None else oh
         states = ep["obs"][idx].copy()
+        phase_chunk = None
+        if self.use_phase:
+            ph = ep["phase"][idx]
+            states = np.concatenate(
+                [states, np.eye(3, dtype=np.float32)[ph]], axis=1)
+            pc = ep["phase"][t:t + K].copy()
+            if len(pc) < K:
+                pc = np.concatenate([pc, np.repeat(pc[-1:], K - len(pc))])
+            phase_chunk = pc
         # 延迟增强：随机把最后一帧替换成上一帧，模拟 1 帧推理/感知延迟
         if self.delay_prob > 0 and np.random.rand() < self.delay_prob:
             if len(oh) > 1:
@@ -70,7 +116,6 @@ class ImageDemoDataset(Dataset):
                 states[-1] = states[-2]
 
         # 动作块（末尾重复）
-        K = self.chunk
         acts = ep["act"][t:t + K].copy()
         if len(acts) < K:
             acts = np.concatenate([acts, np.repeat(acts[-1:], K - len(acts), axis=0)])
@@ -89,7 +134,7 @@ class ImageDemoDataset(Dataset):
                 base = 17 + 8 * j
                 fut[k, j * 6:(j + 1) * 6] = o[base:base + 6]
 
-        return {
+        out = {
             "oh": torch.from_numpy(oh.transpose(0, 3, 1, 2)),   # (T,3,H,W)
             "wr": torch.from_numpy(wr.transpose(0, 3, 1, 2)),
             "state": torch.from_numpy(states),
@@ -97,3 +142,6 @@ class ImageDemoDataset(Dataset):
             "future": torch.from_numpy(fut),
             "kind": torch.tensor(ep["instruction_id"], dtype=torch.long),
         }
+        if phase_chunk is not None:
+            out["phase_chunk"] = torch.from_numpy(phase_chunk.astype(np.int64))
+        return out

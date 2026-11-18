@@ -43,6 +43,7 @@ class ActConfig:
     use_wrist: bool = True
     use_cvae: bool = True
     latent_dim: int = 32
+    n_phase: int = 0        # >0：相位辅助头类别数（0 = 关闭，兼容旧 ckpt）
     conv_norm: str = "gn"   # "gn": 把复用来的 ConvEncoder 的 BN 换成 GroupNorm
 
 
@@ -120,6 +121,9 @@ class ActPolicy(nn.Module):
 
         # ---------------- 输出头 ----------------
         self.act_head = nn.Linear(d, 4)   # xyz(世界目标) + 夹爪 logit
+        # 相位辅助头：每个 query 预测该步属于 接近/下探/搬运，推理端用 k=0 的
+        # argmax 反馈回状态（相位由策略自己决定，不是脚本 FSM）
+        self.phase_head = nn.Linear(d, cfg.n_phase) if cfg.n_phase else None
         self._init_weights()
 
     # ------------------------------------------------------------------ #
@@ -172,17 +176,21 @@ class ActPolicy(nn.Module):
         h = self.decoder(q, memory)
         h = self.dec_norm(h)
         # 与 ActPolicy.encode 的 CLS 捷径：当前帧状态直连每个 query
-        return self.act_head(h + self.state_short(states[:, -1])[:, None, :])
+        base = h + self.state_short(states[:, -1])[:, None, :]
+        if self.phase_head is None:
+            return self.act_head(base), None
+        return self.act_head(base), self.phase_head(h)
 
     def forward(self, imgs_oh, imgs_wr, states, kind_ids, act_target=None,
-                use_prior: bool = False):
+                use_prior: bool = False, phase_out: bool = False):
         """
         imgs_oh: (B,T,3,H,W) float[0,1]；imgs_wr 同上或 None
         states:  (B,T,obs_dim)；kind_ids: (B,)
         act_target: (B,K,4) 归一化动作，训练时用于 CVAE posterior
         use_prior:  True → 强制 z=0（推理路径）
+        phase_out:  True → 额外返回每步相位 logits (B,K,n_phase)
 
-        返回 (act (B,K,4), mu, logvar)；无 CVAE 时 mu=logvar=None。
+        返回 (act (B,K,4), mu, logvar[, phase_logits])。
         """
         memory = self.encode(imgs_oh, imgs_wr, states, kind_ids)
         mu = logvar = None
@@ -195,7 +203,10 @@ class ActPolicy(nn.Module):
                 z = mu + std * torch.randn_like(std)
             else:
                 z = memory.new_zeros(memory.shape[0], self.cfg.latent_dim)
-        return self.decode(memory, states, z), mu, logvar
+        act, logits = self.decode(memory, states, z)
+        if phase_out:
+            return act, mu, logvar, logits
+        return act, mu, logvar
 
     @torch.no_grad()
     def act(self, imgs_oh, imgs_wr, states, kind_ids):
