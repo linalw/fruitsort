@@ -55,6 +55,9 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--noise", type=float, default=0.0, help="执行动作上加的高斯噪声（米），用于鲁棒化")
     ap.add_argument("--robot", default="panda")
+    ap.add_argument("--spawn-x", type=float, default=-0.75)
+    ap.add_argument("--spawn-spacing", type=float, default=0.45)
+    ap.add_argument("--control-freq", type=int, default=20)
     ap.add_argument("--images", action="store_true", help="同时保存 overhead + 腕部图像（JPEG 字节）")
     ap.add_argument("--instruction", default="all", choices=["all", "apple", "strawberry", "banana", "pear"],
                     help="指令：只抓某一类（默认全部）")
@@ -71,7 +74,10 @@ def main() -> None:
         "FruitSort-v1", obs_mode="rgbd" if args.images else "state",
         control_mode="pd_ee_pose", sim_backend="cpu", robot_uids=args.robot,
         active_kinds=tuple(args.kinds), belt_speed_range=speed_range,
+        spawn_x=args.spawn_x, spawn_spacing=args.spawn_spacing,
         instruction_kind=None if args.instruction == "all" else args.instruction,
+        sim_config=dict(control_freq=args.control_freq,
+                        sim_freq=120 if args.control_freq == 30 else 100),
     )
 
     rng = np.random.default_rng(args.seed + 999)
