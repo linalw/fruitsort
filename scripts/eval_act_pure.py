@@ -63,6 +63,7 @@ def main() -> None:
     model.load_state_dict(ck["model"]); model.eval()
     ns = Normalizer.from_state(ck["norm_state"]); na = Normalizer.from_state(ck["norm_act"])
     use_phase = cfg.obs_dim > 49
+    delta_actions = bool(ck.get("delta_actions", False))
 
     results = []
     for ep in range(args.episodes):
@@ -128,7 +129,13 @@ def main() -> None:
                     logits = None
             p4 = act[0, 0].cpu().numpy()
             tcp = u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
-            tgt = np.clip(na.unact(p4[:3]), -2, 2)
+            tgt = na.unact(p4[:3])
+            if delta_actions:
+                # 训练/推理一致的增量模式：模型输出「相对当前 TCP 的位移」，
+                # 滞后由每一步的误差反馈自然纠正（绝对目标会退化成轨迹回放）
+                tgt = tcp + np.clip(tgt, -args.max_step, args.max_step)
+            else:
+                tgt = np.clip(tgt, -2, 2)
             if args.z_gate and kind in u.fruit_actors:
                 fz = u.fruit_actors[kind].pose.p[0, 2].item()
                 tgt[2] = float(np.clip(tgt[2], fz - 0.02, 0.90))
@@ -154,6 +161,14 @@ def main() -> None:
             d = float(np.linalg.norm(err))
             if d > args.max_step:
                 tgt = tcp + err / d * args.max_step
+            # 安全界限：不允许把目标压到果心以下（否则夹爪顶住带面，PD 饱和锁死手臂），
+            # 也不允许在水果已经被越过时继续下探（解除下探段）
+            if actor is not None:
+                fpos = actor.pose.p[0].cpu().numpy().astype(np.float64)
+                if not grasping:
+                    tgt[2] = max(tgt[2], float(fpos[2]) + 0.005)
+                    if float(tcp[0] - fpos[0]) < -0.08 and phase_state == 1:
+                        phase_state, same, phase_cand = 0, 0, 0
             cmd = np.array([tgt[1] + 0.5, -tgt[0], tgt[2], *HOME_EULER, grip], dtype=np.float32)
             obs, _, term, trunc, info = env.step(cmd)
             if bool(info.get("success") or info.get("fail")):
