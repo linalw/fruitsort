@@ -17,6 +17,7 @@ import numpy as np
 
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.eval import format_summary, summarize
+from fruitsort.policies.act_runner import ActPureRunner
 from fruitsort.policies.hybrid_teacher import HybridTeacher
 from fruitsort.policies.scripted import ScriptedSorter
 
@@ -36,7 +37,14 @@ def main() -> None:
     ap.add_argument("--push", type=float, default=1.5, help="推力 (N)，在水果进入抓取区时施加一次")
     ap.add_argument("--seed", type=int, default=5000)
     ap.add_argument("--max-steps", type=int, default=1200)
-    ap.add_argument("--policy", choices=["teacher", "scripted"], default="teacher")
+    ap.add_argument("--policy", choices=["teacher", "scripted", "act"], default="teacher",
+                    help="act = 纯 ACT 策略（无脚本执行器）")
+    ap.add_argument("--spawn-spacing", type=float, default=0.6)
+    ap.add_argument("--control-freq", type=int, default=20)
+    ap.add_argument("--fb", type=float, default=0.0)
+    ap.add_argument("--fb-z", action="store_true")
+    ap.add_argument("--grip-ema", type=float, default=0.0)
+    ap.add_argument("--carry-latch", action="store_true")
     ap.add_argument("--device", default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -51,13 +59,19 @@ def main() -> None:
                 "FruitSort-v1", obs_mode="rgbd", control_mode="pd_ee_pose", sim_backend="cpu",
                 robot_uids="panda_wristcam", active_kinds=tuple(args.classes),
                 belt_speed_range=(args.belt, args.belt),
-                spawn_x=args.spawn_x, spawn_spacing=0.6,
-                instruction_kind=args.instruction)
+                spawn_x=args.spawn_x, spawn_spacing=args.spawn_spacing,
+                instruction_kind=args.instruction,
+                sim_config=dict(control_freq=args.control_freq,
+                                sim_freq=120 if args.control_freq == 30 else 100))
             obs, _ = env.reset(seed=args.seed + ep)
             u = env.unwrapped
             kind = args.instruction
             if args.policy == "teacher":
                 policy = HybridTeacher(env, args.ckpt, kind, device=args.device)
+            elif args.policy == "act":
+                policy = ActPureRunner(
+                    env, args.ckpt, kind, device=args.device, fb=args.fb, fb_z=args.fb_z,
+                    grip_ema=args.grip_ema, carry_latch=args.carry_latch)
             else:
                 policy = ScriptedSorter(env, only_kind=kind)
 
@@ -84,15 +98,15 @@ def main() -> None:
                     body.add_force_torque(np.array([0.0, args.push, 0.0]), np.zeros(3))
                     pushed = True
 
-                if args.policy == "teacher":
-                    cmd, _ = policy.act(obs)
+                if args.policy in ("teacher", "act"):
+                    cmd = policy.act(obs) if args.policy == "act" else policy.act(obs)[0]
                 else:
                     cmd = policy.act()
                 obs, _, term, trunc, info = env.step(cmd)
                 if bool(info.get("success") or info.get("fail")):
                     break
             ok = bool(info.get("success", False))
-            results.append({"success": ok, "duration_s": (t + 1) / 20.0})
+            results.append({"success": ok, "duration_s": (t + 1) / args.control_freq})
             print(f"[{'✓' if ok else '✗'}] {cond:7s} ep {ep}")
             env.close()
 

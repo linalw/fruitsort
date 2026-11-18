@@ -1,0 +1,46 @@
+{
+  "ckpt": "runs/act-008-4c-v2/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 3,
+  "belt": 0.08,
+  "summary": {
+    "n_episodes": 3,
+    "n_success": 3,
+    "success_rate": 1.0,
+    "success_rate_ci95": [
+      0.4385,
+      1.0
+    ],
+    "avg_duration_s": 7.689,
+    "failure_counts": {}
+  },
+  "args": {
+    "ckpt": "runs/act-008-4c-v2/ckpt.pt",
+    "kinds": [
+      "apple",
+      "strawberry",
+      "banana",
+      "pear"
+    ],
+    "instruction": "apple",
+    "episodes": 3,
+    "belt": 0.08,
+    "control_freq": 30,
+    "spawn_x": -0.55,
+    "spawn_spacing": 0.35,
+    "seed": 5000,
+    "max_steps": 900,
+    "fb": 0.5,
+    "fb_z": false,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "descend_commit": 0,
+    "hold_latch": false,
+    "lead": 0.0,
+    "z_gate": false,
+    "chunk_exec": 1,
+    "no_phase_fb": false,
+    "max_step": 0.06,
+    "device": "cuda"
+  }
+}
