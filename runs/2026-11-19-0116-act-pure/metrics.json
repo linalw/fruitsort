@@ -1,0 +1,24 @@
+{
+  "ckpt": "runs/act-008-4c-v2/ckpt.pt",
+  "instruction": "strawberry",
+  "episodes": 6,
+  "belt": 0.08,
+  "z_gate": false,
+  "phase_fb": true,
+  "fb": 0.5,
+  "hold_latch": false,
+  "chunk_exec": 1,
+  "grasp_retry": true,
+  "descend_commit": 0,
+  "summary": {
+    "n_episodes": 6,
+    "n_success": 2,
+    "success_rate": 0.3333,
+    "success_rate_ci95": [
+      0.0968,
+      0.7
+    ],
+    "avg_duration_s": 15.161,
+    "failure_counts": {}
+  }
+}

@@ -52,6 +52,11 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=900)
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--z-gate", action="store_true")
+    ap.add_argument("--carry-latch", action="store_true",
+                    help="搬运段锁住夹爪：只有连续 3 步预测开爪才真的松手（防止中途抖动掉果）")
+    ap.add_argument("--grip-ema", type=float, default=0.0,
+                    help="夹爪 logit 指数平滑系数（0=关闭）。搬运中 logit 抖动会造成中途松爪掉落，"
+                         "平滑后开/闭只跟随持续意图")
     ap.add_argument("--fb-z", action="store_true",
                     help="反馈项也作用于 z（默认只作用于 xy：竖直方向的下探/闭爪深度由策略决定）")
     ap.add_argument("--fb", type=float, default=0.0,
@@ -98,13 +103,22 @@ def main() -> None:
         zone_entry = None   # 水果首次进入抓取区的步数（用于「单件处理时间」）
         queue = []          # 已预测但未执行的动作块（增量）
         closed_steps = 0    # 闭爪但未夹住的连续步数（再现专家的重试行为）
+        grip_ema = None     # 夹爪 logit 平滑状态
+        prev_grip = 1.0     # 上一步的夹爪指令（用于判定是否真的夹住）
+        open_streak = 0     # 搬运段连续预测「开爪」的步数
         commit = 0          # 下探承诺剩余步数
         n_close, n_dec, n_carry = 0, 0, 0
         for t in range(args.max_steps):
             actor = u.fruit_actors.get(kind)
             grasping = False
+            tcp = u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
             if actor is not None:
-                grasping = bool(u.agent.is_grasping(actor)[0])
+                fpos_now = actor.pose.p[0].cpu().numpy().astype(np.float64)
+                # 搬运判据：手指接触，或「贴得很近且上一步确实闭爪」。
+                # 不能用 |Δ|<8cm 单独判定——悬停在水果上方 6cm 也会满足，
+                # 模型会以为自己抱着东西，一路"抱着空气"走向料框（草莓失败局就是这样）
+                fd = float(np.linalg.norm(fpos_now - tcp))
+                grasping = bool(u.agent.is_grasping(actor)[0]) or (fd < 0.045 and prev_grip < 0)
                 fz = float(actor.pose.p[0, 2])
                 if grasping:
                     phase_state, grasp_lost = 2, 0
@@ -178,7 +192,18 @@ def main() -> None:
             if args.z_gate and kind in u.fruit_actors:
                 fz = u.fruit_actors[kind].pose.p[0, 2].item()
                 tgt[2] = float(np.clip(tgt[2], fz - 0.02, 0.90))
-            grip = -1.0 if p4[3] > 0 else 1.0
+            glogit = float(p4[3])
+            if args.grip_ema > 0:
+                a = args.grip_ema
+                grip_ema = glogit if grip_ema is None else a * grip_ema + (1 - a) * glogit
+                glogit = grip_ema
+            grip = -1.0 if glogit > 0 else 1.0
+            if args.carry_latch and grasping:
+                open_streak = open_streak + 1 if glogit < 0 else 0
+                if open_streak < 3:
+                    grip = -1.0
+            else:
+                open_streak = 0
             n_close += int(grip < 0)
             n_carry += int(phase_state == 2)
             n_dec += int(phase_state == 1)
@@ -229,6 +254,7 @@ def main() -> None:
                     tgt[2] = max(tgt[2], float(fpos[2]) - 0.02)
                     if float(tcp[0] - fpos[0]) < -0.08 and phase_state == 1:
                         phase_state, same, phase_cand = 0, 0, 0
+            prev_grip = grip
             cmd = np.array([tgt[1] + 0.5, -tgt[0], tgt[2], *HOME_EULER, grip], dtype=np.float32)
             obs, _, term, trunc, info = env.step(cmd)
             if bool(info.get("success") or info.get("fail")):
@@ -255,6 +281,7 @@ def main() -> None:
          "belt": args.belt, "z_gate": args.z_gate, "phase_fb": not args.no_phase_fb,
          "fb": args.fb, "hold_latch": args.hold_latch, "chunk_exec": args.chunk_exec,
          "grasp_retry": True, "descend_commit": args.descend_commit,
+         "grip_ema": args.grip_ema, "carry_latch": args.carry_latch,
          "summary": s}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
