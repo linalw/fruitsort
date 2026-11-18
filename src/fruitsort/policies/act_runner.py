@@ -40,7 +40,8 @@ class ActPureRunner:
                  carry_latch: bool = False, descend_commit: int = 0,
                  max_step: float = 0.06, lead: float = 0.0, z_gate: bool = False,
                  phase_fb: bool = True, hold_latch: bool = False,
-                 grasp_retry: bool = True, chunk_exec: int = 1):
+                 grasp_retry: bool = True, chunk_exec: int = 1,
+                 carry_max_step: float = 0.0):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -57,6 +58,10 @@ class ActPureRunner:
         self.max_step, self.lead, self.z_gate = max_step, lead, z_gate
         self.phase_fb, self.hold_latch, self.grasp_retry = phase_fb, hold_latch, grasp_retry
         self.chunk_exec = chunk_exec
+        # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
+        self.carry_max_step = carry_max_step
+        # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
+        self.carry_max_step = carry_max_step
         self.reset()
 
     # ------------------------------------------------------------------ #
@@ -214,8 +219,11 @@ class ActPureRunner:
 
         err = tgt - tcp
         d = float(np.linalg.norm(err))
-        if d > self.max_step:
-            tgt = tcp + err / d * self.max_step
+        step = self.max_step
+        if self.carry_max_step > 0 and self.phase_state == 2:
+            step = self.carry_max_step
+        if d > step:
+            tgt = tcp + err / d * step
         if actor is not None:
             fpos = actor.pose.p[0].cpu().numpy().astype(np.float64)
             if not grasping:

@@ -52,6 +52,8 @@ def main() -> None:
     ap.add_argument("--chunk-exec", type=int, default=1, help="每 s 步重规划一次（增量模式下有意义）")
     ap.add_argument("--no-phase-fb", action="store_true", help="相位输入恒为 0（消融）")
     ap.add_argument("--max-step", type=float, default=0.06)
+    ap.add_argument("--carry-max-step", type=float, default=0.0,
+                    help="搬运段专用步长上限（0=与 max-step 相同）；抑制在料框处过冲")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -73,7 +75,8 @@ def main() -> None:
             grip_ema=args.grip_ema, carry_latch=args.carry_latch,
             descend_commit=args.descend_commit, max_step=args.max_step, lead=args.lead,
             z_gate=args.z_gate, phase_fb=not args.no_phase_fb,
-            hold_latch=args.hold_latch, chunk_exec=args.chunk_exec)
+            hold_latch=args.hold_latch, chunk_exec=args.chunk_exec,
+            carry_max_step=args.carry_max_step)
         zone_entry = None
         info, t = {}, 0
         for t in range(args.max_steps):
