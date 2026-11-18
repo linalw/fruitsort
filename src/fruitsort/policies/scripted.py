@@ -188,6 +188,10 @@ class ScriptedSorter:
             tol = 0.03 if self.only_kind in ("banana", "pear") else 0.018
             if speed >= 0.15:
                 tol = max(tol, 0.055)  # 高速：每步水果移动 1cm，容差必须放宽
+            elif self.only_kind in ("banana", "pear"):
+                # 低速下香蕉/梨的下探会让 PD 稳态误差变大：3cm 容差永远不满足，
+                # 导致专家自己抓不到（0.08 m/s 采梨只有 2/40）。低速放宽到 5cm。
+                tol = max(tol, 0.05)
             aligned = abs(x_g - tcp[0]) < tol and abs(y_g - tcp[1]) < tol
             # 高速预测闭爪：水果即将到达/刚过夹爪时闭爪，不等到"位姿完全对齐"
             dx = float(tcp[0] - p[0])   # >0: 夹爪在水果前方

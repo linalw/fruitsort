@@ -52,6 +52,16 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=900)
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--z-gate", action="store_true")
+    ap.add_argument("--fb-z", action="store_true",
+                    help="反馈项也作用于 z（默认只作用于 xy：竖直方向的下探/闭爪深度由策略决定）")
+    ap.add_argument("--fb", type=float, default=0.0,
+                    help="残差反馈增益：目标 += fb * clip(水果 - TCP)。0=纯策略；"
+                         ">0 时策略提供前馈、反馈项负责把残余误差收掉（IBVS 式）")
+    ap.add_argument("--descend-commit", type=int, default=0,
+                    help="下探承诺步数：相位头一旦预测「下探」就保持 N 步（专家 FSM 进入 DESCEND 后不退回；"
+                         "单帧回归无法表达这种承诺，于是闭环里会上下点头）")
+    ap.add_argument("--hold-latch", action="store_true",
+                    help="闭爪期间锁存目标（停住等水果进夹持区），而不是继续跟着水果走")
     ap.add_argument("--lead", type=float, default=0.0,
                     help="前馈超前补偿（秒）：目标 x 加上 v*lead，抵消策略的固定跟踪滞后（残差项）")
     ap.add_argument("--chunk-exec", type=int, default=1,
@@ -85,8 +95,10 @@ def main() -> None:
         oh, wr, st = [], [], []
         info, t = {}, 0
         phase_state, phase_cand, same, grasp_lost = 0, 0, 0, 0
+        zone_entry = None   # 水果首次进入抓取区的步数（用于「单件处理时间」）
         queue = []          # 已预测但未执行的动作块（增量）
-        replan = 0
+        closed_steps = 0    # 闭爪但未夹住的连续步数（再现专家的重试行为）
+        commit = 0          # 下探承诺剩余步数
         n_close, n_dec, n_carry = 0, 0, 0
         for t in range(args.max_steps):
             actor = u.fruit_actors.get(kind)
@@ -102,6 +114,10 @@ def main() -> None:
                     if fz < 0.52 or grasp_lost > 20:
                         phase_state, same, phase_cand = 0, 0, 0
 
+            if zone_entry is None and actor is not None:
+                fx = float(actor.pose.p[0, 0])
+                if u.pick_zone[0] <= fx <= u.pick_zone[1]:
+                    zone_entry = t
             sd = obs["sensor_data"]
             oh.append(prep(sd["overhead"]["rgb"][0].cpu().numpy(), cfg.img_size))
             wr.append(prep(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
@@ -150,6 +166,12 @@ def main() -> None:
                 tgt = tcp + np.clip(tgt, -args.max_step, args.max_step)
             else:
                 tgt = np.clip(tgt, -2, 2)
+            if args.fb and kind in u.fruit_actors and not (actor is not None and grasping):
+                fpos = u.fruit_actors[kind].pose.p[0].cpu().numpy().astype(np.float64)
+                corr = np.clip(fpos - tcp, -0.15, 0.15)
+                if not args.fb_z:
+                    corr[2] = 0.0
+                tgt = tgt + args.fb * corr
             if args.lead and kind in u.fruit_actors:
                 # 残差控制器的前馈项：策略负责形状，前馈负责相位（补偿固定滞后）
                 tgt[0] += args.lead * args.belt
@@ -162,18 +184,39 @@ def main() -> None:
             n_dec += int(phase_state == 1)
 
             # 相位反馈：用模型自己的预测（k=0），未真正抓住时不允许自认搬运，
-            # 并要求连续 2 帧一致才切换（迟滞）
+            # 并要求连续 2 帧一致才切换（迟滞）；「下探」额外带承诺步数
             if logits is not None and phase_state != 2:
                 p_cls = int(logits[0, 0].argmax())
                 if p_cls == 2:
                     p_cls = 1
-                if p_cls == phase_cand:
-                    same += 1
+                if p_cls == 1:
+                    phase_cand, same = 1, 1
+                    commit = args.descend_commit
+                    phase_state = 1
+                elif commit > 0:
+                    commit -= 1          # 承诺保持下探，不退回接近
                 else:
-                    phase_cand, same = p_cls, 0
-                if same >= 1:
-                    phase_state = phase_cand
+                    if p_cls == phase_cand:
+                        same += 1
+                    else:
+                        phase_cand, same = p_cls, 0
+                    if same >= 1:
+                        phase_state = phase_cand
 
+            # 抓空复位（对应专家 FSM 的 close_steps=12）：闭爪 12 步没夹住就开爪重试，
+            # 否则一次闭空会把整局浪费掉（trace 里模型闭着爪一路走向料框）
+            if grip < 0 and not grasping:
+                closed_steps += 1
+                if closed_steps > 12:
+                    grip = 1.0
+                    closed_steps = 0
+                    if phase_state == 1:
+                        phase_state, same, phase_cand, commit = 0, 0, 0, 0
+            else:
+                closed_steps = 0
+            if args.hold_latch and grip < 0 and not grasping:
+                # 闭爪窗口内不再移动：停在原地等水果进夹持区
+                tgt = tcp.copy()
             err = tgt - tcp
             d = float(np.linalg.norm(err))
             if d > args.max_step:
@@ -183,7 +226,7 @@ def main() -> None:
             if actor is not None:
                 fpos = actor.pose.p[0].cpu().numpy().astype(np.float64)
                 if not grasping:
-                    tgt[2] = max(tgt[2], float(fpos[2]) + 0.005)
+                    tgt[2] = max(tgt[2], float(fpos[2]) - 0.02)
                     if float(tcp[0] - fpos[0]) < -0.08 and phase_state == 1:
                         phase_state, same, phase_cand = 0, 0, 0
             cmd = np.array([tgt[1] + 0.5, -tgt[0], tgt[2], *HOME_EULER, grip], dtype=np.float32)
@@ -191,18 +234,27 @@ def main() -> None:
             if bool(info.get("success") or info.get("fail")):
                 break
         ok = bool(info.get("success", False))
-        results.append({"success": ok, "duration_s": (t + 1) / args.control_freq})
+        handle_s = ((t + 1 - zone_entry) / args.control_freq) if zone_entry is not None else None
+        results.append({"success": ok, "duration_s": (t + 1) / args.control_freq,
+                        "handle_s": handle_s})
         print(f"[{'✓' if ok else '✗'}] ep {ep:02d} kind={kind} steps={t + 1} "
+              f"handle={'-' if handle_s is None else f'{handle_s:.1f}s'} "
               f"close={n_close / max(t + 1, 1):.2f} descend={n_dec} carry={n_carry}")
         env.close()
 
     s = summarize(results)
     print("\nACT 纯策略:", format_summary(s))
+    hs = [r["handle_s"] for r in results if r["success"] and r["handle_s"] is not None]
+    if hs:
+        print(f"单件处理时间（进入抓取区→入框）: 均值 {np.mean(hs):.2f}s  P90 "
+              f"{np.percentile(hs, 90):.2f}s  最大 {np.max(hs):.2f}s")
     out = ROOT / "runs" / f"{time.strftime('%Y-%m-%d-%H%M')}-act-pure"
     out.mkdir(parents=True, exist_ok=True)
     (out / "metrics.json").write_text(json.dumps(
         {"ckpt": str(args.ckpt), "instruction": args.instruction, "episodes": args.episodes,
          "belt": args.belt, "z_gate": args.z_gate, "phase_fb": not args.no_phase_fb,
+         "fb": args.fb, "hold_latch": args.hold_latch, "chunk_exec": args.chunk_exec,
+         "grasp_retry": True, "descend_commit": args.descend_commit,
          "summary": s}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

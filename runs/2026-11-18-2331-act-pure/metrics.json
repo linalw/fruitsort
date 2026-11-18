@@ -1,0 +1,22 @@
+{
+  "ckpt": "runs/act-008-apple/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 5,
+  "belt": 0.08,
+  "z_gate": false,
+  "phase_fb": true,
+  "fb": 0.5,
+  "hold_latch": false,
+  "chunk_exec": 1,
+  "summary": {
+    "n_episodes": 5,
+    "n_success": 5,
+    "success_rate": 1.0,
+    "success_rate_ci95": [
+      0.5655,
+      1.0
+    ],
+    "avg_duration_s": 6.527,
+    "failure_counts": {}
+  }
+}

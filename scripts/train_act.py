@@ -57,6 +57,8 @@ def main() -> None:
                     help="给状态追加 1-hot 相位（接近/下探/搬运），obs_dim 49→52，"
                          "并训练相位辅助头（策略自己预测相位）")
     ap.add_argument("--phase-weight", type=float, default=0.5)
+    ap.add_argument("--descend-boost", type=int, default=1,
+                    help="下探/闭爪窗过采样倍数（相位=1 的窗口重复 N 次）")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0, help="只取前 N 个样本（冒烟测试用）")
@@ -69,7 +71,7 @@ def main() -> None:
 
     ds = ImageDemoDataset(data_dirs, hist=args.hist, chunk=args.chunk, stride=args.stride,
                           delay_prob=args.delay_prob, delta_actions=args.delta_actions,
-                          use_phase=args.phase)
+                          use_phase=args.phase, descend_boost=args.descend_boost)
     obs_dim = 52 if args.phase else 49
 
     # 分层划分：每组（同一数据集 × 同一指令）留出最后若干个 episode。

@@ -52,12 +52,13 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
         self.use_phase = use_phase
         self.delta_clip = delta_clip
+        self.descend_boost = max(1, int(descend_boost))
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
         for d in dirs:
@@ -87,6 +88,10 @@ class ImageDemoDataset(Dataset):
             T = len(ep["obs"])
             for t in range(self.hist - 1, T - 1, stride):
                 self.index.append((ei, t))
+                # 下探/闭爪窗只占一小部分帧，却是闭环成败的关键：
+                # 过采样让「何时下探、何时闭爪」不被「悬停跟随」淹没
+                if use_phase and self.descend_boost > 1 and t < T and ep["phase"][t] == 1:
+                    self.index.extend([(ei, t)] * (self.descend_boost - 1))
 
     def __len__(self):
         return len(self.index)
