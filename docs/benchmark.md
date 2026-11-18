@@ -47,6 +47,34 @@ python scripts/benchmark_sorting.py --policy hybrid --ckpt runs/vpolicy-4c-v3/ck
 
 视频：`data/fruitsort/eval/model_demo_v025.mp4`（四类，3/4；梨该局随机失败）。
 
+## 低速纯策略协议（v1.4，0.08 m/s）
+
+目标：**非脚本**分拣（策略同时输出抓取与搬运），低速优先，成功率 >65%、单件 <10s。
+
+```bash
+# 1) 采集同分布示教（四类各 40 局，0.08 m/s / 30 Hz / 平行夹爪）
+for k in apple strawberry banana pear; do
+  python scripts/record_demos.py --kinds apple strawberry banana pear --episodes 40 \
+    --seed 20000 --belt-speed 0.08 --spawn-x -0.55 --spawn-spacing 0.35 \
+    --control-freq 30 --images --robot panda_wristcam --instruction $k \
+    --out data/datasets/d008-$k
+done
+
+# 2) 训练 ACT-lite（增量动作 + 相位条件化 + 下探窗过采样）
+python scripts/train_act.py --data data/datasets/d008-{apple,strawberry,banana,pear} \
+  --out runs/act-008-4c --epochs 60 --batch 64 --stride 2 --lr 1e-4 \
+  --phase --delta-actions --descend-boost 3
+
+# 3) 纯策略闭环（无脚本执行器；残差反馈 + 夹爪去抖）
+python scripts/eval_act_pure.py --ckpt runs/act-008-4c-v2/ckpt.pt \
+  --instruction apple --episodes 10 --belt 0.08 --spawn-spacing 0.35 \
+  --control-freq 30 --fb 0.5 --grip-ema 0.6 --carry-latch
+```
+
+指标定义：
+- **成功率**：目标水果落入对应料框（env 的 `success`）
+- **单件处理时间**：目标水果首次进入抓取区 → 入框（不含传送带运送时间），对应「<10s/件」
+
 ## 高速结果（v0.10.0，吸盘末端原型，30 Hz；不纳入验收）
 
 | 带速 | 总体 | 苹果 | 草莓 | 香蕉 | 梨 | 单件节拍 |
