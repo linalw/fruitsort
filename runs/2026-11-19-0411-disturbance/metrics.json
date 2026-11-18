@@ -1,0 +1,24 @@
+{
+  "condition": "push",
+  "classes": [
+    "apple",
+    "strawberry",
+    "banana",
+    "pear"
+  ],
+  "instruction": "strawberry",
+  "belt": 0.08,
+  "summary": {
+    "push": {
+      "n_episodes": 5,
+      "n_success": 4,
+      "success_rate": 0.8,
+      "success_rate_ci95": [
+        0.3755,
+        0.9638
+      ],
+      "avg_duration_s": 10.113,
+      "failure_counts": {}
+    }
+  }
+}
