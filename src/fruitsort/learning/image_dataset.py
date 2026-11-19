@@ -90,8 +90,19 @@ class ImageDemoDataset(Dataset):
                 ep["phase"] = episode_phase(obs, ep["act"], instr)
             if obs.shape[1] >= 58:
                 # 触觉布局：[49 base][9 tactile]；index 54=v_slip, 55/56=左右指接触
-                # 滑移 = 有实际夹持力(Fn>5N) 且物体相对 TCP 有速度（>5cm/s）
-                ep["slip"] = ((obs[:, 49] > 5.0) & (obs[:, 54] > 0.05)).astype(np.float32)
+                # 逐帧滑移：有实际夹持力(Fn>5N) 且物体相对 TCP 有速度（>5cm/s）
+                now = ((obs[:, 49] > 5.0) & (obs[:, 54] > 0.05)).astype(np.float32)
+                ep["slip_now"] = now
+                # 监督标签 = **即将滑移的起始**（当前没滑，但 5~20 帧内会滑）。
+                # 关键：如果标签用 t+1..t+10 的 max、而 v_slip 又在观测里，模型直接读数就能拿到
+                # 标签（AUROC 会退化成 1.0，见 docs 6.16.2）。改成"起始事件 + 5 帧盲区"后，
+                # 模型必须从触觉历史/图像里推断"这一抓会不会滑"。
+                T = len(now)
+                fut = np.zeros(T, dtype=np.float32)
+                for i in range(T):
+                    lo, hi = i + 5, min(i + 21, T)
+                    fut[i] = float(now[lo:hi].max()) if hi > lo else 0.0
+                ep["slip_onset"] = (fut * (1.0 - now)).astype(np.float32)
 
             self.episodes.append(ep)
         if not self.episodes:
@@ -185,9 +196,8 @@ class ImageDemoDataset(Dataset):
             "kind": torch.tensor(ep["instruction_id"], dtype=torch.long),
         }
         out["aux_only"] = torch.tensor(float(ep.get("aux_only", False)))
-        if "slip" in ep:
-            sl = ep["slip"][t + 1:t + 11]
-            out["slip"] = torch.tensor(float(sl.max()) if len(sl) else 0.0)
+        if "slip_onset" in ep:
+            out["slip"] = torch.tensor(float(ep["slip_onset"][t]))
         if phase_chunk is not None:
             out["phase_chunk"] = torch.from_numpy(phase_chunk.astype(np.int64))
         return out

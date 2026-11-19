@@ -42,7 +42,9 @@ class ActPureRunner:
                  phase_fb: bool = True, hold_latch: bool = False,
                  grasp_retry: bool = True, chunk_exec: int = 1,
                  carry_max_step: float = 0.0, slip_guard: bool = False,
-                 slip_thr: float = 0.05, slip_slow_step: float = 0.012):
+                 slip_thr: float = 0.05, slip_slow_step: float = 0.012,
+                 regrasp: bool = False, regrasp_thr: float = 0.6,
+                 regrasp_depth: float = 0.02):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -67,12 +69,20 @@ class ActPureRunner:
         self.slip_guard = slip_guard
         self.slip_thr = slip_thr
         self.slip_slow_step = slip_slow_step
+        # 触觉预测驱动「闭爪前重抓」：滑移头认为这一抓会滑 → 先开爪、下沉 2cm、再闭
+        self.regrasp = regrasp
+        self.regrasp_thr = regrasp_thr
+        self.regrasp_depth = regrasp_depth
         # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
         self.carry_max_step = carry_max_step
         # 触觉补救：搬运中检测到滑移（物体相对 TCP 有速度且有夹持力）→ 立即降速搬运
         self.slip_guard = slip_guard
         self.slip_thr = slip_thr
         self.slip_slow_step = slip_slow_step
+        # 触觉预测驱动「闭爪前重抓」：滑移头认为这一抓会滑 → 先开爪、下沉 2cm、再闭
+        self.regrasp = regrasp
+        self.regrasp_thr = regrasp_thr
+        self.regrasp_depth = regrasp_depth
         self.reset()
 
     # ------------------------------------------------------------------ #
@@ -88,10 +98,12 @@ class ActPureRunner:
         self.prev_grip = 1.0
         self.open_streak = 0
         self.slip_slow = False
+        self.regrasp_done = False
+        self.slip_prob = None
         self.queue = []
         self.queue_logits = None
         self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
-                      "slip": 0, "slip_first": -1}
+                      "slip": 0, "slip_first": -1, "regrasp": 0, "slip_prob_max": 0.0}
         self.grasping = False
 
     # ------------------------------------------------------------------ #
@@ -162,6 +174,12 @@ class ActPureRunner:
                 self.queue_logits = logits
             p4 = acts_np[0]
 
+        # 滑移预测（辅助头）：sigmoid(logit)
+        self.slip_prob = None
+        if getattr(self.model, "last_slip", None) is not None:
+            self.slip_prob = float(torch.sigmoid(self.model.last_slip).mean().item())
+            self.stats["slip_prob_max"] = max(self.stats["slip_prob_max"], self.slip_prob)
+
         tgt = self.na.unact(p4[:3])
         if self.delta_actions:
             tgt = tcp + np.clip(tgt, -self.max_step, self.max_step)
@@ -194,6 +212,8 @@ class ActPureRunner:
         else:
             self.open_streak = 0
         self.slip_slow = False
+        self.regrasp_done = False
+        self.slip_prob = None
         self.stats["close"] += int(grip < 0)
         self.stats["descend"] += int(self.phase_state == 1)
         self.stats["carry"] += int(self.phase_state == 2)
@@ -217,6 +237,16 @@ class ActPureRunner:
                     self.phase_cand, self.same = p_cls, 0
                 if self.same >= 1:
                     self.phase_state = self.phase_cand
+
+        # ---- 触觉预测驱动的闭爪前重抓 ----
+        if (self.regrasp and not grasping and self.phase_state == 1 and grip < 0
+                and not self.regrasp_done and self.slip_prob is not None
+                and self.slip_prob > self.regrasp_thr):
+            grip = 1.0                      # 先张开
+            tgt[2] = tgt[2] - self.regrasp_depth   # 再下沉 2cm
+            self.regrasp_done = True
+            self.stats["regrasp"] += 1
+            self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 12
 
         # 抓空复位（对应专家 close_steps=12）
         if grip < 0 and not grasping:

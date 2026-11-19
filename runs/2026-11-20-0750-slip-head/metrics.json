@@ -1,0 +1,12 @@
+{
+  "ckpt": "runs/act-ta-onslip/ckpt.pt",
+  "data": [
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger2h-apple",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger2h-strawberry",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger2h-banana",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger2h-pear"
+  ],
+  "windows": 1853,
+  "positives": 61,
+  "auroc": 0.8130946282201406
+}
