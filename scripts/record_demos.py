@@ -57,7 +57,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--noise", type=float, default=0.0, help="执行动作上加的高斯噪声（米），用于鲁棒化")
     ap.add_argument("--robot", default="panda")
-    ap.add_argument("--spawn-x", type=float, default=-0.75)
+    ap.add_argument("--spawn-x", type=float, default=-0.55,
+                    help="第一个水果的出生 x（与评测一致，默认 -0.55）")
     ap.add_argument("--spawn-spacing", type=float, default=0.45)
     ap.add_argument("--control-freq", type=int, default=20)
     ap.add_argument("--images", action="store_true", help="同时保存 overhead + 腕部图像（JPEG 字节）")
@@ -76,6 +77,11 @@ def main() -> None:
         speed_range = (args.belt_speed, args.belt_speed)
     else:
         speed_range = (0.04, 0.08)
+    last_x = args.spawn_x - (len(args.kinds) - 1) * args.spawn_spacing
+    if last_x < -2.6:
+        print(f"⚠ 第 {len(args.kinds)} 个水果出生在 x={last_x:.2f}，超出传送带尾端，"
+              f"会立刻判定掉落 → 整局 fail。请减小 --spawn-spacing 或后移 --spawn-x。",
+              flush=True)
     env = gym.make(
         "FruitSort-v1", obs_mode="rgbd" if args.images else "state",
         control_mode="pd_ee_pose", sim_backend="cpu", robot_uids=args.robot,
