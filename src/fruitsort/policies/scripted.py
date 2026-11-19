@@ -31,6 +31,8 @@ class PolicyConfig:
     bin_height: float = 0.50
     max_step: float = 0.06       # 每步最大位移（米）
     carry_max_step: float = 0.06  # 搬运段最大位移（梨等易滑脱的水果需要更慢）
+    grasp_tilt: float = 0.0       # 抓取倾角（rad）：0=俯视；探针测得 30–45° 可行、60° 撞带面
+    grasp_yaw: float = 0.0        # 绕竖直轴偏转（rad）：改变夹指闭合方向（长条形水果有用）
     pear_extra_depth: float = 0.01   # 梨额外下探（梨较窄，抓浅了会滑脱）
     close_steps: int = 12
     release_steps: int = 8
@@ -99,7 +101,9 @@ class ScriptedSorter:
         # 世界系 → 机器人基座系（基座绕 z 旋转 +90°）
         x, y, z = tgt
         cmd = np.array([y + 0.5, -x, z], dtype=np.float32)
-        return np.array([*cmd, *HOME_EULER, gripper], dtype=np.float32)
+        tilt = self.cfg.grasp_tilt
+        eul = ((HOME_EULER[0] - tilt), HOME_EULER[1], HOME_EULER[2] + self.cfg.grasp_yaw)
+        return np.array([*cmd, *eul, gripper], dtype=np.float32)
 
     def _home(self, gripper: float = 1.0) -> np.ndarray:
         return self._action(np.array(self.cfg.ready_pose), gripper)
