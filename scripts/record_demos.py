@@ -29,7 +29,7 @@ SIM_FREQ = {20: 100, 30: 120, 60: 240}
 ALL = ("apple", "strawberry", "banana", "pear")
 
 
-def obs_vector(u) -> np.ndarray:
+def obs_vector(u, kind=None, tactile: bool = False) -> np.ndarray:
     tcp = u.agent.tcp_pose.raw_pose[0].cpu().numpy()          # (7) p + q
     qpos = u.agent.robot.get_qpos()[0].cpu().numpy()           # (9)
     belt = np.array([float(u.belt_speed[0])], dtype=np.float32)
@@ -44,7 +44,11 @@ def obs_vector(u) -> np.ndarray:
         else:
             p = np.zeros(3); v = np.zeros(3); held = 0.0; active = 0.0
         feats.append(np.concatenate([p, v, [active, held]]))
-    return np.concatenate([tcp, qpos, belt, *feats]).astype(np.float32)
+    out = np.concatenate([tcp, qpos, belt, *feats]).astype(np.float32)
+    if tactile:
+        from fruitsort.learning.bc import build_tactile
+        out = np.concatenate([out, build_tactile(u, kind)]).astype(np.float32)
+    return out
 
 
 def main() -> None:
@@ -63,6 +67,8 @@ def main() -> None:
     ap.add_argument("--spawn-spacing", type=float, default=0.45)
     ap.add_argument("--control-freq", type=int, default=20)
     ap.add_argument("--images", action="store_true", help="同时保存 overhead + 腕部图像（JPEG 字节）")
+    ap.add_argument("--tactile", action="store_true",
+                    help="观测追加 9 维触觉（左右指接触力/摩擦利用率/开口/滑移）")
     ap.add_argument("--instruction", default="all", choices=["all", "apple", "strawberry", "banana", "pear"],
                     help="指令：只抓某一类（默认全部）")
     ap.add_argument("--out", default="")
@@ -104,7 +110,8 @@ def main() -> None:
         over_list, wrist_list = [], []
         info = {}
         for t in range(args.max_steps):
-            o = obs_vector(u)
+            o = obs_vector(u, kind=args.instruction if args.instruction != "all" else None,
+                           tactile=args.tactile)
             if args.images:
                 sd = obs["sensor_data"]
                 oh = sd["overhead"]["rgb"][0].cpu().numpy()

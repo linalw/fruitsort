@@ -22,6 +22,7 @@ import torch
 
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.eval import format_summary, summarize
+from fruitsort.learning.bc import build_tactile
 from fruitsort.policies.act_runner import ActPureRunner
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -80,6 +81,9 @@ def main() -> None:
             carry_max_step=args.carry_max_step)
         zone_entry = None
         info, t = {}, 0
+        # 「无损」指标（触觉）：峰值法向力、最大摩擦利用率、最大挤压比、累计滑移距离
+        Fn_peak = rho_max = delta_max = slip_dist = 0.0
+        held_any = False
         for t in range(args.max_steps):
             actor = u.fruit_actors.get(kind)
             if zone_entry is None and actor is not None:
@@ -87,18 +91,28 @@ def main() -> None:
                 if u.pick_zone[0] <= fx <= u.pick_zone[1]:
                     zone_entry = t
             cmd = runner.act(obs)
+            tac = build_tactile(u, kind)
+            Fn_peak = max(Fn_peak, float(tac[0]))
+            rho_max = max(rho_max, float(tac[2]))
+            delta_max = max(delta_max, float(tac[4]))
+            if runner.phase_state == 2:
+                held_any = True
+                slip_dist += float(tac[5]) / args.control_freq
             obs, _, term, trunc, info = env.step(cmd)
             if bool(info.get("success") or info.get("fail")):
                 break
         ok = bool(info.get("success", False))
         handle_s = ((t + 1 - zone_entry) / args.control_freq) if zone_entry is not None else None
         results.append({"success": ok, "duration_s": (t + 1) / args.control_freq,
-                        "handle_s": handle_s})
+                        "handle_s": handle_s, "Fn_peak": Fn_peak, "rho_max": rho_max,
+                        "delta_max": delta_max, "slip_m": slip_dist,
+                        "dropped": bool(held_any and not ok)})
         st = runner.stats
         print(f"[{'✓' if ok else '✗'}] ep {ep:02d} kind={kind} steps={t + 1} "
               f"handle={'-' if handle_s is None else f'{handle_s:.1f}s'} "
               f"close={st['close'] / max(st['steps'], 1):.2f} "
-              f"descend={st['descend']} carry={st['carry']}")
+              f"descend={st['descend']} carry={st['carry']} "
+              f"Fn={Fn_peak:.1f}N rho={rho_max:.2f} slip={slip_dist * 100:.1f}cm")
         env.close()
 
     s = summarize(results)
@@ -107,6 +121,10 @@ def main() -> None:
     if hs:
         print(f"单件处理时间（进入抓取区→入框）: 均值 {np.mean(hs):.2f}s  P90 "
               f"{np.percentile(hs, 90):.2f}s  最大 {np.max(hs):.2f}s")
+    print(f"无损指标: 峰值法向力 均值 {np.mean([r['Fn_peak'] for r in results]):.1f} N | "
+          f"最大摩擦利用率 均值 {np.mean([r['rho_max'] for r in results]):.2f} | "
+          f"累计滑移 均值 {np.mean([r['slip_m'] for r in results]) * 100:.1f} cm | "
+          f"抓起后掉落 {sum(r['dropped'] for r in results)}/{len(results)}")
     out = ROOT / "runs" / f"{time.strftime('%Y-%m-%d-%H%M')}-act-pure"
     out.mkdir(parents=True, exist_ok=True)
     (out / "metrics.json").write_text(json.dumps(

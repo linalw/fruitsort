@@ -52,7 +52,7 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
@@ -61,6 +61,7 @@ class ImageDemoDataset(Dataset):
         self.descend_boost = max(1, int(descend_boost))
         self.carry_boost = max(1, int(carry_boost))
         self.boost_kind = boost_kind
+        self.drop_tactile = drop_tactile
         self.kind_boost = max(1, int(kind_boost))
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
@@ -83,6 +84,11 @@ class ImageDemoDataset(Dataset):
             }
             if use_phase:
                 ep["phase"] = episode_phase(obs, ep["act"], instr)
+            if obs.shape[1] >= 58:
+                # 触觉布局：[49 base][9 tactile]；index 54=v_slip, 55/56=左右指接触
+                v_slip = obs[:, 54]
+                touch = (obs[:, 55] > 0.5) | (obs[:, 56] > 0.5)
+                ep["slip"] = ((v_slip > 0.05) & touch).astype(np.float32)
             self.episodes.append(ep)
         if not self.episodes:
             raise FileNotFoundError(f"{data_dir} 下没有带图像的 ep_*.npz")
@@ -119,6 +125,9 @@ class ImageDemoDataset(Dataset):
         oh = ep["oh"][idx].astype(np.float32) / 255.0
         wr = ep["wr"][idx].astype(np.float32) / 255.0 if ep["wr"] is not None else oh
         states = ep["obs"][idx].copy()
+        if self.drop_tactile and states.shape[1] >= 58:
+            # 消融：丢掉 49:58 的触觉列（同一份数据 → 干净的 A/B）
+            states = np.concatenate([states[:, :49], states[:, 58:]], axis=1)
         phase_chunk = None
         if self.use_phase:
             ph = ep["phase"][idx]
@@ -171,6 +180,9 @@ class ImageDemoDataset(Dataset):
             "future": torch.from_numpy(fut),
             "kind": torch.tensor(ep["instruction_id"], dtype=torch.long),
         }
+        if "slip" in ep:
+            sl = ep["slip"][t + 1:t + 11]
+            out["slip"] = torch.tensor(float(sl.max()) if len(sl) else 0.0)
         if phase_chunk is not None:
             out["phase_chunk"] = torch.from_numpy(phase_chunk.astype(np.int64))
         return out

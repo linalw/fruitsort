@@ -44,6 +44,7 @@ class ActConfig:
     use_cvae: bool = True
     latent_dim: int = 32
     n_phase: int = 0        # >0：相位辅助头类别数（0 = 关闭，兼容旧 ckpt）
+    n_slip: int = 0         # >0：滑移辅助头（预测未来 10 帧是否滑移）
     conv_norm: str = "gn"   # "gn": 把复用来的 ConvEncoder 的 BN 换成 GroupNorm
 
 
@@ -124,6 +125,8 @@ class ActPolicy(nn.Module):
         # 相位辅助头：每个 query 预测该步属于 接近/下探/搬运，推理端用 k=0 的
         # argmax 反馈回状态（相位由策略自己决定，不是脚本 FSM）
         self.phase_head = nn.Linear(d, cfg.n_phase) if cfg.n_phase else None
+        self.slip_head = nn.Linear(d, 1) if cfg.n_slip else None
+        self.last_slip: torch.Tensor | None = None
         self._init_weights()
 
     # ------------------------------------------------------------------ #
@@ -177,6 +180,8 @@ class ActPolicy(nn.Module):
         h = self.dec_norm(h)
         # 与 ActPolicy.encode 的 CLS 捷径：当前帧状态直连每个 query
         base = h + self.state_short(states[:, -1])[:, None, :]
+        if self.slip_head is not None:
+            self.last_slip = self.slip_head(h[:, 0]).squeeze(-1)   # (B,) logit
         if self.phase_head is None:
             return self.act_head(base), None
         return self.act_head(base), self.phase_head(h)

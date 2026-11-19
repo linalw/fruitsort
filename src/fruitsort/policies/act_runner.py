@@ -50,6 +50,8 @@ class ActPureRunner:
         self.na = Normalizer.from_state(ck["norm_act"])
         self.delta_actions = bool(ck.get("delta_actions", False))
         self.use_phase = self.cfg.obs_dim > 49
+        # 布局：[49 base][9 tactile][3 phase]。触觉与否由 obs_dim 决定
+        self.tactile_dim = 9 if (self.cfg.obs_dim - (3 if self.use_phase else 0)) >= 58 else 0
 
         self.env, self.u, self.device = env, env.unwrapped, device
         self.kind = kind
@@ -109,7 +111,7 @@ class ActPureRunner:
         sd = obs["sensor_data"]
         self.oh.append(prep(sd["overhead"]["rgb"][0].cpu().numpy(), cfg.img_size))
         self.wr.append(prep(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
-        sb = build_obs(u)
+        sb = build_obs(u, kind, tactile=bool(self.tactile_dim))
         if self.use_phase:
             onehot = np.zeros(3, dtype=np.float32)
             onehot[self.phase_state if self.phase_fb else 0] = 1.0

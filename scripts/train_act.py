@@ -59,6 +59,10 @@ def main() -> None:
     ap.add_argument("--phase-weight", type=float, default=0.5)
     ap.add_argument("--descend-boost", type=int, default=1,
                     help="下探/闭爪窗过采样倍数（相位=1 的窗口重复 N 次）")
+    ap.add_argument("--no-tactile", action="store_true",
+                    help="消融：丢掉观测里的 9 维触觉（同一份数据，干净 A/B）")
+    ap.add_argument("--slip-head", action="store_true", help="加滑移辅助头（预测未来 10 帧是否滑移）")
+    ap.add_argument("--slip-weight", type=float, default=0.3)
     ap.add_argument("--boost-kind", default="", help="弱类过采样：类名，如 pear")
     ap.add_argument("--kind-boost", type=int, default=1, help="该类的重复倍数")
     ap.add_argument("--carry-boost", type=int, default=1,
@@ -77,8 +81,10 @@ def main() -> None:
                           delay_prob=args.delay_prob, delta_actions=args.delta_actions,
                           use_phase=args.phase, descend_boost=args.descend_boost,
                           carry_boost=args.carry_boost,
-                          boost_kind=args.boost_kind, kind_boost=args.kind_boost)
-    obs_dim = 52 if args.phase else 49
+                          boost_kind=args.boost_kind, kind_boost=args.kind_boost,
+                          drop_tactile=args.no_tactile)
+    base_dim = int(ds[0]["state"].shape[-1]) - (3 if args.phase else 0)
+    obs_dim = base_dim + (3 if args.phase else 0)
 
     # 分层划分：每组（同一数据集 × 同一指令）留出最后若干个 episode。
     # 现有脚本按窗口顺序切 15%，结果 val 100% 是 pear（文件按类别顺序保存），
@@ -145,7 +151,8 @@ def main() -> None:
     cfg = ActConfig(hist=args.hist, chunk=args.chunk, d_model=args.d_model,
                     enc_layers=args.enc_layers, dec_layers=args.dec_layers,
                     dropout=args.dropout, use_cvae=not args.no_cvae, obs_dim=obs_dim,
-                    n_phase=3 if args.phase else 0)
+                    n_phase=3 if args.phase else 0,
+                    n_slip=1 if args.slip_head else 0)
     model = ActPolicy(cfg).to(args.device)
     n_params = count_params(model)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -189,6 +196,11 @@ def main() -> None:
                     pred, mu, logvar = model(oh, wr, st, kind, act_target=act)
                     logits = None
                 loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act)
+                l_slip = torch.zeros((), device=args.device)
+                if args.slip_head and "slip" in b:
+                    l_slip = torch.nn.functional.binary_cross_entropy_with_logits(
+                        model.last_slip.float(), b["slip"].to(args.device).float())
+                    loss = loss + args.slip_weight * l_slip
                 l_ph = torch.zeros((), device=args.device)
                 if logits is not None:
                     l_ph = torch.nn.functional.cross_entropy(
@@ -201,7 +213,8 @@ def main() -> None:
             opt.step()
             tot += float(loss.detach()) * len(oh)
             na += len(oh)
-            for k, v in (("xyz", l_xyz), ("grip", l_grip), ("kl", l_kl), ("phase", l_ph)):
+            for k, v in (("xyz", l_xyz), ("grip", l_grip), ("kl", l_kl), ("phase", l_ph),
+                         ("slip", l_slip)):
                 acc[k] = acc.get(k, 0.0) + float(v.detach()) * len(oh)
         sched.step()
 
@@ -248,13 +261,15 @@ def main() -> None:
             print(f"epoch {ep:3d} train {tot/max(na,1):.4f} "
                   f"(xyz {acc.get('xyz',0)/max(na,1):.4f} grip {acc.get('grip',0)/max(na,1):.4f} "
                   f"kl {acc.get('kl',0)/max(na,1):.4f} ph {acc.get('phase',0)/max(na,1):.4f}) "
-                  f"val {val:.4f} (ph {vacc.get('phase',0)/max(vn,1):.4f}) {dt:.1f}s", flush=True)
+                  f"slip {acc.get('slip',0)/max(na,1):.3f}) val {val:.4f} "
+                  f"(ph {vacc.get('phase',0)/max(vn,1):.4f}) {dt:.1f}s", flush=True)
 
     (out / "metrics.json").write_text(json.dumps({
         "model": "ActPolicy", "data": [str(d) for d in data_dirs],
         "samples": len(ds), "train": len(train_idx), "val": len(val_idx),
         "params": n_params, "best_val": best, "cfg": cfg.__dict__,
         "delta_actions": bool(args.delta_actions), "phase": bool(args.phase),
+        "tactile": bool(not args.no_tactile and base_dim >= 58), "slip_head": bool(args.slip_head),
         "args": vars(args),
         "history": hist_log,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
