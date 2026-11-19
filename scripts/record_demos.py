@@ -25,6 +25,7 @@ import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.policies.scripted import ScriptedSorter
 
 ROOT = Path(__file__).resolve().parent.parent
+SIM_FREQ = {20: 100, 30: 120, 60: 240}
 ALL = ("apple", "strawberry", "banana", "pear")
 
 
@@ -89,7 +90,7 @@ def main() -> None:
         spawn_x=args.spawn_x, spawn_spacing=args.spawn_spacing,
         instruction_kind=None if args.instruction == "all" else args.instruction,
         sim_config=dict(control_freq=args.control_freq,
-                        sim_freq=120 if args.control_freq == 30 else 100),
+                        sim_freq=SIM_FREQ[args.control_freq]),
     )
 
     rng = np.random.default_rng(args.seed + 999)
