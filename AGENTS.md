@@ -118,6 +118,23 @@ python scripts/eval_hybrid.py --ckpt runs/vpolicy/ckpt.pt --episodes 10
 - GPU 1.9 ms / CPU 单线程 6.1 ms；指令选择 100%；分层执行 10/10
 - 纯视觉闭环：苹果/草莓 5/5（`scripts/eval_vision_geo.py`）；夹爪时序见 `docs/gripper-timing.md`
 
+## 演示视频约定（强制）
+
+**每个达到验收标准或有突破的版本，必须录一段演示视频 + 同名 `.txt` 说明**，否则别人无法判断视频背景。
+
+```bash
+python scripts/record_video.py --executor act --ckpt runs/<run>/ckpt.pt \
+  --classes apple strawberry banana pear --belt 0.15 --spawn-spacing 0.45 \
+  --control-freq 30 --fb 0.5 --grip-ema 0.6 --carry-latch --carry-max-step 0.02 \
+  --episodes 4 --retries 3 --out data/fruitsort/eval/<name>.mp4
+```
+
+- 脚本自动生成 `<name>.txt`：代码版本、权重与离线指标、部署配置、场景、分集结果
+  （整局时长 + 单件处理时间）、复现命令
+- 视频画面叠加 kind / 带速 / 已用时间 / 策略相位（0 接近，1 下探闭爪，2 搬运）
+- 失败局自动重试，只写成功片段
+- 录完在 [`docs/videos.md`](docs/videos.md) 登记一行
+
 ## 版本与发布约定
 
 - 语义化版本：`vMAJOR.MINOR.PATCH`，tag 与 `CHANGELOG.md` 同步。
