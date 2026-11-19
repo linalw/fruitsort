@@ -52,13 +52,14 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
         self.use_phase = use_phase
         self.delta_clip = delta_clip
         self.descend_boost = max(1, int(descend_boost))
+        self.carry_boost = max(1, int(carry_boost))
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
         for d in dirs:
@@ -92,6 +93,12 @@ class ImageDemoDataset(Dataset):
                 # 过采样让「何时下探、何时闭爪」不被「悬停跟随」淹没
                 if use_phase and self.descend_boost > 1 and t < T and ep["phase"][t] == 1:
                     self.index.extend([(ei, t)] * (self.descend_boost - 1))
+                # 料框附近的减速窗同样稀少，却决定「停在框上方还是冲过去」
+                if self.carry_boost > 1 and t < T:
+                    bx, by = BIN_XY.get(ep["instruction"], (9.0, 9.0))
+                    a = ep["act"][t]
+                    if abs(a[0] - bx) < 0.12 and abs(a[1] - by) < 0.12:
+                        self.index.extend([(ei, t)] * (self.carry_boost - 1))
 
     def __len__(self):
         return len(self.index)
