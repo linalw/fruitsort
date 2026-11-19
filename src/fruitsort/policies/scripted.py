@@ -30,6 +30,7 @@ class PolicyConfig:
     via_point: tuple = (0.0, -0.34)
     bin_height: float = 0.50
     max_step: float = 0.06       # 每步最大位移（米）
+    pear_extra_depth: float = 0.01   # 梨额外下探（梨较窄，抓浅了会滑脱）
     close_steps: int = 12
     release_steps: int = 8
     ready_pose: tuple = (0.0, -0.05, 0.68)
@@ -182,7 +183,8 @@ class ScriptedSorter:
             lead_desc = 0.12 if speed < 0.15 else (0.20 if speed < 0.25 else 0.28)
             x_g = float(np.clip(p[0] + v[0] * lead_desc, self.u.pick_zone[0] - 0.02, self.u.pick_zone[1]))
             y_g = p[1]
-            grasp_z = p[2] + cfg.grasp_depth - (0.01 if self.only_kind == "pear" else 0.0)
+            grasp_z = p[2] + cfg.grasp_depth - (cfg.pear_extra_depth
+                                                if self.only_kind == "pear" else 0.0)
             tcp = self._tcp()
             # 香蕉/梨较薄，且下探会顶到带面：放宽触底判定，避免永远不闭爪
             tol = 0.03 if self.only_kind in ("banana", "pear") else 0.018
