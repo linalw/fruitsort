@@ -5,7 +5,12 @@
 
 ![demo](assets/videos/demo_pair.gif)
 
-## 纯策略里程碑（v1.6，0.06–0.18 m/s 宽速域单一策略，无脚本执行器）
+## 演示视频
+
+- `data/fruitsort/eval/pure_policy_v015.mp4` —— **0.15 m/s，四类各一次，4/4**，1080p/40s，
+  左上角叠加 kind / 带速 / 时间 / 相位
+
+## 纯策略里程碑（v1.7，0.06–0.18 m/s 宽速域单一策略，无脚本执行器）
 
 `runs/act-wide-4c` + `--fb 0.5 --grip-ema 0.6 --carry-latch --carry-max-step 0.02`：
 
@@ -14,6 +19,10 @@
 | 0.08 m/s | 28/32 = 87.5% | 4.2–6.7 s |
 | **0.15 m/s** | **31/32 = 96.9%** | 5.2–6.4 s |
 | 0.18 m/s | 苹果 5/5、草莓 4/5 | — |
+
+另：把「料框前减速」交给策略学（`--carry-boost 3`，`act-wide-4c-v2`）后，
+0.15 m/s 四类 **32/32 = 100%** 且不再需要人工搬运限速；但该配置在 0.08 退化到 71.9%，
+故部署仍推荐上表（人工 2cm 限速）配置。
 
 ```bash
 python scripts/eval_act_pure.py --ckpt runs/act-wide-4c/ckpt.pt \
