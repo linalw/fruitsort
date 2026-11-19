@@ -46,6 +46,14 @@ class ScriptedSorter:
         self.verbose = verbose
         self.source = source  # None = 仿真真值；否则需提供 .get(kind) -> (pos, vel) | None
         self.only_kind = only_kind  # 指令：只抓这一类
+        # 时间常量随控制频率缩放：cfg 里的步数（close_steps/watchdog 等）是按 30 Hz 设计的，
+        # 60 Hz 下同样的步数只有一半真实时间，闭爪会"来不及贴合"（实测草莓 0/50）
+        cf = getattr(self.u, "control_freq", 30)
+        try:
+            cf = float(cf)
+        except (TypeError, ValueError):
+            cf = 30.0
+        self.rate = max(1.0, cf / 30.0)
         self.state = "WAIT"
         self.target: str | None = None
         self.done: set[str] = set()
@@ -109,7 +117,7 @@ class ScriptedSorter:
         self._state_steps += 1
 
         # 看门狗：避免单个状态无限期卡住
-        if self.state in ("TRACK", "DESCEND") and self._state_steps > 500:
+        if self.state in ("TRACK", "DESCEND") and self._state_steps > 500 * self.rate:
             if self.target:
                 self.missed.add(self.target)
             self.state = "WAIT"
@@ -217,13 +225,13 @@ class ScriptedSorter:
                 self.state = "CARRY"
                 self.counter = 0
                 self._via_done = False
-            elif self.counter > cfg.close_steps:
+            elif self.counter > cfg.close_steps * self.rate:
                 # 抓空：若还在可达区内就重试
                 self.state = "WAIT"
                 if p[0] > self.u.pick_zone[1] - 0.05:
                     self.missed.add(self.target)
                 self.counter = 0
-            grip = -min(1.0, 0.3 + self.counter / 8.0)  # 渐进闭爪，减少冲击
+            grip = -min(1.0, 0.3 + self.counter / (8.0 * self.rate))  # 渐进闭爪，减少冲击
             return self._action([x_g, p[1], p[2] + cfg.grasp_depth], gripper=grip)
 
         if self.state == "CARRY":
@@ -236,7 +244,7 @@ class ScriptedSorter:
                     self.missed.add(self.target)
                 self.target = None
                 return self._home()
-            if self.counter > 90:  # 卡住保护：放弃这颗，避免整局僵死
+            if self.counter > 90 * self.rate:  # 卡住保护：放弃这颗，避免整局僵死
                 self.missed.add(self.target)
                 self.state = "WAIT"
                 self.target = None
@@ -260,7 +268,7 @@ class ScriptedSorter:
         if self.state == "LOWER":
             bx, by = BIN_LAYOUT[self.target]
             tcp = self._tcp()
-            if self.counter > 60:
+            if self.counter > 60 * self.rate:
                 self.missed.add(self.target)
                 self.state = "WAIT"
                 self.target = None
@@ -272,7 +280,7 @@ class ScriptedSorter:
 
         if self.state == "RELEASE":
             bx, by = BIN_LAYOUT[self.target]
-            if self.counter > cfg.release_steps:
+            if self.counter > cfg.release_steps * self.rate:
                 if bool(self.u._in_bin_xy(self.target)[0]):
                     self.done.add(self.target)
                 else:
