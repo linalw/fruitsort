@@ -21,7 +21,7 @@ import cv2
 import numpy as np
 import torch
 
-from ..learning.bc import Normalizer, build_obs
+from ..learning.bc import Normalizer, build_obs, build_tactile
 from ..models.act_policy import ActConfig, ActPolicy
 from .scripted import HOME_EULER
 
@@ -41,7 +41,8 @@ class ActPureRunner:
                  max_step: float = 0.06, lead: float = 0.0, z_gate: bool = False,
                  phase_fb: bool = True, hold_latch: bool = False,
                  grasp_retry: bool = True, chunk_exec: int = 1,
-                 carry_max_step: float = 0.0):
+                 carry_max_step: float = 0.0, slip_guard: bool = False,
+                 slip_thr: float = 0.05, slip_slow_step: float = 0.012):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -62,8 +63,16 @@ class ActPureRunner:
         self.chunk_exec = chunk_exec
         # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
         self.carry_max_step = carry_max_step
+        # 触觉补救：搬运中检测到滑移（物体相对 TCP 有速度且有夹持力）→ 立即降速搬运
+        self.slip_guard = slip_guard
+        self.slip_thr = slip_thr
+        self.slip_slow_step = slip_slow_step
         # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
         self.carry_max_step = carry_max_step
+        # 触觉补救：搬运中检测到滑移（物体相对 TCP 有速度且有夹持力）→ 立即降速搬运
+        self.slip_guard = slip_guard
+        self.slip_thr = slip_thr
+        self.slip_slow_step = slip_slow_step
         self.reset()
 
     # ------------------------------------------------------------------ #
@@ -78,9 +87,11 @@ class ActPureRunner:
         self.grip_ema_val = None
         self.prev_grip = 1.0
         self.open_streak = 0
+        self.slip_slow = False
         self.queue = []
         self.queue_logits = None
-        self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0}
+        self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
+                      "slip": 0, "slip_first": -1}
         self.grasping = False
 
     # ------------------------------------------------------------------ #
@@ -182,6 +193,7 @@ class ActPureRunner:
                 grip = -1.0
         else:
             self.open_streak = 0
+        self.slip_slow = False
         self.stats["close"] += int(grip < 0)
         self.stats["descend"] += int(self.phase_state == 1)
         self.stats["carry"] += int(self.phase_state == 2)
@@ -219,11 +231,24 @@ class ActPureRunner:
         if self.hold_latch and grip < 0 and not grasping:
             tgt = tcp.copy()
 
+        # ---- 触觉补救：滑移检测 → 降速 ----
+        if self.slip_guard and actor is not None:
+            tac = build_tactile(u, kind)
+            slipping = float(tac[0]) > 3.0 and float(tac[5]) > self.slip_thr
+            if slipping:
+                self.stats["slip"] += 1
+                if self.stats["slip_first"] < 0:
+                    self.stats["slip_first"] = self.stats["steps"]
+                if self.phase_state == 2:
+                    self.slip_slow = True
+
         err = tgt - tcp
         d = float(np.linalg.norm(err))
         step = self.max_step
         if self.carry_max_step > 0 and self.phase_state == 2:
             step = self.carry_max_step
+        if getattr(self, "slip_slow", False) and self.phase_state == 2:
+            step = min(step, self.slip_slow_step)
         if d > step:
             tgt = tcp + err / d * step
         if actor is not None:

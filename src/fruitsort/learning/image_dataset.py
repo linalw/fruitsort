@@ -52,7 +52,8 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
+                 aux_dirs=()):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
@@ -62,6 +63,7 @@ class ImageDemoDataset(Dataset):
         self.carry_boost = max(1, int(carry_boost))
         self.boost_kind = boost_kind
         self.drop_tactile = drop_tactile
+        self.aux_dirs = {Path(d).resolve() for d in aux_dirs}
         self.kind_boost = max(1, int(kind_boost))
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
@@ -72,6 +74,7 @@ class ImageDemoDataset(Dataset):
             d = np.load(f, allow_pickle=True)
             if "overhead_jpg" not in d:
                 continue
+            aux_only = f.parent.resolve() in self.aux_dirs
             instr = str(d["instruction"]) if "instruction" in d else "all"
             obs = d["obs"].astype(np.float32)
             ep = {
@@ -81,6 +84,7 @@ class ImageDemoDataset(Dataset):
                 "act": d["action"].astype(np.float32),
                 "oh": np.stack([_decode(b) for b in d["overhead_jpg"]]),
                 "wr": np.stack([_decode(b) for b in d["wrist_jpg"]]) if "wrist_jpg" in d else None,
+                "aux_only": bool(aux_only),
             }
             if use_phase:
                 ep["phase"] = episode_phase(obs, ep["act"], instr)
@@ -88,10 +92,7 @@ class ImageDemoDataset(Dataset):
                 # 触觉布局：[49 base][9 tactile]；index 54=v_slip, 55/56=左右指接触
                 # 滑移 = 有实际夹持力(Fn>5N) 且物体相对 TCP 有速度（>5cm/s）
                 ep["slip"] = ((obs[:, 49] > 5.0) & (obs[:, 54] > 0.05)).astype(np.float32)
-                # 与推理端一致的触觉缩放（录制时存的是原始值）
-                from .bc import scale_tactile
-                obs = obs.copy()
-                obs[:, 49:58] = np.stack([scale_tactile(row) for row in obs[:, 49:58]])
+
             self.episodes.append(ep)
         if not self.episodes:
             raise FileNotFoundError(f"{data_dir} 下没有带图像的 ep_*.npz")
@@ -183,6 +184,7 @@ class ImageDemoDataset(Dataset):
             "future": torch.from_numpy(fut),
             "kind": torch.tensor(ep["instruction_id"], dtype=torch.long),
         }
+        out["aux_only"] = torch.tensor(float(ep.get("aux_only", False)))
         if "slip" in ep:
             sl = ep["slip"][t + 1:t + 11]
             out["slip"] = torch.tensor(float(sl.max()) if len(sl) else 0.0)

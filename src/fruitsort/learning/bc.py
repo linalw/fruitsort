@@ -157,7 +157,9 @@ def build_obs(u, kind: str | None = None, tactile: bool = False) -> np.ndarray:
     base = np.concatenate([tcp, qpos, belt, *feats]).astype(np.float32)
     if not tactile:
         return base
-    return np.concatenate([base, scale_tactile(build_tactile(u, kind))]).astype(np.float32)
+    # 原始触觉：训练侧有逐列 z-score，缩放会被抵消（A/A2 val 完全相同已证），
+    # 因此统一用原始值，保证「录制 / 推理 / 旧权重」三处一致
+    return np.concatenate([base, build_tactile(u, kind)]).astype(np.float32)
 
 
 @dataclass

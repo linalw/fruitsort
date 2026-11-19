@@ -62,6 +62,9 @@ def main() -> None:
     ap.add_argument("--no-tactile", action="store_true",
                     help="消融：丢掉观测里的 9 维触觉（同一份数据，干净 A/B）")
     ap.add_argument("--slip-head", action="store_true", help="加滑移辅助头（预测未来 10 帧是否滑移）")
+    ap.add_argument("--aux-data", nargs="*", default=[],
+                    help="失败/滑脱片段目录：只参与滑移辅助损失，不参与动作 BC 损失")
+    ap.add_argument("--aux-boost", type=int, default=1, help="失败片段过采样倍数")
     ap.add_argument("--slip-weight", type=float, default=0.3)
     ap.add_argument("--boost-kind", default="", help="弱类过采样：类名，如 pear")
     ap.add_argument("--kind-boost", type=int, default=1, help="该类的重复倍数")
@@ -77,12 +80,13 @@ def main() -> None:
     np.random.seed(args.seed)
     data_dirs = [Path(d) if Path(d).is_absolute() else ROOT / d for d in args.data]
 
-    ds = ImageDemoDataset(data_dirs, hist=args.hist, chunk=args.chunk, stride=args.stride,
-                          delay_prob=args.delay_prob, delta_actions=args.delta_actions,
-                          use_phase=args.phase, descend_boost=args.descend_boost,
-                          carry_boost=args.carry_boost,
+    aux_dirs = [Path(d) if Path(d).is_absolute() else ROOT / d for d in args.aux_data]
+    ds = ImageDemoDataset(list(data_dirs) + aux_dirs, hist=args.hist, chunk=args.chunk,
+                          stride=args.stride, delay_prob=args.delay_prob,
+                          delta_actions=args.delta_actions, use_phase=args.phase,
+                          descend_boost=args.descend_boost, carry_boost=args.carry_boost,
                           boost_kind=args.boost_kind, kind_boost=args.kind_boost,
-                          drop_tactile=args.no_tactile)
+                          drop_tactile=args.no_tactile, aux_dirs=aux_dirs)
     base_dim = int(ds[0]["state"].shape[-1]) - (3 if args.phase else 0)
     obs_dim = base_dim + (3 if args.phase else 0)
 
@@ -98,7 +102,11 @@ def main() -> None:
         k = max(1, int(round(len(eps) * args.val_frac)))
         hold = set(eps[-k:])
         for i in idxs:
-            (val_idx if ds.index[i][0] in hold else train_idx).append(i)
+            is_aux = ds.episodes[ds.index[i][0]].get("aux_only", False)
+            (train_idx if (is_aux or ds.index[i][0] not in hold) else val_idx).append(i)
+    if args.aux_boost > 1:
+        extra = [i for i in train_idx if ds.episodes[ds.index[i][0]].get("aux_only", False)]
+        train_idx = train_idx + extra * (args.aux_boost - 1)
     train_idx.sort(); val_idx.sort()
     if args.limit:
         train_idx = train_idx[: args.limit]
@@ -159,10 +167,15 @@ def main() -> None:
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     mse = torch.nn.MSELoss()
 
-    def compute_loss(pred, mu, logvar, act):
-        l_xyz = mse(pred[:, :, :3], act[:, :, :3])
-        l_grip = torch.nn.functional.binary_cross_entropy_with_logits(
-            pred[:, :, 3], act[:, :, 3], pos_weight=pos_weight)
+    def compute_loss(pred, mu, logvar, act, w=None):
+        xyz_p = ((pred[:, :, :3] - act[:, :, :3]) ** 2).mean(dim=(1, 2))
+        grip_p = torch.nn.functional.binary_cross_entropy_with_logits(
+            pred[:, :, 3], act[:, :, 3], pos_weight=pos_weight, reduction="none").mean(dim=1)
+        if w is not None and float(w.sum()) > 0:
+            l_xyz = (xyz_p * w).sum() / w.sum().clamp(min=1.0)
+            l_grip = (grip_p * w).sum() / w.sum().clamp(min=1.0)
+        else:
+            l_xyz, l_grip = xyz_p.mean(), grip_p.mean()
         loss = l_xyz + args.grip_weight * l_grip
         l_kl = torch.zeros((), device=args.device)
         if mu is not None:
@@ -195,17 +208,25 @@ def main() -> None:
                 else:
                     pred, mu, logvar = model(oh, wr, st, kind, act_target=act)
                     logits = None
-                loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act)
+                w_bc = (1.0 - b["aux_only"].to(args.device).float()) if "aux_only" in b else None
+                loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act, w_bc)
                 l_slip = torch.zeros((), device=args.device)
                 if args.slip_head and "slip" in b:
-                    l_slip = torch.nn.functional.binary_cross_entropy_with_logits(
-                        model.last_slip.float(), b["slip"].to(args.device).float())
+                    sl = b["slip"].to(args.device).float()
+                    p_slip = model.last_slip.float()
+                    # 正样本极少 → 用 pos_weight 平衡
+                    pw = torch.tensor(max(1.0, float((1 - sl.mean()) / sl.mean().clamp(min=1e-3))),
+                                      device=args.device)
+                    l_slip = torch.nn.functional.binary_cross_entropy_with_logits(p_slip, sl,
+                                                                                 pos_weight=pw)
                     loss = loss + args.slip_weight * l_slip
                 l_ph = torch.zeros((), device=args.device)
                 if logits is not None:
-                    l_ph = torch.nn.functional.cross_entropy(
+                    ce = torch.nn.functional.cross_entropy(
                         logits.float().reshape(-1, logits.shape[-1]),
-                        b["phase_chunk"].to(args.device).reshape(-1))
+                        b["phase_chunk"].to(args.device).reshape(-1), reduction="none")
+                    ce = ce.view(len(ce) // logits.shape[1], logits.shape[1]).mean(dim=1)
+                    l_ph = (ce * w_bc).sum() / w_bc.sum().clamp(min=1.0) if w_bc is not None else ce.mean()
                     loss = loss + args.phase_weight * l_ph
             opt.zero_grad(set_to_none=True)
             loss.backward()

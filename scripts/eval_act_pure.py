@@ -47,6 +47,9 @@ def main() -> None:
     ap.add_argument("--fb-z", action="store_true", help="反馈项也作用于 z（默认只作用 xy）")
     ap.add_argument("--grip-ema", type=float, default=0.0, help="夹爪 logit 平滑系数（0=关闭）")
     ap.add_argument("--carry-latch", action="store_true", help="搬运段连续 3 步预测开爪才松手")
+    ap.add_argument("--slip-guard", action="store_true",
+                    help="触觉补救：搬运中检测到滑移就降速（抑制惯性滑脱）")
+    ap.add_argument("--slip-thr", type=float, default=0.05)
     ap.add_argument("--descend-commit", type=int, default=0, help="下探承诺步数（相位迟滞）")
     ap.add_argument("--hold-latch", action="store_true", help="闭爪期间锁存目标（停住等水果）")
     ap.add_argument("--lead", type=float, default=0.0, help="前馈超前（秒）：目标 x += v*lead")
@@ -78,7 +81,8 @@ def main() -> None:
             descend_commit=args.descend_commit, max_step=args.max_step, lead=args.lead,
             z_gate=args.z_gate, phase_fb=not args.no_phase_fb,
             hold_latch=args.hold_latch, chunk_exec=args.chunk_exec,
-            carry_max_step=args.carry_max_step)
+            carry_max_step=args.carry_max_step, slip_guard=args.slip_guard,
+            slip_thr=args.slip_thr)
         zone_entry = None
         info, t = {}, 0
         # 「无损」指标（触觉）：峰值法向力、最大摩擦利用率、最大挤压比、累计滑移距离
@@ -113,7 +117,8 @@ def main() -> None:
               f"handle={'-' if handle_s is None else f'{handle_s:.1f}s'} "
               f"close={st['close'] / max(st['steps'], 1):.2f} "
               f"descend={st['descend']} carry={st['carry']} "
-              f"Fn={Fn_peak:.1f}N rho={rho_max:.2f} slip={slip_dist * 100:.1f}cm")
+              f"Fn={Fn_peak:.1f}N rho={rho_max:.2f} slip={slip_dist * 100:.1f}cm "
+              f"slipguard={st.get('slip', 0)}")
         env.close()
 
     s = summarize(results)
