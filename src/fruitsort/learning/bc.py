@@ -122,6 +122,22 @@ def build_tactile(u, kind: str | None = None) -> np.ndarray:
                      touch_L, touch_R], dtype=np.float32)
 
 
+def scale_tactile(t: np.ndarray) -> np.ndarray:
+    """把原始触觉无量纲化到 O(1)（文献建议：不要直接把牛顿值喂网络）。
+
+    0 Fn/40N   1 Fasym   2 rho/2（Fn<1N 时置 0，避免自由运动期爆表）
+    3 w/0.08   4 delta    5 v_slip/1.0   6 slip flag   7/8 接触
+    """
+    o = np.array(t, dtype=np.float32, copy=True)
+    o[0] = np.clip(o[0] / 40.0, 0.0, 2.0)
+    o[1] = np.clip(o[1], 0.0, 2.0)
+    o[2] = 0.0 if t[0] < 1.0 else np.clip(o[2], 0.0, 2.0) / 2.0
+    o[3] = np.clip(o[3] / 0.08, 0.0, 2.0)
+    o[4] = np.clip(o[4], 0.0, 1.0)
+    o[5] = np.clip(o[5], 0.0, 1.0)
+    return o
+
+
 def build_obs(u, kind: str | None = None, tactile: bool = False) -> np.ndarray:
     """与 record_demos.py 一致的观测向量（49 维）。"""
     tcp = u.agent.tcp_pose.raw_pose[0].cpu().numpy()
@@ -141,7 +157,7 @@ def build_obs(u, kind: str | None = None, tactile: bool = False) -> np.ndarray:
     base = np.concatenate([tcp, qpos, belt, *feats]).astype(np.float32)
     if not tactile:
         return base
-    return np.concatenate([base, build_tactile(u, kind)]).astype(np.float32)
+    return np.concatenate([base, scale_tactile(build_tactile(u, kind))]).astype(np.float32)
 
 
 @dataclass

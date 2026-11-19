@@ -93,7 +93,8 @@ def main() -> None:
             cmd = runner.act(obs)
             tac = build_tactile(u, kind)
             Fn_peak = max(Fn_peak, float(tac[0]))
-            rho_max = max(rho_max, float(tac[2]))
+            if float(tac[0]) > 1.0:   # Fn≈0 时 rho 无意义（自由运动期会爆表）
+                rho_max = max(rho_max, float(tac[2]))
             delta_max = max(delta_max, float(tac[4]))
             if runner.phase_state == 2:
                 held_any = True

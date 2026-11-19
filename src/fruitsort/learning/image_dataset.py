@@ -86,9 +86,12 @@ class ImageDemoDataset(Dataset):
                 ep["phase"] = episode_phase(obs, ep["act"], instr)
             if obs.shape[1] >= 58:
                 # 触觉布局：[49 base][9 tactile]；index 54=v_slip, 55/56=左右指接触
-                v_slip = obs[:, 54]
-                touch = (obs[:, 55] > 0.5) | (obs[:, 56] > 0.5)
-                ep["slip"] = ((v_slip > 0.05) & touch).astype(np.float32)
+                # 滑移 = 有实际夹持力(Fn>5N) 且物体相对 TCP 有速度（>5cm/s）
+                ep["slip"] = ((obs[:, 49] > 5.0) & (obs[:, 54] > 0.05)).astype(np.float32)
+                # 与推理端一致的触觉缩放（录制时存的是原始值）
+                from .bc import scale_tactile
+                obs = obs.copy()
+                obs[:, 49:58] = np.stack([scale_tactile(row) for row in obs[:, 49:58]])
             self.episodes.append(ep)
         if not self.episodes:
             raise FileNotFoundError(f"{data_dir} 下没有带图像的 ep_*.npz")
