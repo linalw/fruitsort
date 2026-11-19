@@ -30,6 +30,7 @@ class PolicyConfig:
     via_point: tuple = (0.0, -0.34)
     bin_height: float = 0.50
     max_step: float = 0.06       # 每步最大位移（米）
+    carry_max_step: float = 0.06  # 搬运段最大位移（梨等易滑脱的水果需要更慢）
     pear_extra_depth: float = 0.01   # 梨额外下探（梨较窄，抓浅了会滑脱）
     close_steps: int = 12
     release_steps: int = 8
@@ -84,7 +85,8 @@ class ScriptedSorter:
             return True
         return self.source.get(kind) is not None
 
-    def _action(self, target: np.ndarray, gripper: float = 1.0) -> np.ndarray:
+    def _action(self, target: np.ndarray, gripper: float = 1.0,
+                max_step: float | None = None) -> np.ndarray:
         """绝对位姿控制（robot root 坐标系），单步限速避免猛冲。"""
         raw = np.asarray(target, dtype=np.float64)
         tcp = self._tcp()
@@ -92,7 +94,8 @@ class ScriptedSorter:
         dist = float(np.linalg.norm(err))
         # 标签 = FSM 的真实目标（未限速）；否则 BC 会学成"目标≈当前 TCP"的悬停不动点
         self.last_target = np.array([raw[0], raw[1], raw[2], gripper], dtype=np.float32)
-        tgt = raw if dist <= self.cfg.max_step else tcp + err / dist * self.cfg.max_step
+        step = self.cfg.max_step if max_step is None else max_step
+        tgt = raw if dist <= step else tcp + err / dist * step
         # 世界系 → 机器人基座系（基座绕 z 旋转 +90°）
         x, y, z = tgt
         cmd = np.array([y + 0.5, -x, z], dtype=np.float32)
@@ -257,13 +260,15 @@ class ScriptedSorter:
             vx, vy = cfg.via_point
             if abs(tcp[0] - vx) > 0.06 or abs(tcp[1] - vy) > 0.06:
                 if not self._via_done:
-                    return self._action([vx, vy, cfg.carry_height], gripper=-1.0)
+                    return self._action([vx, vy, cfg.carry_height], gripper=-1.0,
+                                    max_step=cfg.carry_max_step)
             else:
                 self._via_done = True
             if abs(tcp[0] - bx) < 0.04 and abs(tcp[1] - by) < 0.04:
                 self.state = "LOWER"
                 self.counter = 0
-            return self._action([bx, by, cfg.carry_height], gripper=-1.0)
+            return self._action([bx, by, cfg.carry_height], gripper=-1.0,
+                                max_step=cfg.carry_max_step)
 
         if self.state == "LOWER":
             bx, by = BIN_LAYOUT[self.target]
