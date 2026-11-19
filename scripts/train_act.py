@@ -59,6 +59,8 @@ def main() -> None:
     ap.add_argument("--phase-weight", type=float, default=0.5)
     ap.add_argument("--descend-boost", type=int, default=1,
                     help="下探/闭爪窗过采样倍数（相位=1 的窗口重复 N 次）")
+    ap.add_argument("--boost-kind", default="", help="弱类过采样：类名，如 pear")
+    ap.add_argument("--kind-boost", type=int, default=1, help="该类的重复倍数")
     ap.add_argument("--carry-boost", type=int, default=1,
                     help="料框附近减速窗过采样倍数（目标 xy 距料框 <12cm 的窗口重复 N 次）")
     ap.add_argument("--workers", type=int, default=4)
@@ -74,7 +76,8 @@ def main() -> None:
     ds = ImageDemoDataset(data_dirs, hist=args.hist, chunk=args.chunk, stride=args.stride,
                           delay_prob=args.delay_prob, delta_actions=args.delta_actions,
                           use_phase=args.phase, descend_boost=args.descend_boost,
-                          carry_boost=args.carry_boost)
+                          carry_boost=args.carry_boost,
+                          boost_kind=args.boost_kind, kind_boost=args.kind_boost)
     obs_dim = 52 if args.phase else 49
 
     # 分层划分：每组（同一数据集 × 同一指令）留出最后若干个 episode。

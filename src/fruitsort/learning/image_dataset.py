@@ -52,7 +52,7 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1):
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
@@ -60,6 +60,8 @@ class ImageDemoDataset(Dataset):
         self.delta_clip = delta_clip
         self.descend_boost = max(1, int(descend_boost))
         self.carry_boost = max(1, int(carry_boost))
+        self.boost_kind = boost_kind
+        self.kind_boost = max(1, int(kind_boost))
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
         for d in dirs:
@@ -94,6 +96,10 @@ class ImageDemoDataset(Dataset):
                 if use_phase and self.descend_boost > 1 and t < T and ep["phase"][t] == 1:
                     self.index.extend([(ei, t)] * (self.descend_boost - 1))
                 # 料框附近的减速窗同样稀少，却决定「停在框上方还是冲过去」
+                # 弱类过采样：某类样本太少时（如梨），把它的窗口重复 N 次
+                if (self.kind_boost > 1 and self.boost_kind
+                        and ep["instruction"] == self.boost_kind):
+                    self.index.extend([(ei, t)] * (self.kind_boost - 1))
                 if self.carry_boost > 1 and t < T:
                     bx, by = BIN_XY.get(ep["instruction"], (9.0, 9.0))
                     a = ep["act"][t]
