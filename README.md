@@ -5,7 +5,23 @@
 
 ![demo](assets/videos/demo_pair.gif)
 
-## 纯策略里程碑（v1.5，0.06–0.12 m/s 域随机化，无脚本执行器）
+## 纯策略里程碑（v1.6，0.06–0.18 m/s 宽速域单一策略，无脚本执行器）
+
+`runs/act-wide-4c` + `--fb 0.5 --grip-ema 0.6 --carry-latch --carry-max-step 0.02`：
+
+| 带速 | 成功率 | 单件处理时间 |
+| --- | --- | --- |
+| 0.08 m/s | 28/32 = 87.5% | 4.2–6.7 s |
+| **0.15 m/s** | **31/32 = 96.9%** | 5.2–6.4 s |
+| 0.18 m/s | 苹果 5/5、草莓 4/5 | — |
+
+```bash
+python scripts/eval_act_pure.py --ckpt runs/act-wide-4c/ckpt.pt \
+  --instruction apple --episodes 8 --belt 0.15 --spawn-spacing 0.45 --control-freq 30 \
+  --fb 0.5 --grip-ema 0.6 --carry-latch --carry-max-step 0.02
+```
+
+### 早前配置（v1.5，0.06–0.12 m/s 域随机化）
 
 | 带速 | 成功率 | 单件处理时间 |
 | --- | --- | --- |
