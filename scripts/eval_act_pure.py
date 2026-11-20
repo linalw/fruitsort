@@ -51,6 +51,14 @@ def main() -> None:
                     help="触觉预测驱动：闭爪前若滑移头预测会滑，则开爪→下沉 2cm→再闭")
     ap.add_argument("--regrasp-thr", type=float, default=0.6)
     ap.add_argument("--drop-nn", default="", help="独立掉落预测器权重（runs/dropnet/ckpt.pt）")
+    ap.add_argument("--grasp-gate", action="store_true",
+                    help="抓取验证门：进搬运段后判 双指力/对称度/相对速度，不达标则带偏移重试")
+    ap.add_argument("--gate-min-force", type=float, default=2.0)
+    ap.add_argument("--gate-asym", type=float, default=0.5)
+    ap.add_argument("--side-servo", action="store_true",
+                    help="闭爪时单侧接触 → 朝弱侧平移再闭（论文②）")
+    ap.add_argument("--close-force-th", type=float, default=0.0,
+                    help="闭合到力阈（N）：超过就停止继续闭合（力→位置近似）")
     ap.add_argument("--slip-guard", action="store_true",
                     help="触觉补救：搬运中检测到滑移就降速（抑制惯性滑脱）")
     ap.add_argument("--slip-thr", type=float, default=0.05)
@@ -87,7 +95,10 @@ def main() -> None:
             hold_latch=args.hold_latch, chunk_exec=args.chunk_exec,
             carry_max_step=args.carry_max_step, slip_guard=args.slip_guard,
             slip_thr=args.slip_thr, regrasp=args.regrasp,
-            regrasp_thr=args.regrasp_thr, drop_ckpt=args.drop_nn)
+            regrasp_thr=args.regrasp_thr, drop_ckpt=args.drop_nn,
+            grasp_gate=args.grasp_gate, gate_min_force=args.gate_min_force,
+            gate_asym=args.gate_asym, close_force_th=args.close_force_th,
+            side_servo=args.side_servo)
         zone_entry = None
         info, t = {}, 0
         # 「无损」指标（触觉）：峰值法向力、最大摩擦利用率、最大挤压比、累计滑移距离
@@ -124,7 +135,9 @@ def main() -> None:
               f"descend={st['descend']} carry={st['carry']} "
               f"Fn={Fn_peak:.1f}N rho={rho_max:.2f} slip={slip_dist * 100:.1f}cm "
               f"slipguard={st.get('slip', 0)} regrasp={st.get('regrasp', 0)} "
-              f"p_slip={st.get('slip_prob_max', 0):.2f} p_drop={st.get('drop_prob_max', 0):.2f}")
+              f"p_slip={st.get('slip_prob_max', 0):.2f} p_drop={st.get('drop_prob_max', 0):.2f} "
+              f"gate={st.get('gate_fail', 0)} retry={st.get('retries', 0)} "
+              f"side={st.get('side_push', 0)}")
         env.close()
 
     s = summarize(results)

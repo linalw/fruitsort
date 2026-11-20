@@ -44,7 +44,12 @@ class ActPureRunner:
                  carry_max_step: float = 0.0, slip_guard: bool = False,
                  slip_thr: float = 0.05, slip_slow_step: float = 0.012,
                  regrasp: bool = False, regrasp_thr: float = 0.6,
-                 regrasp_depth: float = 0.02, drop_ckpt: str = ""):
+                 regrasp_depth: float = 0.02, drop_ckpt: str = "",
+                 grasp_gate: bool = False, gate_min_force: float = 2.0,
+                 gate_asym: float = 0.5, gate_slip: float = 0.02,
+                 gate_delay: int = 5, gate_retries: int = 2,
+                 gate_bias: float = 0.005, close_force_th: float = 0.0,
+                 side_servo: bool = False, side_step: float = 0.002):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -76,6 +81,19 @@ class ActPureRunner:
         self.regrasp_thr = regrasp_thr
         self.regrasp_depth = regrasp_depth
         # 独立的掉落预测器（轻量 MLP，只看触觉历史 + 几何；主策略不参与）
+        # ---- 抓取验证门 + 有偏重试（论文①：抬升后判"这一抓是否成立"）----
+        self.grasp_gate = grasp_gate
+        self.gate_min_force = gate_min_force
+        self.gate_asym = gate_asym
+        self.gate_slip = gate_slip
+        self.gate_delay = gate_delay
+        self.gate_retries = gate_retries
+        self.gate_bias = gate_bias
+        # ---- 闭合到力阈（论文③：力→位置，小果不被挤飞、大果夹紧）----
+        self.close_force_th = close_force_th
+        # ---- 单侧接触微伺服（论文②）：闭爪过程中只有一指受力 → 朝弱侧平移再闭 ----
+        self.side_servo = side_servo
+        self.side_step = side_step
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -101,6 +119,19 @@ class ActPureRunner:
         self.regrasp_thr = regrasp_thr
         self.regrasp_depth = regrasp_depth
         # 独立的掉落预测器（轻量 MLP，只看触觉历史 + 几何；主策略不参与）
+        # ---- 抓取验证门 + 有偏重试（论文①：抬升后判"这一抓是否成立"）----
+        self.grasp_gate = grasp_gate
+        self.gate_min_force = gate_min_force
+        self.gate_asym = gate_asym
+        self.gate_slip = gate_slip
+        self.gate_delay = gate_delay
+        self.gate_retries = gate_retries
+        self.gate_bias = gate_bias
+        # ---- 闭合到力阈（论文③：力→位置，小果不被挤飞、大果夹紧）----
+        self.close_force_th = close_force_th
+        # ---- 单侧接触微伺服（论文②）：闭爪过程中只有一指受力 → 朝弱侧平移再闭 ----
+        self.side_servo = side_servo
+        self.side_step = side_step
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -132,13 +163,19 @@ class ActPureRunner:
         self.slip_slow = False
         self.force_target = None
         self.tac_hist = []
+        self.gate_timer = 0
+        self.gate_retries_done = 0
+        self.retry_bias = np.zeros(3)
+        self.gate_failed_once = False
         self.regrasp_done = False
         self.slip_prob = None
         self.queue = []
         self.queue_logits = None
         self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
                       "slip": 0, "slip_first": -1, "regrasp": 0, "slip_prob_max": 0.0,
-                      "force_target": 0.0, "fn_peak": 0.0, "drop_prob_max": 0.0}
+                      "force_target": 0.0, "fn_peak": 0.0, "drop_prob_max": 0.0,
+                      "gate_fail": 0, "retries": 0, "fL": 0.0, "fR": 0.0,
+                      "side_push": 0}
         self.grasping = False
 
     # ------------------------------------------------------------------ #
@@ -234,6 +271,8 @@ class ActPureRunner:
             if not self.fb_z:
                 corr[2] = 0.0
             tgt = tgt + self.fb * corr
+        if np.any(self.retry_bias) and self.phase_state != 2:
+            tgt = tgt + self.retry_bias
         if self.lead and kind in u.fruit_actors:
             tgt[0] += self.lead * float(u.belt_speed[0])
         if self.z_gate and kind in u.fruit_actors:
@@ -249,6 +288,10 @@ class ActPureRunner:
         # ---- 力作为动作通道：第 5 维 = 目标夹持力（0..1 → 0..40N），用触觉 Fn 伺服 ----
         self.force_target = None
         self.tac_hist = []
+        self.gate_timer = 0
+        self.gate_retries_done = 0
+        self.retry_bias = np.zeros(3)
+        self.gate_failed_once = False
         if self.use_force and p4.shape[-1] > 4:
             self.force_target = float(np.clip(p4[4], 0.0, 1.0)) * 40.0
             self.stats["force_target"] = self.force_target
@@ -261,6 +304,31 @@ class ActPureRunner:
                     grip = -0.6                  # 力超了 → 略松（不彻底张开，避免掉果）
                 else:
                     grip = -0.8                  # 命中目标力 → 维持
+        # ---- 单侧接触微伺服：闭爪时只有一指受力说明水果偏了 → 朝弱侧平移 ----
+        if self.side_servo and self.phase_state == 1 and grip < 0 and actor is not None:
+            try:
+                L = u.agent.robot.links_map["panda_leftfinger"]
+                R = u.agent.robot.links_map["panda_rightfinger"]
+                FL = L.get_net_contact_forces()[0].cpu().numpy()
+                FR = R.get_net_contact_forces()[0].cpu().numpy()
+                pL = L.pose.p[0].cpu().numpy(); pR = R.pose.p[0].cpu().numpy()
+                axis = pL - pR; axis = axis / max(np.linalg.norm(axis), 1e-6)
+                fL = abs(float(np.dot(FL, axis))); fR = abs(float(np.dot(FR, -axis)))
+                if min(fL, fR) < 0.5 and max(fL, fR) > 2.0:
+                    side = 1.0 if fL < fR else -1.0     # 朝没碰到的一侧挪
+                    tgt = tgt + axis * self.side_step * side
+                    self.stats["side_push"] += 1
+            except Exception:  # noqa: BLE001
+                pass
+
+        # ---- 闭合到力阈（力→位置）：超过阈值就停止继续闭合，避免小果被挤飞 ----
+        if self.close_force_th > 0 and glogit > 0 and not grasping:
+            try:
+                fn_now = float(build_tactile(u, kind)[0])
+            except Exception:  # noqa: BLE001
+                fn_now = 0.0
+            if fn_now > self.close_force_th:
+                grip = -0.3
         if self.carry_latch and grasping:
             self.open_streak = self.open_streak + 1 if glogit < 0 else 0
             if self.open_streak < 3:
@@ -270,6 +338,10 @@ class ActPureRunner:
         self.slip_slow = False
         self.force_target = None
         self.tac_hist = []
+        self.gate_timer = 0
+        self.gate_retries_done = 0
+        self.retry_bias = np.zeros(3)
+        self.gate_failed_once = False
         self.regrasp_done = False
         self.slip_prob = None
         self.stats["close"] += int(grip < 0)
@@ -313,6 +385,39 @@ class ActPureRunner:
                 z = torch.from_numpy(((feat - self.drop_mu) / self.drop_sd)[None])
                 self.drop_prob = float(torch.sigmoid(self.drop_net(z)).item())
             self.stats["drop_prob_max"] = max(self.stats.get("drop_prob_max", 0.0), self.drop_prob)
+
+        # ---- 抓取验证门（论文①）：进入搬运段 gate_delay 步后判"是否真的抓住" ----
+        if self.grasp_gate and self.phase_state == 2 and actor is not None:
+            self.gate_timer += 1
+            if self.gate_timer == self.gate_delay:
+                try:
+                    L = u.agent.robot.links_map["panda_leftfinger"]
+                    R = u.agent.robot.links_map["panda_rightfinger"]
+                    FL = L.get_net_contact_forces()[0].cpu().numpy()
+                    FR = R.get_net_contact_forces()[0].cpu().numpy()
+                    pL = L.pose.p[0].cpu().numpy(); pR = R.pose.p[0].cpu().numpy()
+                    axis = pL - pR; axis = axis / max(np.linalg.norm(axis), 1e-6)
+                    fL = abs(float(np.dot(FL, axis))); fR = abs(float(np.dot(FR, -axis)))
+                    sym = abs(fL - fR) / max(fL + fR, 1e-6)
+                    tac_now = build_tactile(u, kind)
+                    v_rel = float(tac_now[5])
+                    self.stats["fL"], self.stats["fR"] = fL, fR
+                    ok = (min(fL, fR) > self.gate_min_force and sym < self.gate_asym
+                          and v_rel < self.gate_slip)
+                    if not ok:
+                        self.stats["gate_fail"] += 1
+                        if self.gate_retries_done < self.gate_retries:
+                            # 沿"偏弱的一侧"补一个横向偏移，下次下探用
+                            side = 1.0 if fL < fR else -1.0
+                            self.retry_bias = axis * self.gate_bias * side
+                            self.gate_retries_done += 1
+                            self.stats["retries"] += 1
+                            # 复位到接近段，交给策略重新下探
+                            self.phase_state, self.same, self.phase_cand = 0, 0, 0
+                            self.gate_timer = 0
+                            self.regrasp_done = False
+                except Exception:  # noqa: BLE001
+                    pass
 
         # ---- 触觉预测驱动的闭爪前重抓 ----
         if (self.regrasp and not grasping and self.phase_state == 1 and grip < 0
