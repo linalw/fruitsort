@@ -51,7 +51,8 @@ class ActPureRunner:
                  gate_bias: float = 0.005, close_force_th: float = 0.0,
                  side_servo: bool = False, side_step: float = 0.002,
                  width_map: dict | None = None, width_delta: float = 0.002,
-                 width_g: float | None = None, close_ramp: float = 0.0):
+                 width_g: float | None = None, close_ramp: float = 0.0,
+                 grasp_z_bias: dict | None = None):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -103,6 +104,8 @@ class ActPureRunner:
         self.width_g = width_g
         # ---- 渐进闭爪：不一步跳到 -1，而是每步 -close_ramp，避免闭爪瞬间把水果弹飞 ----
         self.close_ramp = close_ramp
+        # ---- 按类的抓取高度偏置（执行层工具偏置）：梨需要 +1.5cm 才能夹住果身 ----
+        self.grasp_z_bias = grasp_z_bias or {}
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -148,6 +151,8 @@ class ActPureRunner:
         self.width_g = width_g
         # ---- 渐进闭爪：不一步跳到 -1，而是每步 -close_ramp，避免闭爪瞬间把水果弹飞 ----
         self.close_ramp = close_ramp
+        # ---- 按类的抓取高度偏置（执行层工具偏置）：梨需要 +1.5cm 才能夹住果身 ----
+        self.grasp_z_bias = grasp_z_bias or {}
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -369,6 +374,9 @@ class ActPureRunner:
             elif self.phase_state == 0:                     # 回到接近段才重置为张开
                 self.cur_grip = 1.0
             grip = self.cur_grip
+        # ---- 按类抓取高度偏置（下探/闭爪段）----
+        if self.grasp_z_bias and kind in self.grasp_z_bias and self.phase_state in (1, 2):
+            tgt[2] = tgt[2] + float(self.grasp_z_bias[kind])
         # ---- 宽度设定点（LeTac 式位置等价力控）：闭合到 w*(类)−δ，而不是合到底 ----
         # 实测空载映射 gap ≈ 0.030 + 0.050·g，反解 g = (w−0.030)/0.050
         if self.width_map and kind in self.width_map and (glogit > 0 or self.phase_state == 2):
