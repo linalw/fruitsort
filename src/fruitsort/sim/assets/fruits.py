@@ -89,8 +89,10 @@ def build_fruit(
 ) -> "Actor":  # noqa: F821
     """在场景中创建一个水果 actor（动态刚体）。"""
     spec = spec or load_specs()[kind]
+    # FRICTION_SCALE：接触摩擦倍率，用来模拟"软指/胶垫"（1.0 = 原始材质）
+    fs = float(globals().get("FRICTION_SCALE", 1.0))
     mat = sapien.physx.PhysxMaterial(
-        spec.static_friction, spec.dynamic_friction, spec.restitution
+        spec.static_friction * fs, spec.dynamic_friction * fs, spec.restitution
     )
     rmat = sapien.render.RenderMaterial()
     rmat.base_color = spec.color

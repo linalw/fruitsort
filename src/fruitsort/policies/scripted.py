@@ -33,7 +33,9 @@ class PolicyConfig:
     carry_max_step: float = 0.06  # 搬运段最大位移（梨等易滑脱的水果需要更慢）
     grasp_tilt: float = 0.0       # 抓取倾角（rad）：0=俯视；探针测得 30–45° 可行、60° 撞带面
     grasp_yaw: float = 0.0        # 绕竖直轴偏转（rad）：改变夹指闭合方向（长条形水果有用）
-    pear_extra_depth: float = 0.01   # 梨额外下探（梨较窄，抓浅了会滑脱）
+    # 梨的抓取高度：负值 = 抬高 TCP（让两指夹住果身而不是果尖）。
+    # 实测 0.08 m/s 专家：0 → 6/10，抬高 1~2cm → 9/10，抬高 3cm → 4/10
+    pear_extra_depth: float = -0.015
     close_steps: int = 12
     release_steps: int = 8
     ready_pose: tuple = (0.0, -0.05, 0.68)

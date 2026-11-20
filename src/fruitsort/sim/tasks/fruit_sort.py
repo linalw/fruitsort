@@ -21,6 +21,7 @@ from typing import Any, Union
 
 import numpy as np
 import sapien
+import numpy as np
 import torch
 
 from mani_skill.agents.robots import Panda
@@ -63,6 +64,8 @@ class FruitSortEnv(BaseEnv):
         robot_uids="panda",
         robot_init_qpos_noise=0.02,
         active_kinds: tuple[str, ...] = ALL_KINDS,
+        pad_mu: float = 0.0,
+        pad_gain: float = 2.0,
         with_bins: bool = True,
         instruction_kind: str | None = None,
         belt_speed_range=(0.08, 0.18),
@@ -72,6 +75,10 @@ class FruitSortEnv(BaseEnv):
     ):
         self.robot_init_qpos_noise = robot_init_qpos_noise
         self.active_kinds = tuple(active_kinds)
+        # 软指/胶垫等效：对"夹爪-水果"额外加一个黏性摩擦项，上限 pad_mu·Fn，
+        # 不影响"水果-传送带"（SAPIEN 无法单独改已加载 link 的材质）
+        self.pad_mu = float(pad_mu)
+        self.pad_gain = float(pad_gain)
         self.with_bins = with_bins
         self.instruction_kind = instruction_kind
         self.belt_speed_range = belt_speed_range
@@ -208,6 +215,40 @@ class FruitSortEnv(BaseEnv):
             actor.set_linear_velocity(torch.where(drive[:, None], target, vel))
             actor.set_angular_velocity(torch.where(
                 drive[:, None], torch.zeros_like(vel), actor.angular_velocity))
+        self._apply_pad_friction()
+
+    def _apply_pad_friction(self):
+        """软指等效：被抓水果额外获得 上限 pad_mu·Fn 的黏性摩擦（−c·v_rel）。"""
+        if self.pad_mu <= 0 or getattr(self, "fruit_actors", None) is None:
+            return
+        try:
+            L = self.agent.robot.links_map["panda_leftfinger"]
+            R = self.agent.robot.links_map["panda_rightfinger"]
+            FL = L.get_net_contact_forces()
+            FR = R.get_net_contact_forces()
+            pL = L.pose.p; pR = R.pose.p
+            axis = pL - pR
+            axis = axis / torch.linalg.norm(axis, dim=-1, keepdim=True).clamp(min=1e-6)
+            fL = (FL * axis).sum(-1).abs()
+            fR = (FR * -axis).sum(-1).abs()
+            Fn = 0.5 * (fL + fR)
+            v_tcp = self.agent.robot.links_map["panda_hand_tcp"].linear_velocity
+        except Exception:  # noqa: BLE001
+            return
+        for kind, actor in self.fruit_actors.items():
+            # 用"在夹爪里"判断，而不是 is_grasping（后者对梨/香蕉常有假阴性）
+            dist = torch.linalg.norm(actor.pose.p - self.agent.tcp_pose.p, dim=-1)
+            grasping = (dist < 0.06) & (Fn > 1.0)
+            if not bool(grasping.any()):
+                continue
+            v_rel = actor.linear_velocity - v_tcp
+            m = actor.mass
+            F = -self.pad_gain * m[:, None] * v_rel
+            cap = (self.pad_mu * Fn).clamp(min=0.0)[:, None]
+            F = torch.clamp(F, -cap, cap) * grasping[:, None]
+            fn = F[0].detach().cpu().numpy().astype(np.float32)
+            if float(np.abs(fn).max()) > 0.0:
+                actor._bodies[0].add_force_torque(fn, np.zeros(3, dtype=np.float32))
 
     # ------------------------------------------------------------------ #
     # 观测 / 评估

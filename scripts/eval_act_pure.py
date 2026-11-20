@@ -59,6 +59,8 @@ def main() -> None:
                     help="闭合到 w*(类)−δ 而不是合到底（位置等价的轻力抓取）")
     ap.add_argument("--width-delta", type=float, default=0.002)
     ap.add_argument("--width-g", type=float, default=None, help="直接用固定闭合指令值扫标定")
+    ap.add_argument("--close-ramp", type=float, default=0.0,
+                    help="渐进闭爪步长（如 0.15）：不一步合到底，减少闭爪瞬间弹飞")
     ap.add_argument("--side-servo", action="store_true",
                     help="闭爪时单侧接触 → 朝弱侧平移再闭（论文②）")
     ap.add_argument("--close-force-th", type=float, default=0.0,
@@ -105,7 +107,8 @@ def main() -> None:
             side_servo=args.side_servo,
             width_map=({"apple": 0.062, "strawberry": 0.034, "banana": 0.044, "pear": 0.068}
                        if args.width_setpoint else {}),
-            width_delta=args.width_delta, width_g=args.width_g)
+            width_delta=args.width_delta, width_g=args.width_g,
+            close_ramp=args.close_ramp)
         zone_entry = None
         info, t = {}, 0
         # 「无损」指标（触觉）：峰值法向力、最大摩擦利用率、最大挤压比、累计滑移距离

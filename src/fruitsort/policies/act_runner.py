@@ -51,7 +51,7 @@ class ActPureRunner:
                  gate_bias: float = 0.005, close_force_th: float = 0.0,
                  side_servo: bool = False, side_step: float = 0.002,
                  width_map: dict | None = None, width_delta: float = 0.002,
-                 width_g: float | None = None):
+                 width_g: float | None = None, close_ramp: float = 0.0):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -101,6 +101,8 @@ class ActPureRunner:
         self.width_map = width_map or {}
         self.width_delta = width_delta
         self.width_g = width_g
+        # ---- 渐进闭爪：不一步跳到 -1，而是每步 -close_ramp，避免闭爪瞬间把水果弹飞 ----
+        self.close_ramp = close_ramp
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -144,6 +146,8 @@ class ActPureRunner:
         self.width_map = width_map or {}
         self.width_delta = width_delta
         self.width_g = width_g
+        # ---- 渐进闭爪：不一步跳到 -1，而是每步 -close_ramp，避免闭爪瞬间把水果弹飞 ----
+        self.close_ramp = close_ramp
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -181,6 +185,7 @@ class ActPureRunner:
         self.gate_failed_once = False
         self.regrasp_done = False
         self.slip_prob = None
+        self.cur_grip = 1.0
         self.queue = []
         self.queue_logits = None
         self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
@@ -356,6 +361,14 @@ class ActPureRunner:
         self.gate_failed_once = False
         self.regrasp_done = False
         self.slip_prob = None
+        self.cur_grip = 1.0
+        # ---- 渐进闭爪（闭合速度限幅）----
+        if self.close_ramp > 0:
+            if glogit > 0:                                  # 想闭爪：单向渐进，不回头
+                self.cur_grip = max(-1.0, self.cur_grip - self.close_ramp)
+            elif self.phase_state == 0:                     # 回到接近段才重置为张开
+                self.cur_grip = 1.0
+            grip = self.cur_grip
         # ---- 宽度设定点（LeTac 式位置等价力控）：闭合到 w*(类)−δ，而不是合到底 ----
         # 实测空载映射 gap ≈ 0.030 + 0.050·g，反解 g = (w−0.030)/0.050
         if self.width_map and kind in self.width_map and (glogit > 0 or self.phase_state == 2):
