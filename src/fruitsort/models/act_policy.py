@@ -44,7 +44,9 @@ class ActConfig:
     use_cvae: bool = True
     latent_dim: int = 32
     n_phase: int = 0        # >0：相位辅助头类别数（0 = 关闭，兼容旧 ckpt）
-    n_slip: int = 0         # >0：滑移辅助头（预测未来 10 帧是否滑移）
+    n_slip: int = 0         # >0：滑移/掉落辅助头
+    tactile_dim: int = 0    # >0：触觉独立 token（不再拼进 state）
+    use_force_head: bool = False   # 动作第 5 维 = 目标夹持力
     conv_norm: str = "gn"   # "gn": 把复用来的 ConvEncoder 的 BN 换成 GroupNorm
 
 
@@ -83,11 +85,15 @@ class ActPolicy(nn.Module):
             self.view_enc = bn_to_groupnorm(self.view_enc)
         self.state_enc = nn.Sequential(nn.Linear(cfg.obs_dim, d), nn.GELU(),
                                        nn.Linear(d, d))
+        # 触觉独立 stem：9 维 → d，作为**每帧第 4 种 token**（文献建议触点单独编码）
+        self.tactile_enc = (nn.Sequential(nn.Linear(cfg.tactile_dim, d), nn.GELU(),
+                                          nn.Linear(d, d))
+                            if cfg.tactile_dim > 0 else None)
         # 当前帧状态捷径：图像编码器分辨率有限，精确几何靠状态直连
         self.state_short = nn.Sequential(nn.Linear(cfg.obs_dim, d), nn.GELU(),
                                          nn.Linear(d, d))
         self.kind_emb = nn.Embedding(cfg.n_kinds, d)
-        self.view_type = nn.Parameter(torch.zeros(n_views + 1, d))   # oh / wrist / state
+        self.view_type = nn.Parameter(torch.zeros(n_views + 2, d))   # oh / wrist / state / tactile
         self.time_pos = nn.Parameter(torch.zeros(cfg.hist, d))
         self.cls = nn.Parameter(torch.zeros(1, 1, d))
         self.in_norm = nn.LayerNorm(d)
@@ -113,15 +119,16 @@ class ActPolicy(nn.Module):
         # ---------------- CVAE 隐变量 ----------------
         # 训练：z ~ q(z | CLS, 专家动作块)；推理：z = 0（先验均值）
         self.use_cvae = cfg.use_cvae
+        self.act_dim = 5 if cfg.use_force_head else 4
         if cfg.use_cvae:
             self.post_enc = nn.Sequential(
-                nn.Linear(d + cfg.chunk * 4, d), nn.GELU(),
+                nn.Linear(d + cfg.chunk * self.act_dim, d), nn.GELU(),
                 nn.Linear(d, 2 * cfg.latent_dim),
             )
             self.z_proj = nn.Linear(cfg.latent_dim, d)
 
         # ---------------- 输出头 ----------------
-        self.act_head = nn.Linear(d, 4)   # xyz(世界目标) + 夹爪 logit
+        self.act_head = nn.Linear(d, 5 if cfg.use_force_head else 4)  # Δxyz + 夹爪 logit [+ 目标力]
         # 相位辅助头：每个 query 预测该步属于 接近/下探/搬运，推理端用 k=0 的
         # argmax 反馈回状态（相位由策略自己决定，不是脚本 FSM）
         self.phase_head = nn.Linear(d, cfg.n_phase) if cfg.n_phase else None
@@ -150,7 +157,7 @@ class ActPolicy(nn.Module):
         diff = (x - p).abs().mean(dim=1, keepdim=True)
         return self.view_enc(torch.cat([x, diff], dim=1)).reshape(B, T, -1)
 
-    def encode(self, imgs_oh, imgs_wr, states, kind_ids):
+    def encode(self, imgs_oh, imgs_wr, states, kind_ids, tactile=None):
         """历史观测 → (B, 1+T*(V+1), D) memory 与 CLS 特征。"""
         B, T = states.shape[:2]
         prev_oh = torch.cat([imgs_oh[:, :1], imgs_oh[:, :-1]], dim=1)
@@ -158,7 +165,9 @@ class ActPolicy(nn.Module):
         if imgs_wr is not None and self.cfg.use_wrist:
             prev_wr = torch.cat([imgs_wr[:, :1], imgs_wr[:, :-1]], dim=1)
             tok.append(self._img_tokens(imgs_wr, prev_wr) + self.view_type[1] + self.time_pos)
-        tok.append(self.state_enc(states) + self.view_type[-1] + self.time_pos)
+        tok.append(self.state_enc(states) + self.view_type[-2] + self.time_pos)
+        if self.tactile_enc is not None and tactile is not None:
+            tok.append(self.tactile_enc(tactile) + self.view_type[-1] + self.time_pos)
 
         seq = torch.stack(tok, dim=2).reshape(B, T * len(tok), -1)
         cls = self.cls + self.kind_emb(kind_ids)[:, None, :]
@@ -187,7 +196,7 @@ class ActPolicy(nn.Module):
         return self.act_head(base), self.phase_head(h)
 
     def forward(self, imgs_oh, imgs_wr, states, kind_ids, act_target=None,
-                use_prior: bool = False, phase_out: bool = False):
+                use_prior: bool = False, phase_out: bool = False, tactile=None):
         """
         imgs_oh: (B,T,3,H,W) float[0,1]；imgs_wr 同上或 None
         states:  (B,T,obs_dim)；kind_ids: (B,)
@@ -197,7 +206,7 @@ class ActPolicy(nn.Module):
 
         返回 (act (B,K,4), mu, logvar[, phase_logits])。
         """
-        memory = self.encode(imgs_oh, imgs_wr, states, kind_ids)
+        memory = self.encode(imgs_oh, imgs_wr, states, kind_ids, tactile=tactile)
         mu = logvar = None
         z = None
         if self.use_cvae:

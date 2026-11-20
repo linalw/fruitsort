@@ -53,7 +53,7 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 class ImageDemoDataset(Dataset):
     def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
-                 aux_dirs=()):
+                 aux_dirs=(), split_tactile: bool = False, force_label: bool = False):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
@@ -64,6 +64,8 @@ class ImageDemoDataset(Dataset):
         self.boost_kind = boost_kind
         self.drop_tactile = drop_tactile
         self.aux_dirs = {Path(d).resolve() for d in aux_dirs}
+        self.split_tactile = split_tactile
+        self.force_label = force_label
         self.kind_boost = max(1, int(kind_boost))
         dirs = [Path(d) for d in (data_dir if isinstance(data_dir, (list, tuple)) else [data_dir])]
         files = []
@@ -90,8 +92,12 @@ class ImageDemoDataset(Dataset):
                 ep["phase"] = episode_phase(obs, ep["act"], instr)
             if obs.shape[1] >= 58:
                 # 触觉布局：[49 base][9 tactile]；index 54=v_slip, 55/56=左右指接触
-                # 逐帧滑移：有实际夹持力(Fn>5N) 且物体相对 TCP 有速度（>5cm/s）
-                now = ((obs[:, 49] > 5.0) & (obs[:, 54] > 0.05)).astype(np.float32)
+                # ---------------- 掉落起始标签（替代滑移标签）----------------
+                # 依据"物体离开夹爪"而不是"有相对速度"：滑移≠失败（草莓成功搬运时中位滑移
+                # 就有 12.4cm/s）。标签 = 当前贴着 TCP(d<6cm) 且 5~20 帧内 d 会超过 10cm。
+                j = ALL.index(instr) if instr in ALL else 0
+                d = np.linalg.norm(obs[:, 17 + 8 * j:17 + 8 * j + 3] - obs[:, :3], axis=1)
+                now = ((d < 0.06) & (obs[:, 17 + 8 * j + 7] > 0.5)).astype(np.float32)
                 ep["slip_now"] = now
                 # 监督标签 = **即将滑移的起始**（当前没滑，但 5~20 帧内会滑）。
                 # 关键：如果标签用 t+1..t+10 的 max、而 v_slip 又在观测里，模型直接读数就能拿到
@@ -101,8 +107,9 @@ class ImageDemoDataset(Dataset):
                 fut = np.zeros(T, dtype=np.float32)
                 for i in range(T):
                     lo, hi = i + 5, min(i + 21, T)
-                    fut[i] = float(now[lo:hi].max()) if hi > lo else 0.0
-                ep["slip_onset"] = (fut * (1.0 - now)).astype(np.float32)
+                    fut[i] = float((d[lo:hi] > 0.10).any()) if hi > lo else 0.0
+                ep["drop_onset"] = (fut * now).astype(np.float32)
+                ep["slip_onset"] = ep["drop_onset"]
 
             self.episodes.append(ep)
         if not self.episodes:
@@ -140,6 +147,11 @@ class ImageDemoDataset(Dataset):
         oh = ep["oh"][idx].astype(np.float32) / 255.0
         wr = ep["wr"][idx].astype(np.float32) / 255.0 if ep["wr"] is not None else oh
         states = ep["obs"][idx].copy()
+        tactile = None
+        if states.shape[1] >= 58:
+            if self.split_tactile:
+                tactile = states[:, 49:58].copy()
+                states = np.concatenate([states[:, :49], states[:, 58:]], axis=1)
         if self.drop_tactile and states.shape[1] >= 58:
             # 消融：丢掉 49:58 的触觉列（同一份数据 → 干净的 A/B）
             states = np.concatenate([states[:, :49], states[:, 58:]], axis=1)
@@ -163,6 +175,12 @@ class ImageDemoDataset(Dataset):
         if len(acts) < K:
             acts = np.concatenate([acts, np.repeat(acts[-1:], K - len(acts), axis=0)])
         acts[:, 3] = (acts[:, 3] < 0).astype(np.float32)  # 夹爪：闭=1 / 开=0
+        if self.force_label and tactile is not None:
+            # 第 5 维 = 目标夹持力（示教里实测 Fn / 40N → [0,1]），chunk 内前向填充
+            f = ep["obs"][t:t + K, 49] / 40.0
+            if len(f) < K:
+                f = np.concatenate([f, np.repeat(f[-1:], K - len(f))])
+            acts = np.concatenate([acts, np.clip(f, 0, 1)[:, None]], axis=1)
         if self.delta_actions:
             # 相对当前 TCP 的增量 = **实际执行的位移**（与执行端同样裁剪到 ±max_step）。
             # 用未裁剪的原始目标差会让每一步都饱和成 6cm（收敛不了），
@@ -195,6 +213,8 @@ class ImageDemoDataset(Dataset):
             "future": torch.from_numpy(fut),
             "kind": torch.tensor(ep["instruction_id"], dtype=torch.long),
         }
+        if tactile is not None:
+            out["tactile"] = torch.from_numpy(tactile.astype(np.float32))
         out["aux_only"] = torch.tensor(float(ep.get("aux_only", False)))
         if "slip_onset" in ep:
             out["slip"] = torch.tensor(float(ep["slip_onset"][t]))

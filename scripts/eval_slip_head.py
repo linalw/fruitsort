@@ -51,16 +51,19 @@ def main() -> None:
     ns = Normalizer.from_state(ck["norm_state"])
 
     dirs = [Path(d) if Path(d).is_absolute() else ROOT / d for d in args.data]
+    use_tac = int(getattr(cfg, "tactile_dim", 0) or 0) > 0
     ds = ImageDemoDataset(dirs, hist=cfg.hist, chunk=cfg.chunk, stride=args.stride,
-                          use_phase=True, delta_actions=True, aux_dirs=dirs)
+                          use_phase=True, delta_actions=True, aux_dirs=dirs,
+                          split_tactile=use_tac)
     idx = list(range(0, len(ds), max(1, len(ds) // args.max_windows)))
     ps, ys, eps = [], [], []
     with torch.no_grad():
         for i in idx:
             s = ds[i]
             st = ns.obs(s["state"].numpy()[None]).astype(np.float32)
+            tac = s["tactile"][None] if "tactile" in s else None
             model(s["oh"][None], s["wr"][None], torch.from_numpy(st),
-                  s["kind"][None].long(), use_prior=True)
+                  s["kind"][None].long(), use_prior=True, tactile=tac)
             ps.append(float(torch.sigmoid(model.last_slip).mean().item()))
             ys.append(float(s["slip"]))
             eps.append(int(ds.index[i][0]))

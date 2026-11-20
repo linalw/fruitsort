@@ -61,11 +61,16 @@ def main() -> None:
                     help="下探/闭爪窗过采样倍数（相位=1 的窗口重复 N 次）")
     ap.add_argument("--no-tactile", action="store_true",
                     help="消融：丢掉观测里的 9 维触觉（同一份数据，干净 A/B）")
-    ap.add_argument("--slip-head", action="store_true", help="加滑移辅助头（预测未来 10 帧是否滑移）")
+    ap.add_argument("--slip-head", action="store_true", help="加辅助头（预测未来 0.5s 内是否掉落）")
+    ap.add_argument("--tactile-token", action="store_true",
+                    help="触觉作为独立 token（9 维单独编码），而不是拼进 state")
+    ap.add_argument("--force-head", action="store_true",
+                    help="动作加第 5 维 = 目标夹持力（力作为动作通道）")
     ap.add_argument("--aux-data", nargs="*", default=[],
                     help="失败/滑脱片段目录：只参与滑移辅助损失，不参与动作 BC 损失")
     ap.add_argument("--aux-boost", type=int, default=1, help="失败片段过采样倍数")
     ap.add_argument("--slip-weight", type=float, default=0.3)
+    ap.add_argument("--force-weight", type=float, default=1.0)
     ap.add_argument("--boost-kind", default="", help="弱类过采样：类名，如 pear")
     ap.add_argument("--kind-boost", type=int, default=1, help="该类的重复倍数")
     ap.add_argument("--carry-boost", type=int, default=1,
@@ -86,7 +91,9 @@ def main() -> None:
                           delta_actions=args.delta_actions, use_phase=args.phase,
                           descend_boost=args.descend_boost, carry_boost=args.carry_boost,
                           boost_kind=args.boost_kind, kind_boost=args.kind_boost,
-                          drop_tactile=args.no_tactile, aux_dirs=aux_dirs)
+                          drop_tactile=args.no_tactile, aux_dirs=aux_dirs,
+                          split_tactile=args.tactile_token,
+                          force_label=args.force_head)
     base_dim = int(ds[0]["state"].shape[-1]) - (3 if args.phase else 0)
     obs_dim = base_dim + (3 if args.phase else 0)
 
@@ -160,7 +167,9 @@ def main() -> None:
                     enc_layers=args.enc_layers, dec_layers=args.dec_layers,
                     dropout=args.dropout, use_cvae=not args.no_cvae, obs_dim=obs_dim,
                     n_phase=3 if args.phase else 0,
-                    n_slip=1 if args.slip_head else 0)
+                    n_slip=1 if args.slip_head else 0,
+                    tactile_dim=9 if args.tactile_token else 0,
+                    use_force_head=bool(args.force_head))
     model = ActPolicy(cfg).to(args.device)
     n_params = count_params(model)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -176,7 +185,14 @@ def main() -> None:
             l_grip = (grip_p * w).sum() / w.sum().clamp(min=1.0)
         else:
             l_xyz, l_grip = xyz_p.mean(), grip_p.mean()
-        loss = l_xyz + args.grip_weight * l_grip
+        l_force = torch.zeros((), device=args.device)
+        if pred.shape[-1] > 4 and act.shape[-1] > 4:
+            fp = ((pred[:, :, 4] - act[:, :, 4]) ** 2).mean(dim=1)
+            if w is not None and float(w.sum()) > 0:
+                l_force = (fp * w).sum() / w.sum().clamp(min=1.0)
+            else:
+                l_force = fp.mean()
+        loss = l_xyz + args.grip_weight * l_grip + args.force_weight * l_force
         l_kl = torch.zeros((), device=args.device)
         if mu is not None:
             l_kl = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).mean()
@@ -202,11 +218,12 @@ def main() -> None:
             act = b["act"].to(args.device, non_blocking=True)
             with torch.autocast("cuda", dtype=torch.bfloat16,
                                 enabled=args.device.startswith("cuda")):
+                tac = b["tactile"].to(args.device) if "tactile" in b else None
                 if args.phase:
                     pred, mu, logvar, logits = model(oh, wr, st, kind, act_target=act,
-                                                     phase_out=True)
+                                                     phase_out=True, tactile=tac)
                 else:
-                    pred, mu, logvar = model(oh, wr, st, kind, act_target=act)
+                    pred, mu, logvar = model(oh, wr, st, kind, act_target=act, tactile=tac)
                     logits = None
                 w_bc = (1.0 - b["aux_only"].to(args.device).float()) if "aux_only" in b else None
                 loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act, w_bc)
@@ -248,11 +265,12 @@ def main() -> None:
                 act = b["act"].to(args.device)
                 with torch.autocast("cuda", dtype=torch.bfloat16,
                                     enabled=args.device.startswith("cuda")):
+                    vtac = b["tactile"].to(args.device) if "tactile" in b else None
                     if args.phase:
                         pred, _, _, vlogits = model(oh, wr, st, kind, use_prior=True,
-                                                    phase_out=True)
+                                                    phase_out=True, tactile=vtac)
                     else:
-                        pred, _, _ = model(oh, wr, st, kind, use_prior=True)
+                        pred, _, _ = model(oh, wr, st, kind, use_prior=True, tactile=vtac)
                         vlogits = None
                     vl, v_xyz, v_grip, _ = compute_loss(pred.float(), None, None, act)
                     if vlogits is not None:

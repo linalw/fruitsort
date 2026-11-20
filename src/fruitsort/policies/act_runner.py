@@ -53,6 +53,8 @@ class ActPureRunner:
         self.na = Normalizer.from_state(ck["norm_act"])
         self.delta_actions = bool(ck.get("delta_actions", False))
         self.use_phase = self.cfg.obs_dim > 49
+        self.tactile_token = int(getattr(self.cfg, "tactile_dim", 0) or 0)
+        self.use_force = bool(getattr(self.cfg, "use_force_head", False))
         # 布局：[49 base][9 tactile][3 phase]。触觉与否由 obs_dim 决定
         self.tactile_dim = 9 if (self.cfg.obs_dim - (3 if self.use_phase else 0)) >= 58 else 0
 
@@ -87,7 +89,7 @@ class ActPureRunner:
 
     # ------------------------------------------------------------------ #
     def reset(self):
-        self.oh, self.wr, self.st = [], [], []
+        self.oh, self.wr, self.st, self.tac = [], [], [], []
         self.phase_state = 0
         self.phase_cand = 0
         self.same = 0
@@ -103,7 +105,8 @@ class ActPureRunner:
         self.queue = []
         self.queue_logits = None
         self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
-                      "slip": 0, "slip_first": -1, "regrasp": 0, "slip_prob_max": 0.0}
+                      "slip": 0, "slip_first": -1, "regrasp": 0, "slip_prob_max": 0.0,
+                      "force_target": 0.0, "fn_peak": 0.0}
         self.grasping = False
 
     # ------------------------------------------------------------------ #
@@ -140,18 +143,24 @@ class ActPureRunner:
             onehot[self.phase_state if self.phase_fb else 0] = 1.0
             sb = np.concatenate([sb, onehot])
         self.st.append(sb)
-        for h in (self.oh, self.wr, self.st):
+        if self.tactile_token:
+            self.tac.append(build_tactile(u, kind))
+        for h in (self.oh, self.wr, self.st, self.tac) if self.tactile_token else (self.oh, self.wr, self.st):
             if len(h) > cfg.hist:
                 h.pop(0)
         while len(self.oh) < cfg.hist:
             self.oh.insert(0, self.oh[0])
             self.wr.insert(0, self.wr[0])
             self.st.insert(0, self.st[0])
+            if self.tactile_token:
+                self.tac.insert(0, self.tac[0] if self.tac else np.zeros(self.tactile_token, np.float32))
 
         if self.queue:
             p4 = self.queue.pop(0)
             logits = self.queue_logits
         else:
+            tac_t = (torch.from_numpy(np.stack(self.tac)[None]).float().to(self.device)
+                     if self.tactile_token else None)
             with torch.no_grad():
                 if cfg.n_phase:
                     act, _, _, logits = self.model(
@@ -159,14 +168,14 @@ class ActPureRunner:
                         torch.from_numpy(np.stack(self.wr)[None]).float().to(self.device),
                         torch.from_numpy(self.ns.obs(np.stack(self.st).astype(np.float32))[None]).float().to(self.device),
                         torch.tensor([INSTR_ID[kind]], device=self.device),
-                        use_prior=True, phase_out=True)
+                        use_prior=True, phase_out=True, tactile=tac_t)
                 else:
                     act, _, _ = self.model(
                         torch.from_numpy(np.stack(self.oh)[None]).float().to(self.device),
                         torch.from_numpy(np.stack(self.wr)[None]).float().to(self.device),
                         torch.from_numpy(self.ns.obs(np.stack(self.st).astype(np.float32))[None]).float().to(self.device),
                         torch.tensor([INSTR_ID[kind]], device=self.device),
-                        use_prior=True)
+                        use_prior=True, tactile=tac_t)
                     logits = None
             acts_np = act[0].cpu().numpy()
             if self.chunk_exec > 1 and self.delta_actions:
