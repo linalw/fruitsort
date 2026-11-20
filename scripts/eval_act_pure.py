@@ -55,6 +55,10 @@ def main() -> None:
                     help="抓取验证门：进搬运段后判 双指力/对称度/相对速度，不达标则带偏移重试")
     ap.add_argument("--gate-min-force", type=float, default=2.0)
     ap.add_argument("--gate-asym", type=float, default=0.5)
+    ap.add_argument("--width-setpoint", action="store_true",
+                    help="闭合到 w*(类)−δ 而不是合到底（位置等价的轻力抓取）")
+    ap.add_argument("--width-delta", type=float, default=0.002)
+    ap.add_argument("--width-g", type=float, default=None, help="直接用固定闭合指令值扫标定")
     ap.add_argument("--side-servo", action="store_true",
                     help="闭爪时单侧接触 → 朝弱侧平移再闭（论文②）")
     ap.add_argument("--close-force-th", type=float, default=0.0,
@@ -98,7 +102,10 @@ def main() -> None:
             regrasp_thr=args.regrasp_thr, drop_ckpt=args.drop_nn,
             grasp_gate=args.grasp_gate, gate_min_force=args.gate_min_force,
             gate_asym=args.gate_asym, close_force_th=args.close_force_th,
-            side_servo=args.side_servo)
+            side_servo=args.side_servo,
+            width_map=({"apple": 0.062, "strawberry": 0.034, "banana": 0.044, "pear": 0.068}
+                       if args.width_setpoint else {}),
+            width_delta=args.width_delta, width_g=args.width_g)
         zone_entry = None
         info, t = {}, 0
         # 「无损」指标（触觉）：峰值法向力、最大摩擦利用率、最大挤压比、累计滑移距离
@@ -137,7 +144,7 @@ def main() -> None:
               f"slipguard={st.get('slip', 0)} regrasp={st.get('regrasp', 0)} "
               f"p_slip={st.get('slip_prob_max', 0):.2f} p_drop={st.get('drop_prob_max', 0):.2f} "
               f"gate={st.get('gate_fail', 0)} retry={st.get('retries', 0)} "
-              f"side={st.get('side_push', 0)}")
+              f"side={st.get('side_push', 0)} gw={st.get('grip_w', 1.0):+.2f}")
         env.close()
 
     s = summarize(results)

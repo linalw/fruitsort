@@ -49,7 +49,9 @@ class ActPureRunner:
                  gate_asym: float = 0.5, gate_slip: float = 0.02,
                  gate_delay: int = 5, gate_retries: int = 2,
                  gate_bias: float = 0.005, close_force_th: float = 0.0,
-                 side_servo: bool = False, side_step: float = 0.002):
+                 side_servo: bool = False, side_step: float = 0.002,
+                 width_map: dict | None = None, width_delta: float = 0.002,
+                 width_g: float | None = None):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -94,6 +96,11 @@ class ActPureRunner:
         # ---- 单侧接触微伺服（论文②）：闭爪过程中只有一指受力 → 朝弱侧平移再闭 ----
         self.side_servo = side_servo
         self.side_step = side_step
+        # ---- 宽度设定点（LeTac 式位置等价力控）：闭合到 w*(类) − δ，而不是合到底 ----
+        # 实测空载映射：gap ≈ 0.030 + 0.050·g（g∈[-0.5,1]），反解 g = (w-0.030)/0.050
+        self.width_map = width_map or {}
+        self.width_delta = width_delta
+        self.width_g = width_g
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -132,6 +139,11 @@ class ActPureRunner:
         # ---- 单侧接触微伺服（论文②）：闭爪过程中只有一指受力 → 朝弱侧平移再闭 ----
         self.side_servo = side_servo
         self.side_step = side_step
+        # ---- 宽度设定点（LeTac 式位置等价力控）：闭合到 w*(类) − δ，而不是合到底 ----
+        # 实测空载映射：gap ≈ 0.030 + 0.050·g（g∈[-0.5,1]），反解 g = (w-0.030)/0.050
+        self.width_map = width_map or {}
+        self.width_delta = width_delta
+        self.width_g = width_g
         self.drop_net = None
         self.drop_prob = 0.0
         if drop_ckpt:
@@ -175,7 +187,7 @@ class ActPureRunner:
                       "slip": 0, "slip_first": -1, "regrasp": 0, "slip_prob_max": 0.0,
                       "force_target": 0.0, "fn_peak": 0.0, "drop_prob_max": 0.0,
                       "gate_fail": 0, "retries": 0, "fL": 0.0, "fR": 0.0,
-                      "side_push": 0}
+                      "side_push": 0, "grip_w": 0.0}
         self.grasping = False
 
     # ------------------------------------------------------------------ #
@@ -344,6 +356,15 @@ class ActPureRunner:
         self.gate_failed_once = False
         self.regrasp_done = False
         self.slip_prob = None
+        # ---- 宽度设定点（LeTac 式位置等价力控）：闭合到 w*(类)−δ，而不是合到底 ----
+        # 实测空载映射 gap ≈ 0.030 + 0.050·g，反解 g = (w−0.030)/0.050
+        if self.width_map and kind in self.width_map and (glogit > 0 or self.phase_state == 2):
+            if self.width_g is not None:
+                grip = float(np.clip(self.width_g, -1.0, 1.0))
+            else:
+                w_target = self.width_map[kind] - self.width_delta
+                grip = float(np.clip((w_target - 0.030) / 0.050, -1.0, 0.7))
+            self.stats["grip_w"] = grip
         self.stats["close"] += int(grip < 0)
         self.stats["descend"] += int(self.phase_state == 1)
         self.stats["carry"] += int(self.phase_state == 2)
