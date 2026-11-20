@@ -175,7 +175,7 @@ class ImageDemoDataset(Dataset):
         if len(acts) < K:
             acts = np.concatenate([acts, np.repeat(acts[-1:], K - len(acts), axis=0)])
         acts[:, 3] = (acts[:, 3] < 0).astype(np.float32)  # 夹爪：闭=1 / 开=0
-        if self.force_label and tactile is not None:
+        if self.force_label and ep["obs"].shape[1] >= 58:
             # 第 5 维 = 目标夹持力（示教里实测 Fn / 40N → [0,1]），chunk 内前向填充
             f = ep["obs"][t:t + K, 49] / 40.0
             if len(f) < K:
