@@ -44,7 +44,7 @@ class ActPureRunner:
                  carry_max_step: float = 0.0, slip_guard: bool = False,
                  slip_thr: float = 0.05, slip_slow_step: float = 0.012,
                  regrasp: bool = False, regrasp_thr: float = 0.6,
-                 regrasp_depth: float = 0.02):
+                 regrasp_depth: float = 0.02, drop_ckpt: str = ""):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -75,6 +75,21 @@ class ActPureRunner:
         self.regrasp = regrasp
         self.regrasp_thr = regrasp_thr
         self.regrasp_depth = regrasp_depth
+        # 独立的掉落预测器（轻量 MLP，只看触觉历史 + 几何；主策略不参与）
+        self.drop_net = None
+        self.drop_prob = 0.0
+        if drop_ckpt:
+            ck = torch.load(Path(drop_ckpt), map_location="cpu", weights_only=False)
+            h = int(ck.get("hist", 5)); t = int(ck.get("tac", 9))
+            net = torch.nn.Sequential(
+                torch.nn.Linear(h * t + 3, 128), torch.nn.GELU(),
+                torch.nn.Linear(128, 128), torch.nn.GELU(), torch.nn.Linear(128, 1))
+            net.load_state_dict({k.replace("net.", ""): v for k, v in ck["model"].items()})
+            net.eval()
+            self.drop_net = net
+            self.drop_mu = np.asarray(ck["mean"], dtype=np.float32)
+            self.drop_sd = np.maximum(np.asarray(ck["std"], dtype=np.float32), 1e-6)
+            self.drop_hist = h
         # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
         self.carry_max_step = carry_max_step
         # 触觉补救：搬运中检测到滑移（物体相对 TCP 有速度且有夹持力）→ 立即降速搬运
@@ -85,6 +100,21 @@ class ActPureRunner:
         self.regrasp = regrasp
         self.regrasp_thr = regrasp_thr
         self.regrasp_depth = regrasp_depth
+        # 独立的掉落预测器（轻量 MLP，只看触觉历史 + 几何；主策略不参与）
+        self.drop_net = None
+        self.drop_prob = 0.0
+        if drop_ckpt:
+            ck = torch.load(Path(drop_ckpt), map_location="cpu", weights_only=False)
+            h = int(ck.get("hist", 5)); t = int(ck.get("tac", 9))
+            net = torch.nn.Sequential(
+                torch.nn.Linear(h * t + 3, 128), torch.nn.GELU(),
+                torch.nn.Linear(128, 128), torch.nn.GELU(), torch.nn.Linear(128, 1))
+            net.load_state_dict({k.replace("net.", ""): v for k, v in ck["model"].items()})
+            net.eval()
+            self.drop_net = net
+            self.drop_mu = np.asarray(ck["mean"], dtype=np.float32)
+            self.drop_sd = np.maximum(np.asarray(ck["std"], dtype=np.float32), 1e-6)
+            self.drop_hist = h
         self.reset()
 
     # ------------------------------------------------------------------ #
@@ -100,13 +130,15 @@ class ActPureRunner:
         self.prev_grip = 1.0
         self.open_streak = 0
         self.slip_slow = False
+        self.force_target = None
+        self.tac_hist = []
         self.regrasp_done = False
         self.slip_prob = None
         self.queue = []
         self.queue_logits = None
         self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
                       "slip": 0, "slip_first": -1, "regrasp": 0, "slip_prob_max": 0.0,
-                      "force_target": 0.0, "fn_peak": 0.0}
+                      "force_target": 0.0, "fn_peak": 0.0, "drop_prob_max": 0.0}
         self.grasping = False
 
     # ------------------------------------------------------------------ #
@@ -214,6 +246,21 @@ class ActPureRunner:
             self.grip_ema_val = glogit if self.grip_ema_val is None else a * self.grip_ema_val + (1 - a) * glogit
             glogit = self.grip_ema_val
         grip = -1.0 if glogit > 0 else 1.0
+        # ---- 力作为动作通道：第 5 维 = 目标夹持力（0..1 → 0..40N），用触觉 Fn 伺服 ----
+        self.force_target = None
+        self.tac_hist = []
+        if self.use_force and p4.shape[-1] > 4:
+            self.force_target = float(np.clip(p4[4], 0.0, 1.0)) * 40.0
+            self.stats["force_target"] = self.force_target
+            if glogit > 0:                       # 只在"想闭爪"时做力伺服
+                fn = float(build_tactile(u, kind)[0])
+                self.stats["fn_peak"] = max(self.stats.get("fn_peak", 0.0), fn)
+                if fn < self.force_target - 3.0:
+                    grip = -1.0                  # 力不够 → 继续闭紧
+                elif fn > self.force_target + 3.0:
+                    grip = -0.6                  # 力超了 → 略松（不彻底张开，避免掉果）
+                else:
+                    grip = -0.8                  # 命中目标力 → 维持
         if self.carry_latch and grasping:
             self.open_streak = self.open_streak + 1 if glogit < 0 else 0
             if self.open_streak < 3:
@@ -221,6 +268,8 @@ class ActPureRunner:
         else:
             self.open_streak = 0
         self.slip_slow = False
+        self.force_target = None
+        self.tac_hist = []
         self.regrasp_done = False
         self.slip_prob = None
         self.stats["close"] += int(grip < 0)
@@ -247,10 +296,28 @@ class ActPureRunner:
                 if self.same >= 1:
                     self.phase_state = self.phase_cand
 
+        # ---- 独立掉落预测器（触觉历史 5 帧 + 几何）----
+        if self.drop_net is not None and actor is not None:
+            fpos_now = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            d_obj = float(np.linalg.norm(fpos_now - tcp))
+            held_now = float(d_obj < 0.08)
+            self.tac_hist.append(build_tactile(u, kind))
+            while len(self.tac_hist) < self.drop_hist:
+                self.tac_hist.insert(0, self.tac_hist[0])
+            while len(self.tac_hist) > self.drop_hist:
+                self.tac_hist.pop(0)
+            feat = np.concatenate([np.stack(self.tac_hist).reshape(-1),
+                                   np.array([d_obj, held_now, float(u.belt_speed[0])],
+                                            dtype=np.float32)]).astype(np.float32)
+            with torch.no_grad():
+                z = torch.from_numpy(((feat - self.drop_mu) / self.drop_sd)[None])
+                self.drop_prob = float(torch.sigmoid(self.drop_net(z)).item())
+            self.stats["drop_prob_max"] = max(self.stats.get("drop_prob_max", 0.0), self.drop_prob)
+
         # ---- 触觉预测驱动的闭爪前重抓 ----
         if (self.regrasp and not grasping and self.phase_state == 1 and grip < 0
-                and not self.regrasp_done and self.slip_prob is not None
-                and self.slip_prob > self.regrasp_thr):
+                and not self.regrasp_done
+                and max(self.slip_prob or 0.0, self.drop_prob) > self.regrasp_thr):
             grip = 1.0                      # 先张开
             tgt[2] = tgt[2] - self.regrasp_depth   # 再下沉 2cm
             self.regrasp_done = True

@@ -50,6 +50,7 @@ def main() -> None:
     ap.add_argument("--regrasp", action="store_true",
                     help="触觉预测驱动：闭爪前若滑移头预测会滑，则开爪→下沉 2cm→再闭")
     ap.add_argument("--regrasp-thr", type=float, default=0.6)
+    ap.add_argument("--drop-nn", default="", help="独立掉落预测器权重（runs/dropnet/ckpt.pt）")
     ap.add_argument("--slip-guard", action="store_true",
                     help="触觉补救：搬运中检测到滑移就降速（抑制惯性滑脱）")
     ap.add_argument("--slip-thr", type=float, default=0.05)
@@ -86,7 +87,7 @@ def main() -> None:
             hold_latch=args.hold_latch, chunk_exec=args.chunk_exec,
             carry_max_step=args.carry_max_step, slip_guard=args.slip_guard,
             slip_thr=args.slip_thr, regrasp=args.regrasp,
-            regrasp_thr=args.regrasp_thr)
+            regrasp_thr=args.regrasp_thr, drop_ckpt=args.drop_nn)
         zone_entry = None
         info, t = {}, 0
         # 「无损」指标（触觉）：峰值法向力、最大摩擦利用率、最大挤压比、累计滑移距离
@@ -123,7 +124,7 @@ def main() -> None:
               f"descend={st['descend']} carry={st['carry']} "
               f"Fn={Fn_peak:.1f}N rho={rho_max:.2f} slip={slip_dist * 100:.1f}cm "
               f"slipguard={st.get('slip', 0)} regrasp={st.get('regrasp', 0)} "
-              f"p_slip={st.get('slip_prob_max', 0):.2f}")
+              f"p_slip={st.get('slip_prob_max', 0):.2f} p_drop={st.get('drop_prob_max', 0):.2f}")
         env.close()
 
     s = summarize(results)

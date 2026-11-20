@@ -1,0 +1,17 @@
+{
+  "data": [
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/dwt-apple",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/dwt-strawberry",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/dwt-banana",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/dwt-pear",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger3-apple",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger3-strawberry",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger3-banana",
+    "/media/ubuntu/66A27065A2703B9D/data/fruitsort/datasets/sdagger3-pear"
+  ],
+  "frames_train": 60364,
+  "frames_test": 6566,
+  "pos_rate": 0.05864422395825386,
+  "auroc": 0.937210202217102,
+  "created": "2026-11-20T15:04:40"
+}
