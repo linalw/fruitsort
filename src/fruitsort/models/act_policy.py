@@ -93,7 +93,8 @@ class ActPolicy(nn.Module):
         self.state_short = nn.Sequential(nn.Linear(cfg.obs_dim, d), nn.GELU(),
                                          nn.Linear(d, d))
         self.kind_emb = nn.Embedding(cfg.n_kinds, d)
-        self.view_type = nn.Parameter(torch.zeros(n_views + 2, d))   # oh / wrist / state / tactile
+        # 槽位：oh / wrist / state [/ tactile]。有触觉 token 时才多一槽（否则旧 ckpt 加载会 shape 不匹配）
+        self.view_type = nn.Parameter(torch.zeros(n_views + (2 if cfg.tactile_dim else 1), d))
         self.time_pos = nn.Parameter(torch.zeros(cfg.hist, d))
         self.cls = nn.Parameter(torch.zeros(1, 1, d))
         self.in_norm = nn.LayerNorm(d)
@@ -165,7 +166,8 @@ class ActPolicy(nn.Module):
         if imgs_wr is not None and self.cfg.use_wrist:
             prev_wr = torch.cat([imgs_wr[:, :1], imgs_wr[:, :-1]], dim=1)
             tok.append(self._img_tokens(imgs_wr, prev_wr) + self.view_type[1] + self.time_pos)
-        tok.append(self.state_enc(states) + self.view_type[-2] + self.time_pos)
+        tok.append(self.state_enc(states)
+                   + self.view_type[-2 if self.tactile_enc is not None else -1] + self.time_pos)
         if self.tactile_enc is not None and tactile is not None:
             tok.append(self.tactile_enc(tactile) + self.view_type[-1] + self.time_pos)
 
