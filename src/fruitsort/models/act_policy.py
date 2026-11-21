@@ -48,6 +48,7 @@ class ActConfig:
     tactile_dim: int = 0    # >0：触觉独立 token（不再拼进 state）
     use_force_head: bool = False   # 动作第 5 维 = 目标夹持力
     conv_norm: str = "gn"   # "gn": 把复用来的 ConvEncoder 的 BN 换成 GroupNorm
+    use_flow: bool = False  # True：xyz 用 flow matching 采样（多峰动作分布），夹爪仍 logit
 
 
 def bn_to_groupnorm(module: nn.Module, groups: int = 16) -> nn.Module:
@@ -130,6 +131,14 @@ class ActPolicy(nn.Module):
 
         # ---------------- 输出头 ----------------
         self.act_head = nn.Linear(d, 5 if cfg.use_force_head else 4)  # Δxyz + 夹爪 logit [+ 目标力]
+        # ---- flow matching 头（只在 use_flow 时创建）----
+        # 速度场：输入 [decoder 隐状态 h, 流时间 t, 当前 xyz] → 速度（3 维）
+        self.use_flow = bool(getattr(cfg, "use_flow", False))
+        if self.use_flow:
+            self.flow_head = nn.Sequential(
+                nn.Linear(d + 1 + 3, d), nn.GELU(), nn.Linear(d, d), nn.GELU(),
+                nn.Linear(d, 3))
+            self.grip_head = nn.Linear(d, 1)
         # 相位辅助头：每个 query 预测该步属于 接近/下探/搬运，推理端用 k=0 的
         # argmax 反馈回状态（相位由策略自己决定，不是脚本 FSM）
         self.phase_head = nn.Linear(d, cfg.n_phase) if cfg.n_phase else None
@@ -182,6 +191,43 @@ class ActPolicy(nn.Module):
         x = self.encoder(self.in_norm(x), mask=mask)
         return self.enc_norm(x)
 
+    def _decode_hidden(self, memory, states, z=None):
+        """返回 (每步隐状态 base, 相位 logits)。"""
+        B = memory.shape[0]
+        q = self.query_pos[None].expand(B, -1, -1)
+        if z is not None:
+            q = q + self.z_proj(z)[:, None, :]
+        h = self.decoder(q, memory)
+        h = self.dec_norm(h)
+        base = h + self.state_short(states[:, -1])[:, None, :]
+        logits = self.phase_head(h) if self.phase_head is not None else None
+        return base, logits
+
+    def flow_sample(self, memory, states, z=None, steps: int = 8):
+        """欧拉积分一条直线流：x0~N(0,1) → x1（归一化后的 xyz 增量）。"""
+        base, logits = self._decode_hidden(memory, states, z)
+        B, K, _ = base.shape
+        x = torch.randn(B, K, 3, device=base.device)
+        for i in range(steps):
+            t = torch.full((B, K, 1), (i + 0.5) / steps, device=base.device)
+            v = self.flow_head(torch.cat([base, t, x], dim=-1))
+            x = x + v / steps
+        grip = self.grip_head(base)                       # (B,K,1) logit
+        return torch.cat([x, grip], dim=-1), logits
+
+    def flow_loss(self, memory, states, act_target, z=None):
+        """rectified flow：x_t=(1−t)x0+t·x1，回归速度 v=x1−x0。"""
+        base, logits = self._decode_hidden(memory, states, z)
+        B, K, _ = base.shape
+        x1 = act_target[:, :, :3]
+        x0 = torch.randn_like(x1)
+        t = torch.rand(B, K, 1, device=base.device)
+        x_t = (1.0 - t) * x0 + t * x1
+        v = self.flow_head(torch.cat([base, t, x_t], dim=-1))
+        loss = ((v - (x1 - x0)) ** 2).mean()
+        grip_logit = self.grip_head(base).squeeze(-1)
+        return loss, grip_logit, logits
+
     def decode(self, memory, states, z=None):
         B = memory.shape[0]
         q = self.query_pos[None].expand(B, -1, -1)
@@ -219,7 +265,10 @@ class ActPolicy(nn.Module):
                 z = mu + std * torch.randn_like(std)
             else:
                 z = memory.new_zeros(memory.shape[0], self.cfg.latent_dim)
-        act, logits = self.decode(memory, states, z)
+        if self.use_flow:
+            act, logits = self.flow_sample(memory, states, z, steps=8)
+        else:
+            act, logits = self.decode(memory, states, z)
         if phase_out:
             return act, mu, logvar, logits
         return act, mu, logvar

@@ -51,6 +51,8 @@ def main() -> None:
     ap.add_argument("--delay-prob", type=float, default=0.1, help="把最后一帧替换成上一帧的概率（模拟延迟）")
     ap.add_argument("--no-aug", action="store_true", help="关闭亮度/对比度抖动")
     ap.add_argument("--val-frac", type=float, default=0.15, help="按类别分层留出验证 episode 比例")
+    ap.add_argument("--flow", action="store_true",
+                    help="xyz 用 flow matching（rectified flow）采样，替代回归头；夹爪仍 logit")
     ap.add_argument("--window-val", action="store_true",
                     help="窗口级随机切分（train/val 来自同一批 episode）——可学性门槛用")
     ap.add_argument("--reuse-norm", action="store_true",
@@ -196,7 +198,7 @@ def main() -> None:
     cfg = ActConfig(hist=args.hist, chunk=args.chunk, d_model=args.d_model,
                     enc_layers=args.enc_layers, dec_layers=args.dec_layers,
                     dropout=args.dropout, use_cvae=not args.no_cvae, obs_dim=obs_dim,
-                    n_phase=3 if args.phase else 0,
+                    n_phase=3 if args.phase else 0, use_flow=bool(args.flow),
                     n_slip=1 if args.slip_head else 0,
                     tactile_dim=9 if args.tactile_token else 0,
                     use_force_head=bool(args.force_head))
@@ -267,14 +269,26 @@ def main() -> None:
             with torch.autocast("cuda", dtype=torch.bfloat16,
                                 enabled=args.device.startswith("cuda")):
                 tac = b["tactile"].to(args.device) if "tactile" in b else None
-                if args.phase:
-                    pred, mu, logvar, logits = model(oh, wr, st, kind, act_target=act,
-                                                     phase_out=True, tactile=tac)
+                if args.flow:
+                    mem = model.encode(oh, wr, st, kind, tactile=tac)
+                    l_flow, grip_logit, logits = model.flow_loss(mem, st, act)
+                    w_bc = (1.0 - b["aux_only"].to(args.device).float()) if "aux_only" in b else None
+                    grip_t = (act[:, :, 3] < 0).float()
+                    l_grip = torch.nn.functional.binary_cross_entropy_with_logits(
+                        grip_logit.float(), grip_t, pos_weight=pos_weight, reduction="none").mean(1)
+                    l_grip = (l_grip * w_bc).sum() / w_bc.sum().clamp(min=1.0) if w_bc is not None else l_grip.mean()
+                    l_xyz = l_flow
+                    l_kl = torch.zeros((), device=args.device)
+                    loss = l_xyz + args.grip_weight * l_grip
                 else:
-                    pred, mu, logvar = model(oh, wr, st, kind, act_target=act, tactile=tac)
-                    logits = None
-                w_bc = (1.0 - b["aux_only"].to(args.device).float()) if "aux_only" in b else None
-                loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act, w_bc)
+                    if args.phase:
+                        pred, mu, logvar, logits = model(oh, wr, st, kind, act_target=act,
+                                                         phase_out=True, tactile=tac)
+                    else:
+                        pred, mu, logvar = model(oh, wr, st, kind, act_target=act, tactile=tac)
+                        logits = None
+                    w_bc = (1.0 - b["aux_only"].to(args.device).float()) if "aux_only" in b else None
+                    loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act, w_bc)
                 l_slip = torch.zeros((), device=args.device)
                 if args.slip_head and "slip" in b:
                     sl = b["slip"].to(args.device).float()
