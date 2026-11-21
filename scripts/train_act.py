@@ -51,6 +51,11 @@ def main() -> None:
     ap.add_argument("--delay-prob", type=float, default=0.1, help="把最后一帧替换成上一帧的概率（模拟延迟）")
     ap.add_argument("--no-aug", action="store_true", help="关闭亮度/对比度抖动")
     ap.add_argument("--val-frac", type=float, default=0.15, help="按类别分层留出验证 episode 比例")
+    ap.add_argument("--reuse-norm", action="store_true",
+                    help="微调时沿用 init ckpt 的归一化器（实测会发散，仅作诊断用；默认按新数据重拟合）")
+    ap.add_argument("--freeze", default="none", choices=["none", "head", "decoder"],
+                    help="冻结主干只训适配器：head=只训动作/相位头；"
+                         "decoder=只训 decoder+头（视觉与编码器冻结）。用于避免小样本微调打崩原策略")
     ap.add_argument("--init", default="",
                     help="从已有 ckpt 初始化权重（微调用；仍会按 --data 重新拟合归一化）")
     ap.add_argument("--no-cvae", action="store_true", help="关闭 CVAE 隐变量（纯确定性 ACT）")
@@ -132,6 +137,14 @@ def main() -> None:
     acts = np.stack([ds[i]["act"].numpy() for i in sample_idx]).reshape(-1, 4)
     norm_state = Normalizer(states, states)
     norm_act = Normalizer(acts[:, :3], acts[:, :3])
+    # 微调时必须沿用 init ckpt 的归一化器：编码器是用原统计量训练的，
+    # 按新数据重拟合会让输入/输出尺度整体漂移——这是此前四次微调"打崩原策略"的根因
+    if args.init and args.reuse_norm:
+        _ck0 = torch.load(args.init, map_location="cpu", weights_only=False)
+        if "norm_state" in _ck0 and "norm_act" in _ck0:
+            norm_state = Normalizer.from_state(_ck0["norm_state"])
+            norm_act = Normalizer.from_state(_ck0["norm_act"])
+            print("沿用 init ckpt 的归一化器（--refit-norm 可强制重拟合）", flush=True)
     pos_frac = float(acts[:, 3].mean())
     pos_weight = torch.tensor((1 - pos_frac) / max(pos_frac, 1e-3), device=args.device)
     print(f"样本 {len(ds)}（train {len(train_idx)} / val {len(val_idx)}），"
@@ -184,7 +197,21 @@ def main() -> None:
         model.load_state_dict(_ck["model"])
         print(f"从 {args.init} 初始化权重（微调）", flush=True)
     n_params = count_params(model)
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    if args.freeze != "none":
+        trainable_sets = {
+            "head": ("act_head", "phase_head", "slip_head"),
+            "decoder": ("decoder", "dec_norm", "query_pos",
+                        "act_head", "phase_head", "slip_head"),
+        }[args.freeze]
+        n_tr = 0
+        for name, p_ in model.named_parameters():
+            keep = name.startswith(trainable_sets)
+            p_.requires_grad = bool(keep)
+            n_tr += p_.numel() if keep else 0
+        print(f"冻结主干（{args.freeze}）：可训练参数 {n_tr/1e6:.2f}M / 总 {n_params/1e6:.2f}M",
+              flush=True)
+    params = [p_ for p_ in model.parameters() if p_.requires_grad]
+    opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=args.wd)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     mse = torch.nn.MSELoss()
 
