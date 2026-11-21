@@ -29,7 +29,7 @@ from ..assets.fruits import build_fruit
 from .fruit_sort import ALL_KINDS, FruitSortEnv
 
 
-@register_env("FruitSortStream-v1", max_episode_steps=7200)
+@register_env("FruitSortStream-v1", max_episode_steps=36000)  # 30 Hz × 1200 s
 class FruitStreamEnv(FruitSortEnv):
     """连续上料的传送带分拣场景。"""
 
