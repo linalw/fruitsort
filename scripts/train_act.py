@@ -51,6 +51,8 @@ def main() -> None:
     ap.add_argument("--delay-prob", type=float, default=0.1, help="把最后一帧替换成上一帧的概率（模拟延迟）")
     ap.add_argument("--no-aug", action="store_true", help="关闭亮度/对比度抖动")
     ap.add_argument("--val-frac", type=float, default=0.15, help="按类别分层留出验证 episode 比例")
+    ap.add_argument("--window-val", action="store_true",
+                    help="窗口级随机切分（train/val 来自同一批 episode）——可学性门槛用")
     ap.add_argument("--reuse-norm", action="store_true",
                     help="微调时沿用 init ckpt 的归一化器（实测会发散，仅作诊断用；默认按新数据重拟合）")
     ap.add_argument("--freeze", default="none", choices=["none", "head", "decoder"],
@@ -128,6 +130,13 @@ def main() -> None:
     if args.limit:
         train_idx = train_idx[: args.limit]
         val_idx = val_idx[: max(8, args.limit // 4)]
+    if args.window_val:
+        rng_w = np.random.default_rng(args.seed)
+        perm = rng_w.permutation(len(train_idx))
+        k = max(1, int(round(len(perm) * args.val_frac)))
+        val_idx = sorted(train_idx[i] for i in perm[:k])
+        train_idx = sorted(train_idx[i] for i in perm[k:])
+        print(f"[window-val] 同一批 episode 的窗口随机切分：val {len(val_idx)} 窗口", flush=True)
     print("每类窗口/验证:", {k: (sum(1 for i in v), sum(1 for i in v if i in set(val_idx)))
                               for k, v in per_kind.items()})
 

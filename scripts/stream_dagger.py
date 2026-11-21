@@ -144,6 +144,7 @@ def main() -> None:
         if picker.target is not None and not any(
                 picker.target is s["item"] for s in u._slots[picker.target["kind"]] if s["live"]):
             picker.target = None
+            flush()          # 目标失效立刻落盘，否则段会无限增长、迟迟不产出
         if picker.target is None:
             picker.target = picker.pick()
             if picker.target is not None:
