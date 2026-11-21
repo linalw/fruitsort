@@ -22,6 +22,7 @@ from pathlib import Path
 import cv2
 import gymnasium as gym
 import numpy as np
+import torch
 
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.learning.bc import build_obs
@@ -32,6 +33,14 @@ ROOT = Path(__file__).resolve().parent.parent
 KINDS = ("apple", "strawberry", "banana", "pear")
 
 
+class _Stub:
+    """只给 build_obs 用的替身：提供 .pose.p / .linear_velocity 两个张量。"""
+
+    def __init__(self, p, v):
+        self.pose = type("P", (), {"p": torch.tensor([p], dtype=torch.float32)})
+        self.linear_velocity = torch.tensor([v], dtype=torch.float32)
+
+
 class StreamController:
     """在"多件在飞"的场景里给 ACT 选目标。
 
@@ -40,9 +49,11 @@ class StreamController:
     """
 
     def __init__(self, env, runner: ActPureRunner, u, kinds=KINDS, grasp_x: float = -0.10,
-                 only_kind: str | None = None, scripted: bool = False):
+                 only_kind: str | None = None, scripted: bool = False,
+                 in_dist: bool = False):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
+        self.in_dist = in_dist
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -62,8 +73,25 @@ class StreamController:
         return items
 
     def _repoint(self):
-        """fruit_actors[kind] = 该类最近的一件（无则保留旧的，避免 key 缺失）。"""
+        """fruit_actors[kind] = 目标件本身 / 其余类按训练布局重映射的替身。
+
+        模型训练时四类固定在 x 间隔 0.45 m 的布局上；连续作业里布局是随机的，
+        直接把真实位置喂进去会让"接近"相位输出错误增量（实测 TCP 冻结）。
+        这里把非目标类摆到"训练布局"（目标 x ± 0.45·Δi），让状态观测回到分布内。
+        """
         tcp = self.u.agent.tcp_pose.p[0].cpu().numpy()
+        if self.in_dist and self.target is not None:
+            tk = self.target["kind"]
+            tp = self.target["actor"].pose.p[0].cpu().numpy()
+            belt = float(self.u.belt_speed[0])
+            for j, k in enumerate(self.kinds):
+                if k == tk:
+                    self.u.fruit_actors[k] = self.target["actor"]
+                    continue
+                dx = 0.45 * (self.kinds.index(tk) - j)
+                self.u.fruit_actors[k] = _Stub(
+                    [tp[0] + dx, tp[1], tp[2]], [belt, 0.0, 0.0])
+            return
         for k in self.kinds:
             live = [s["item"] for s in self.u._slots[k] if s["live"]]
             if not live:
@@ -165,6 +193,8 @@ def main() -> None:
     ap.add_argument("--carry-latch", action="store_true", default=True)
     ap.add_argument("--carry-max-step", type=float, default=0.02)
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
+    ap.add_argument("--in-dist-obs", action="store_true",
+                    help="把非目标类按训练布局重映射（让状态观测回到分布内）")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
                     help="act=部署策略；scripted=规则专家（测场景上限）")
     ap.add_argument("--only-kind", default=None,
@@ -185,7 +215,8 @@ def main() -> None:
     runner = ActPureRunner(env, args.ckpt, "apple", fb=args.fb, grip_ema=args.grip_ema,
                            carry_latch=args.carry_latch, carry_max_step=args.carry_max_step)
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
-                            only_kind=args.only_kind, scripted=(args.policy == "scripted"))
+                            only_kind=args.only_kind, scripted=(args.policy == "scripted"),
+                            in_dist=args.in_dist_obs)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -199,7 +230,8 @@ def main() -> None:
         u = env.unwrapped
         runner.reset()
         ctrl = StreamController(env, runner, u, grasp_x=args.grasp_x,
-                                only_kind=args.only_kind, scripted=(args.policy == "scripted"))
+                                only_kind=args.only_kind, scripted=(args.policy == "scripted"),
+                            in_dist=args.in_dist_obs)
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         def flush():
