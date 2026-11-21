@@ -155,9 +155,15 @@ class FruitSortEnv(BaseEnv):
             b = len(env_idx)
             self.belt_speed = torch.empty(b, device=self.device).uniform_(*self.belt_speed_range)
 
-            # 抬起的 home 位姿：避免从传送带下方出发
-            qpos = np.array([0.0, -0.9, 0.0, -1.9, 0.0, 1.0, 0.8, 0.04, 0.04])
-            qpos = np.tile(qpos, (b, 1))
+            # 抬起的 home 位姿：panda 专用 9 维；其他机器人（灵巧手）用其 rest 关键帧
+            dof = int(self.agent.robot.get_qpos().shape[-1])
+            if dof == 9:
+                base_q = np.array([0.0, -0.9, 0.0, -1.9, 0.0, 1.0, 0.8, 0.04, 0.04])
+            else:
+                kf = getattr(self.agent, "keyframes", {}) or {}
+                base_q = np.asarray(kf["rest"].qpos, dtype=np.float64) if "rest" in kf \
+                    else np.zeros(dof, dtype=np.float64)
+            qpos = np.tile(base_q[:dof], (b, 1))
             qpos[:, :7] += self._episode_rng.normal(0, self.robot_init_qpos_noise, (b, 7))
             self.agent.reset(qpos)
             self.agent.robot.set_pose(
