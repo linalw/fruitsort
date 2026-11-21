@@ -55,6 +55,11 @@ def patch_hand(uid: str):
 
         XArm7Ability.tcp_pose = property(_tcp)
         XArm7Ability.is_grasping = _make_is_grasping()
+    elif uid.startswith("dclaw"):
+        from mani_skill.agents.robots.dclaw.dclaw import DClaw
+
+        DClaw.tcp_pose = property(lambda self: self.robot.links_map["base_link"].pose)
+        DClaw.is_grasping = _make_is_grasping()
     elif uid.startswith("allegro"):
         from mani_skill.agents.robots.allegro_hand.allegro import AllegroHandRight
 
@@ -97,7 +102,8 @@ def main() -> None:
     lim = robot.get_qlimits().cpu().numpy()[0]
 
     # ---- 手指 = 名字里含 finger 的 link 的末端（*tip / *_L2）----
-    tip_names = [n for n in [l.name for l in robot.links] if "tip" in n or "_L2" in n]
+    tip_names = [n for n in [l.name for l in robot.links]
+                 if "tip" in n or "_L2" in n or "head" in n]
     if not tip_names:      # 平行夹爪：两指本身就是"指尖"
         tip_names = [n for n in [l.name for l in robot.links] if "finger" in n]
     tips = [robot.links_map[n] for n in tip_names]
@@ -118,7 +124,8 @@ def main() -> None:
     fruit.set_angular_velocity(torch.zeros(1, 3))
 
     # ---- 闭合姿态：手部关节朝"收拢"方向打到限位 ----
-    hand_idx = [i for i, n in enumerate(names) if not n.startswith("joint")]
+    arm_names = {f"joint{i}" for i in range(1, 8)}
+    hand_idx = [i for i, n in enumerate(names) if n not in arm_names]
     close_q = q.copy()
     for i in hand_idx:
         lo, hi = lim[i]
