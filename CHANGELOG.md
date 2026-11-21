@@ -15,6 +15,30 @@
 
 ---
 
+## [1.28.0] - 2026-11-22
+
+### Added
+- 用修复后的链路重采连续流数据：`fix-demo-a`(65)+`fix-demo-b`(28)+`fix-dg`(19)=112 段/27k 帧；
+  修复后 60 s 仿真可产 20 段。
+- `scripts/stream_dagger.py` 同步修复缺类 ghost 观测；流环境 `_initialize_episode` 恢复真实 actor。
+
+### Fixed
+- **`_Stub` 泄漏**：缺类观测替身留在 `fruit_actors` 里，下一次 `reset` 的 `set_pose` 直接崩。
+- **验证集按文件顺序留出**：所有 val episode 都落在最后一个数据目录（DAgger）→ `val 79` vs `train 0.004`；
+  改为打乱后留出 → `val 1.25`。
+
+### Results
+| 模型 | 稀疏流 3–4 m | 单发 apple |
+| --- | --- | --- |
+| `act-wide-4c`（部署） | **4/6 = 66.7%** | **8/8** |
+| `act-fix2`（新数据从零） | 0/6 | 0/4 |
+
+### Known Issue
+- 未解释异常：任何用新录 stream/dagger 数据从零训练的模型单发仅 0–2/4，而部署模型 8/8。
+  下一步做"从零重训 dwt"的 A/B（同时把 `--no-cvae` 作为可疑变量）。
+
+---
+
 ## [1.27.0] - 2026-11-22
 
 ### Fixed（重要更正）

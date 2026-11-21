@@ -75,6 +75,10 @@ class FruitStreamEnv(FruitSortEnv):
     # Episode：把全部 slot 收到台下，安排首次上料
     # ------------------------------------------------------------------ #
     def _initialize_episode(self, env_idx: torch.Tensor, options: dict):
+        # 评测侧可能把 fruit_actors[kind] 换成了"观测替身"（缺类时的 ghost），
+        # reset 前必须先恢复成真实 actor，否则父类的 set_pose 会崩
+        for kind in self.active_kinds:
+            self.fruit_actors[kind] = self.pool[kind][0]
         super()._initialize_episode(env_idx, options)
         self._t = 0.0
         self._substeps = 0
