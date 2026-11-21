@@ -160,10 +160,13 @@ class FruitSortEnv(BaseEnv):
             jn = [j.name for j in self.agent.robot.get_active_joints()]
             is_panda = all(n.startswith("panda_joint") for n in jn[:3])
             kf = getattr(self.agent, "keyframes", {}) or {}
-            if "rest" in kf:
-                base_q = np.asarray(kf["rest"].qpos, dtype=np.float64)
-            elif is_panda and dof == 9:
+            # 顺序很重要：panda 优先用专家调过的 home（0.08 专家成功率依赖它）；
+            # 早期把 "rest" 关键帧放在前面，把 panda 换成了另一组关节角，
+            # 导致 ScriptedSorter 时序失配、benchmark 从 87.5% 掉到 0%。
+            if is_panda and dof == 9:
                 base_q = np.array([0.0, -0.9, 0.0, -1.9, 0.0, 1.0, 0.8, 0.04, 0.04])
+            elif "rest" in kf:
+                base_q = np.asarray(kf["rest"].qpos, dtype=np.float64)
             else:
                 base_q = np.zeros(dof, dtype=np.float64)
             qpos = np.tile(base_q[:dof], (b, 1))

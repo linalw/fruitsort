@@ -1,0 +1,97 @@
+{
+  "robot": "panda_allegro",
+  "belt": 0.08,
+  "success": 0,
+  "n": 8,
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    }
+  ],
+  "args": {
+    "robot": "panda_allegro",
+    "kinds": [
+      "apple",
+      "strawberry",
+      "banana",
+      "pear"
+    ],
+    "episodes": 2,
+    "belt": 0.08,
+    "spawn_x": -0.55,
+    "spawn_spacing": 0.45,
+    "control_freq": 30,
+    "max_steps": 1200,
+    "base_z": 0.0,
+    "tcp_dz": 0.0,
+    "hand_open": 0.0,
+    "hand_close": 0.3,
+    "seed": 20000,
+    "verbose_states": false,
+    "grasp_depth": 0.0,
+    "close_steps": 12,
+    "grasp_tilt": 0.0,
+    "out": "runs/2026-11-21-allegro-sort-008"
+  }
+}

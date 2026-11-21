@@ -61,6 +61,18 @@ def main() -> None:
     <origin xyz="0 0 {args.z}" rpy="0 {args.pitch} 0"/>
   </joint>
 ''' + claw + "</robot>\n"
+    # 长手指会与 Panda 前臂自碰撞（link6 上 1700 N）：SAPIEN 的 articulation 无法关自碰撞，
+    # 因此去掉腕/前臂 4 个 link 的碰撞体（外观保留）——它们本来也不参与抓取。
+    for ln in ("panda_link5", "panda_link6", "panda_link7", "panda_link8"):
+        merged = re.sub(r'(<link\s+name="' + ln + r'"[^>]*>)(.*?)(</link>)',
+                        lambda m: m.group(1) + re.sub(r"<collision.*?</collision>", "",
+                                                      m.group(2), flags=re.S) + m.group(3),
+                        merged, flags=re.S)
+    # 掌根 link 与 Panda 腕部自碰撞（实测 1600 N，把机械臂顶死）：去掉它的碰撞体，只留外观
+    merged = re.sub(r'(<link\s+name="dc_base"[^>]*>)(.*?)(</link>)',
+                    lambda m: m.group(1) + re.sub(r"<collision.*?</collision>", "", m.group(2),
+                                                  flags=re.S) + m.group(3),
+                    merged, flags=re.S)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(merged)
     n_links = merged.count("<link ")

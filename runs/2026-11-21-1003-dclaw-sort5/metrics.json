@@ -1,0 +1,35 @@
+{
+  "robot": "panda_dclaw",
+  "belt": 0.08,
+  "success": 0,
+  "n": 1,
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    }
+  ],
+  "args": {
+    "robot": "panda_allegro",
+    "kinds": [
+      "apple"
+    ],
+    "episodes": 1,
+    "belt": 0.08,
+    "spawn_x": -0.55,
+    "spawn_spacing": 0.45,
+    "control_freq": 30,
+    "max_steps": 1200,
+    "base_z": 0.0,
+    "tcp_dz": 0.0,
+    "hand_open": -1.0,
+    "hand_close": 0.4,
+    "seed": 20000,
+    "verbose_states": false,
+    "out": ""
+  }
+}

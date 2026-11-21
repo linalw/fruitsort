@@ -15,6 +15,41 @@
 
 ---
 
+## [1.22.0] - 2026-11-21
+
+### Added — 灵巧手挂载到 Panda（可复现的任务级对照）
+- `scripts/make_panda_{allegro,dclaw}.py`：URDF 合并（panda 去夹爪 + 手加前缀 + 绝对贴图
+  + 虚拟 `panda_tcp` 与 `panda_hand_tcp` 同位 + 去掉腕部 `collision`）
+- `src/fruitsort/sim/agents/panda_{allegro,dclaw}.py`：`panda_allegro`（23 关节 / 22 维动作，
+  Allegro Hand 16 DoF）、`panda_dclaw`（16 / 15）
+- `scripts/dexterous_sort5.py`：`--robot panda_allegro|panda_dclaw|panda_wristcam`，
+  同一个 `ScriptedSorter`、同种子、同场景，用来做"只换末端"的同台对照
+
+### Fixed
+- **`fruit_sort.py` 起始位姿回归**：`"rest" in kf` 抢在 panda 专用 home 之前，把 0.08 专家
+  从 87.5% 打到 0%；改为 panda 优先，`benchmark.py --scenario pair` 已恢复 2/2
+- `panda_dclaw.is_grasping` 忽略传入物体 → 手指碰到传送带就返回 True，把整条带子误停
+- 手指 PD 增益 400/40 → 官方 100/10（否则手关节累积发散到 53 rad）
+- `pd_ee_pose` 抬高基座后动作 z 未减 `base_z`（命令跑到 0.96 m 不可达）
+
+### Results（任务级，0.08 m/s，同脚本/同种子/同判据）
+| 末端 | apple | strawberry | banana | pear | 合计 |
+| --- | --- | --- | --- | --- | --- |
+| 平行夹爪（panda_wristcam） | 8/8 | 8/8 | 8/8 | 8/8 | **32/32 = 100%** |
+| Allegro Hand（panda_allegro） | 0/2 | 0/2 | 0/2 | 0/2 | **0/8 = 0%**（8 局/类进行中） |
+
+0.15 m/s：平行夹爪 30/32 = 93.8%（单件 4.9 / 7.8 / 19.2 / 14.9 s，掉落 0），Allegro 0/32。
+D'Claw（基座抬 0.30 m）0.08 m/s：0/8。
+
+数据：`runs/2026-11-21-{jaw-sort-008x8,jaw-sort-015x8,allegro-sort-008x8,allegro-sort-015x8,dclaw-sort-008}/metrics.json`。
+
+### Conclusion
+灵巧手在**本任务的抓取几何下不比平行夹爪好**：苹果中心离带面只有 ~3 cm，手指必须穿进
+传送带才能把果子包进指内；Allegro 能"碰到"（`CLOSE→CARRY` 触发）但一抬升就滑脱，
+D'Claw 腕到指尖 0.28 m 则根本够不到。瓶颈是接触几何与末端尺寸，不是手指数目。
+
+---
+
 ## [1.21.0] - 2026-11-21
 
 ### Added — 灵巧手可复现对照

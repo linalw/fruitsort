@@ -1140,3 +1140,96 @@ PushT-v1 + xarm7_ability: NaN = True | qpos[1]=+nan
 3. **视觉主干升级**：数据到 500+ episode 后换 DINOv3/CLIP 冻结特征
 4. **异步执行**：接入 action queue + RTC，降低 20 Hz 闭环对推理延迟的敏感度
 5. **语言条件**：把类别 embedding 换成文本编码器，支持任意分拣指令
+
+## 6.25 把灵巧手挂到 Panda 上：Allegro 能抓但抓不住（v1.22）
+
+### 6.25.1 三个"臂 + 手"组合是怎么做出来的
+
+ManiSkill 里没有现成的"Panda + 灵巧手"组合，只有 `xarm7_ability`（本机 NaN，见 6.23）
+和几只固定基座的手。因此自制了 URDF 合并管线：
+
+```bash
+python scripts/make_panda_dclaw.py      # → assets/urdf/panda_dclaw.urdf
+python scripts/make_panda_allegro.py    # → assets/urdf/panda_allegro.urdf
+```
+
+- panda 截断在 `panda_hand_joint` 之前（去掉平行夹爪）；
+- 手的 link/joint 全部加前缀（`dc_` / `al_`），mesh 改成绝对路径，去掉内嵌 XML 声明；
+- 加 fixed joint `panda_link8 → 手 base`；
+- **加虚拟 `panda_tcp`**（与 panda 原 `panda_hand_tcp` 同位），这样 `pd_ee_pose` 的位姿映射
+  与平行夹爪完全一致，可直接复用 `ScriptedSorter`；
+- 去掉掌根/腕部 link 的 `<collision>`（见 6.25.2）；
+- agent 注册：`panda_dclaw`（16 关节 / 15 维动作）、`panda_allegro`（23 关节 / 22 维动作）。
+
+合进 ManiSkill 资产目录后才能加载（否则会被当成"待下载资产"弹交互提示）：
+
+```bash
+cp assets/urdf/panda_*.urdf \
+   $CONDA/envs/maniskill3/lib/python3.10/site-packages/mani_skill/assets/robots/panda/
+```
+
+**准入测试（保持位姿 100 步无 NaN）**：`panda_allegro` ✓、`panda_dclaw` ✓、`xarm7_ability` ✗。
+
+### 6.25.2 六个会让"机械臂完全不动"的坑（都已定位）
+
+| # | 现象 | 原因 | 修法 |
+| --- | --- | --- | --- |
+| 1 | 臂被顶住、跟不动指令 | D'Claw 静息姿态指尖在 z≈−0.02，埋在传送带体内 | 抬高基座 0.30 m + 换"手在高处"的 rest 关键帧 |
+| 2 | 关节误差 1 rad 且不动 | 手与 Panda 前臂自碰撞，实测 1.7 kN | 合并 URDF 去掉腕/前臂 4 节 link 的 `<collision>` |
+| 3 | 手关节跑到 53 rad | 手 PD 用 400/40，官方 D'Claw 是 100/10 | 改增益 |
+| 4 | `pd_ee_pose` 指令跑到 0.96 m（不可达） | 位姿是**基座系**，抬座后 z 没减 `base_z` | `z - base_z` |
+| 5 | 单类失败整局算 0 | `instruction_kind=None` 时 success 要求四类全入框 | 按类用 `_in_bin(kind)` 判定 |
+| 6 | **0.08 专家从 87.5% 掉到 0%** | `_initialize_episode` 里 `"rest" in kf` 抢在 panda 专用 home 之前，把起始关节换掉了 | panda 优先；修复后 `benchmark --scenario pair` 2/2 恢复 |
+
+第 6 条是**回归**，影响所有历史对照口径；修复后已用仓库自带 `benchmark.py` 验证。
+
+### 6.25.3 任务级对照（同一脚本、同种子、同场景、同判据）
+
+**结果（8 局/类，0.08 m/s；与部署策略同一场景/种子/入框判据）**
+
+| 末端 | apple | strawberry | banana | pear | 合计 | 单件（首次入框） |
+| --- | --- | --- | --- | --- | --- | --- |
+| 平行夹爪 `panda_wristcam` | 8/8 | 8/8 | 8/8 | 8/8 | **32/32 = 100%** | 6.5 / 11.6 / 20.2 / 24.5 s |
+| **Allegro `panda_allegro`** | 0/8 | 0/8 | 0/8 | 0/8 | **0/32 = 0%** | — |
+| **D'Claw `panda_dclaw`**（基座抬 0.30 m） | 0/2 | 0/2 | 0/2 | 0/2 | **0/8 = 0%** | — |
+
+0.15 m/s 同台：平行夹爪 30/32 = 93.8%（苹果 8/8、草莓 8/8、香蕉 6/8、梨 8/8，
+单件 4.9 / 7.8 / 19.2 / 14.9 s，掉落 0）；**Allegro 0/32 = 0%**。
+
+**直接回答目标问题**：在"传送带 + 四类水果 + 入框"这个任务里，论文常用的开源灵巧手
+（Allegro Hand / D'Claw）抓得**不如**平行夹爪——0% vs 100%，而且不是控制参数问题
+（开合量 / 抓取深度 / 俯视与侧向都扫过，见 6.25.4）。
+
+数据：`runs/2026-11-21-jaw-sort-008x8/`、`runs/2026-11-21-jaw-sort-015x8/`、
+`runs/2026-11-21-allegro-sort-008x8/`、`runs/2026-11-21-dclaw-sort-008/`（均为 `metrics.json`）。
+
+脚本：
+
+```bash
+python scripts/dexterous_sort5.py --robot panda_wristcam --kinds apple strawberry banana pear \
+    --episodes 8 --belt 0.08 --grasp-depth -0.01          # 平行夹爪（同台对照）
+python scripts/dexterous_sort5.py --robot panda_allegro --kinds apple strawberry banana pear \
+    --episodes 8 --belt 0.08 --hand-open 0.0 --hand-close 0.30 --grasp-depth 0.0
+```
+
+### 6.25.4 截图诊断：手停在果子上方，"手指没有包住果子"
+
+在 `CLOSE→CARRY` 瞬间渲染并放大（`data/fruitsort/eval/allegro_close_zoom.png`）：
+Allegro 的手掌在苹果**上方偏后**，四指朝下但没有包住果子——所以 `is_grasping`
+（指尖有接触力）为真，一抬升水果就滑脱。
+
+参数扫描（每组合 1 局，苹果）：
+
+| 维度 | 试过 | 结果 |
+| --- | --- | --- |
+| 手指张开/闭合 | (0,0.15) (0,0.35) (−0.5,0.3) (−1,0.4) (0,0.3) | 全部 0/1；4 组能进 CARRY 但 <20 步滑脱 |
+| 抓取深度 `--grasp-depth` | −0.04 / −0.02 / 0 / +0.02 / +0.03 | 全部 0/1 |
+| 侧向抓取 `--grasp-tilt` | ±1.5 rad | 1.5 → 0/1；−1.5 能进 CARRY 但滑脱 |
+| D'Claw 同流程 | 开合 + 深度 + 倾角 | 到 LIFT 但接触力 0（从未夹住） |
+
+根因是**几何**，不是控制：
+
+- 苹果中心距带面只有 ~3 cm（半径 3–4 cm），手指最多只能进到果心下方 3 cm；
+- Allegro 指尖到掌心 ~10 cm、D'Claw 腕到指尖 ~29 cm，
+  两种手都把"果子放在指内"的空间需求变成了"手指必须穿进传送带"；
+- 平行夹爪之所以能抓，是因为它的两片指垫只有 4 cm 长，能从两侧夹住果身。

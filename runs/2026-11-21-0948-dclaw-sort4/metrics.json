@@ -1,0 +1,35 @@
+{
+  "robot": "panda_dclaw",
+  "belt": 0.08,
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "steps": 900,
+      "state": "DESCEND",
+      "t_s": 30.0,
+      "max_fn": 0.0
+    }
+  ],
+  "success": 0,
+  "n": 1,
+  "args": {
+    "kinds": [
+      "apple"
+    ],
+    "episodes": 1,
+    "belt": 0.08,
+    "spawn_x": -0.55,
+    "spawn_spacing": 0.45,
+    "control_freq": 30,
+    "max_steps": 900,
+    "rate": 0.1,
+    "grasp_x": -0.14,
+    "grasp_dz": 0.0,
+    "pre_hand": 0.2,
+    "close_val": 0.45,
+    "lift_dz": 0.16,
+    "seed": 20000,
+    "out": ""
+  }
+}

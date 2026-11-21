@@ -1,0 +1,289 @@
+{
+  "robot": "panda_wristcam",
+  "belt": 0.15,
+  "success": 30,
+  "n": 32,
+  "results": [
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 4.9,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 5.1,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 4.633333333333334,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 4.966666666666667,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 5.133333333333334,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 5.066666666666666,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 4.7,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "apple",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 4.9,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 7.8,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 8.133333333333333,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 8.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 7.7,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 7.7,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 7.933333333333334,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 7.633333333333334,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "strawberry",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 7.833333333333333,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 13.1,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 12.233333333333333,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 12.066666666666666,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 12.166666666666666,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 11.933333333333334,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "banana",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 11.833333333333334,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 14.966666666666667,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 15.133333333333333,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 14.833333333333334,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 14.766666666666667,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 14.866666666666667,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 14.8,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 14.733333333333333,
+      "state": "WAIT",
+      "dropped": false
+    },
+    {
+      "kind": "pear",
+      "ok": true,
+      "steps": 1200,
+      "t_s": 14.733333333333333,
+      "state": "WAIT",
+      "dropped": false
+    }
+  ],
+  "args": {
+    "robot": "panda_wristcam",
+    "kinds": [
+      "apple",
+      "strawberry",
+      "banana",
+      "pear"
+    ],
+    "episodes": 8,
+    "belt": 0.15,
+    "spawn_x": -0.55,
+    "spawn_spacing": 0.45,
+    "control_freq": 30,
+    "max_steps": 1200,
+    "base_z": 0.0,
+    "tcp_dz": 0.0,
+    "hand_open": 0.0,
+    "hand_close": 0.25,
+    "seed": 20000,
+    "verbose_states": false,
+    "grasp_depth": -0.01,
+    "close_steps": 12,
+    "grasp_tilt": 0.0,
+    "out": "runs/2026-11-21-jaw-sort-015x8"
+  }
+}

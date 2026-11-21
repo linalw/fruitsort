@@ -131,11 +131,7 @@
         <mesh filename="franka_description/meshes/visual/link5.glb"/>
       </geometry>
     </visual>
-    <collision>
-      <geometry>
-        <mesh filename="franka_description/meshes/collision/link5.stl"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0 0 0" xyz="-1.1953e-02 4.1065e-02 -3.8437e-02"/>
       <mass value="1.225946"/>
@@ -157,11 +153,7 @@
         <mesh filename="franka_description/meshes/visual/link6.glb"/>
       </geometry>
     </visual>
-    <collision>
-      <geometry>
-        <mesh filename="franka_description/meshes/collision/link6.stl"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0 0 0" xyz="6.0149e-02 -1.4117e-02 -1.0517e-02"/>
       <mass value="1.666555"/>
@@ -183,11 +175,7 @@
         <mesh filename="franka_description/meshes/visual/link7.glb"/>
       </geometry>
     </visual>
-    <collision>
-      <geometry>
-        <mesh filename="franka_description/meshes/collision/link7.stl"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0 0 0" xyz="1.0517e-02 -4.252e-03 6.1597e-02"/>
       <mass value="0.735522"/>
@@ -221,7 +209,7 @@
   <joint name="panda_to_dclaw" type="fixed">
     <parent link="panda_link8"/>
     <child link="dc_base"/>
-    <origin xyz="0 0 0.06" rpy="0 0.0 0"/>
+    <origin xyz="0 0 0.15" rpy="0 0.0 0"/>
   </joint>
 
 
@@ -243,30 +231,10 @@
         <mesh filename="/home/ubuntu/linalw/App/minconda3/envs/maniskill3/lib/python3.10/site-packages/mani_skill/assets/robots/dclaw/meshes/visual/base_link.glb"/>
       </geometry>
     </visual>
-    <collision>   <!-- base_cylinder -->
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="/home/ubuntu/linalw/App/minconda3/envs/maniskill3/lib/python3.10/site-packages/mani_skill/assets/robots/dclaw/meshes/collision/base_link_cylinder.obj"/>
-      </geometry>
-    </collision>
-    <collision> <!-- base_motor_1 -->
-      <origin xyz="0.013 -0.059 -0.012" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.026 0.04 0.05"/>
-      </geometry>
-    </collision>
-    <collision> <!-- base_motor_2 -->
-      <origin xyz="0.013 0.02 0.058" rpy="1.0472 0 0"/>
-      <geometry>
-        <box size="0.026 0.04 0.05"/>
-      </geometry>
-    </collision>
-    <collision> <!-- base_motor_3 -->
-      <origin xyz="0.013 0.042 -0.045" rpy="-1.0472 0 0"/>
-      <geometry>
-        <box size="0.026 0.04 0.05"/>
-      </geometry>
-    </collision>
+    
+    
+    
+    
   </link>
   <link name="dc_link_f1_1">
     <inertial>

@@ -75,6 +75,7 @@ Fruitsort/
 | `bash scripts/fetch_weights.sh <url> <file>` | 断点续传下载权重到 `data/checkpoints/` |
 | `python scripts/demo.py` | 跑仿真 + 录制视频（`--kinds` 选水果） |
 | `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
+| `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
 
 `Makefile` 里提供了短命令：`make doctor` / `make digest` / `make run NAME=xxx`。
 
@@ -91,6 +92,21 @@ python scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06
 - 视觉模式（实验性）：先 `python scripts/calibrate_camera.py`，再 `--perception vision`；
   当前闭环未跑通，默认仍用 oracle 位姿，见 `docs/perception.md`。
 - 修改网格后必须 `build_all(force=True)`；否则沿用旧 GLB。
+
+## 灵巧手（v0.6 实验性，结论见 docs/model-architecture.md 6.25）
+
+```bash
+python scripts/make_panda_allegro.py --pitch 0     # 生成 assets/urdf/panda_allegro.urdf
+# 必须复制到 ManiSkill 资产目录，否则会触发"下载资产"交互提示
+cp assets/urdf/panda_allegro.urdf $CONDA_PREFIX/../envs/maniskill3/lib/python3.10/site-packages/mani_skill/assets/robots/panda/
+python scripts/dexterous_sort5.py --robot panda_allegro --kinds apple --episodes 8 --belt 0.08
+python scripts/dexterous_sort5.py --robot panda_wristcam  # 同脚本/同种子/同场景的平行夹爪对照
+```
+
+- 准入标准：**保持位姿 100 步无 NaN**（`panda_allegro` ✓ / `panda_dclaw` ✓ / `xarm7_ability` ✗）。
+- 合并 URDF 必须加虚拟 `panda_tcp`（与 `panda_hand_tcp` 同位），否则 `pd_ee_pose` 映射失配。
+- 去掉腕/前臂 link 的 `collision`（长手指会与 Panda 前臂自碰撞，实测 1.7 kN）。
+- `pd_ee_pose` 的位姿是**基座系**：抬高 `robot_base` 后动作 z 要减 `base_z`。
 
 ## 模仿学习（v0.4）
 
