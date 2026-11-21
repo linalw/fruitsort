@@ -23,6 +23,7 @@ from pathlib import Path
 import cv2
 import gymnasium as gym
 import numpy as np
+import torch
 
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.learning.bc import build_obs
@@ -31,6 +32,14 @@ from fruitsort.policies.scripted import ScriptedSorter
 
 ROOT = Path(__file__).resolve().parent.parent
 KINDS = ("apple", "strawberry", "banana", "pear")
+
+
+class _Stub:
+    """只给 build_obs 用的替身（.pose.p / .linear_velocity）。"""
+
+    def __init__(self, p, v):
+        self.pose = type("P", (), {"p": torch.tensor([p], dtype=torch.float32)})
+        self.linear_velocity = torch.tensor([v], dtype=torch.float32)
 
 
 def prep_images(obs):
@@ -63,6 +72,11 @@ class TargetPicker:
         for k in self.kinds:
             live = [s["item"] for s in self.u._slots[k] if s["live"]]
             if not live:
+                # 同 stream_eval：缺类必须给"合理替身"，不能让 fruit_actors[k] 指向场外 z=-5
+                spec = self.u.specs[k]
+                self.u.fruit_actors[k] = _Stub(
+                    [self.u.stream_x, 0.0, self.u.belt_top_z + spec.half_height + 0.002],
+                    [float(self.u.belt_speed[0]), 0.0, 0.0])
                 continue
             if self.target is not None and self.target["kind"] == k:
                 self.u.fruit_actors[k] = self.target["actor"]

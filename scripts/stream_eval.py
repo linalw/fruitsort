@@ -58,6 +58,7 @@ class StreamController:
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
         self.grasp_x = float(grasp_x)
+        self.belt = float(getattr(u, "belt_speed", [0.08])[0]) if hasattr(u, "belt_speed") else 0.08
         self.target = None          # item dict
         self.switches = 0
         self._repoint()
@@ -95,6 +96,13 @@ class StreamController:
         for k in self.kinds:
             live = [s["item"] for s in self.u._slots[k] if s["live"]]
             if not live:
+                # 该类当前没有在飞件：必须给一个"合理"的替身（刚上料的位姿），
+                # 否则 fruit_actors[k] 仍指向停在场外 z=-5 的 actor → 观测分布外，
+                # 任何学习策略都会冻结（这正是此前"连续作业 0–17%"的真正原因）
+                spec = self.u.specs[k]
+                self.u.fruit_actors[k] = _Stub(
+                    [self.u.stream_x, 0.0, self.u.belt_top_z + spec.half_height + 0.002],
+                    [self.belt, 0.0, 0.0])
                 continue
             if self.target is not None and self.target["kind"] == k:
                 self.u.fruit_actors[k] = self.target["actor"]
