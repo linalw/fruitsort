@@ -76,6 +76,7 @@ Fruitsort/
 | `python scripts/demo.py` | 跑仿真 + 录制视频（`--kinds` 选水果） |
 | `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
 | `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
+| `python scripts/stream_eval.py [--policy scripted]` | **连续作业**评测（`FruitSortStream-v1`：随机间隔/尺寸/多件在飞，按件统计吞吐） |
 
 `Makefile` 里提供了短命令：`make doctor` / `make digest` / `make run NAME=xxx`。
 
@@ -92,6 +93,20 @@ python scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06
 - 视觉模式（实验性）：先 `python scripts/calibrate_camera.py`，再 `--perception vision`；
   当前闭环未跑通，默认仍用 oracle 位姿，见 `docs/perception.md`。
 - 修改网格后必须 `build_all(force=True)`；否则沿用旧 GLB。
+
+## 连续作业（v0.7，结论见 docs/model-architecture.md 6.26）
+
+```bash
+python scripts/stream_eval.py --ckpt runs/act-wide-4c/ckpt.pt --belt 0.08 --seconds 120 \
+    --gap-min 0.6 --gap-max 1.2          # 策略在连续流里的吞吐/成功率
+python scripts/stream_eval.py --policy scripted --seconds 120   # 规则专家（场景上限）
+python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets/stream-x  # 录连续流示教
+```
+
+- 环境 `FruitSortStream-v1`：每类 3 个 slot、单一下料流、间隔 `U(gap)` 米、尺寸 ±15%，
+  **只会循环回收**（不回收就永远不再上料）。
+- 现状：`act-wide-4c` 连续作业 14–17%（单发是 87.5%），规则专家 69–86%；
+  模型是单发策略，换队列表现在"接近"相位会冻结（见 6.26.3）。
 
 ## 灵巧手（v0.6 实验性，结论见 docs/model-architecture.md 6.25）
 

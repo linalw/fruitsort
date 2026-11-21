@@ -1,0 +1,62 @@
+{
+  "ckpt": "runs/act-stream/ckpt.pt",
+  "instruction": "apple",
+  "episodes": 4,
+  "belt": 0.08,
+  "summary": {
+    "n_episodes": 4,
+    "n_success": 2,
+    "success_rate": 0.5,
+    "success_rate_ci95": [
+      0.15,
+      0.85
+    ],
+    "avg_duration_s": 12.933,
+    "failure_counts": {}
+  },
+  "args": {
+    "ckpt": "runs/act-stream/ckpt.pt",
+    "kinds": [
+      "apple",
+      "strawberry",
+      "banana",
+      "pear"
+    ],
+    "instruction": "apple",
+    "episodes": 4,
+    "belt": 0.08,
+    "control_freq": 30,
+    "spawn_x": -0.55,
+    "spawn_spacing": 0.4,
+    "seed": 15000,
+    "max_steps": 900,
+    "fb": 0.5,
+    "fb_z": false,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "regrasp": false,
+    "regrasp_thr": 0.6,
+    "drop_nn": "",
+    "grasp_gate": false,
+    "gate_min_force": 2.0,
+    "gate_asym": 0.5,
+    "width_setpoint": false,
+    "width_delta": 0.002,
+    "width_g": null,
+    "z_bias": 0.0,
+    "close_ramp": 0.0,
+    "side_servo": false,
+    "close_force_th": 0.0,
+    "slip_guard": false,
+    "slip_thr": 0.05,
+    "descend_commit": 0,
+    "hold_latch": false,
+    "lead": 0.0,
+    "z_gate": false,
+    "chunk_exec": 1,
+    "no_phase_fb": false,
+    "max_step": 0.06,
+    "carry_max_step": 0.02,
+    "device": "cuda"
+  }
+}

@@ -51,6 +51,8 @@ def main() -> None:
     ap.add_argument("--delay-prob", type=float, default=0.1, help="把最后一帧替换成上一帧的概率（模拟延迟）")
     ap.add_argument("--no-aug", action="store_true", help="关闭亮度/对比度抖动")
     ap.add_argument("--val-frac", type=float, default=0.15, help="按类别分层留出验证 episode 比例")
+    ap.add_argument("--init", default="",
+                    help="从已有 ckpt 初始化权重（微调用；仍会按 --data 重新拟合归一化）")
     ap.add_argument("--no-cvae", action="store_true", help="关闭 CVAE 隐变量（纯确定性 ACT）")
     ap.add_argument("--delta-actions", action="store_true", help="预测相对当前 TCP 的增量")
     ap.add_argument("--phase", action="store_true",
@@ -149,6 +151,9 @@ def main() -> None:
                 oh = (oh * sc + sh).clamp_(0, 1)
                 wr = (wr * sc + sh).clamp_(0, 1)
             s["oh"], s["wr"] = oh, wr
+            # 数据集混用：连续流数据没有 slip 标签，补零保持 batch 结构一致
+            if "slip" not in s:
+                s["slip"] = torch.zeros((), dtype=torch.float32)
             s["state"] = torch.from_numpy(
                 norm_state.obs(s["state"].numpy()).astype(np.float32))
             a = s["act"].numpy().copy()
@@ -171,6 +176,10 @@ def main() -> None:
                     tactile_dim=9 if args.tactile_token else 0,
                     use_force_head=bool(args.force_head))
     model = ActPolicy(cfg).to(args.device)
+    if args.init:
+        _ck = torch.load(args.init, map_location="cpu", weights_only=False)
+        model.load_state_dict(_ck["model"])
+        print(f"从 {args.init} 初始化权重（微调）", flush=True)
     n_params = count_params(model)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)

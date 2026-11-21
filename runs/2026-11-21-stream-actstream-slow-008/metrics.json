@@ -1,0 +1,77 @@
+{
+  "args": {
+    "ckpt": "runs/act-stream/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 120.0,
+    "episodes": 1,
+    "slots": 3,
+    "spawn_x": -0.85,
+    "gap_min": 2.0,
+    "gap_max": 3.0,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "fb": 0.5,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "grasp_x": -0.1,
+    "policy": "act",
+    "only_kind": null,
+    "record": "",
+    "seed": 40000,
+    "out": "runs/2026-11-21-stream-actstream-slow-008"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 120.0,
+      "spawned": 7,
+      "delivered": 0,
+      "dropped": 1,
+      "missed": 6,
+      "picked": 1,
+      "switches": 6,
+      "success_rate": 0.0,
+      "throughput_per_min": 0.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 2,
+          "delivered": 0,
+          "dropped": 1,
+          "missed": 1,
+          "picked": 1
+        },
+        "strawberry": {
+          "spawned": 1,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 0
+        },
+        "banana": {
+          "spawned": 2,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 2,
+          "picked": 0
+        },
+        "pear": {
+          "spawned": 2,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 2,
+          "picked": 0
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 7,
+    "delivered": 0,
+    "dropped": 1,
+    "missed": 6,
+    "picked": 1
+  }
+}

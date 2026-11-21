@@ -86,8 +86,12 @@ def build_fruit(
     name: str,
     pose: sapien.Pose,
     spec: FruitSpec | None = None,
+    scale: float = 1.0,
 ) -> "Actor":  # noqa: F821
-    """在场景中创建一个水果 actor（动态刚体）。"""
+    """在场景中创建一个水果 actor（动态刚体）。
+
+    `scale` 用于连续作业评测里模拟"大小在正常范围内变化"（0.85–1.15 即 ±15%）。
+    """
     spec = spec or load_specs()[kind]
     # FRICTION_SCALE：接触摩擦倍率，用来模拟"软指/胶垫"（1.0 = 原始材质）
     fs = float(globals().get("FRICTION_SCALE", 1.0))
@@ -101,9 +105,10 @@ def build_fruit(
 
     builder = scene.create_actor_builder()
     builder.set_initial_pose(pose)
-    builder.add_visual_from_file(str(spec.mesh), material=rmat)
+    sc = (float(scale),) * 3
+    builder.add_visual_from_file(str(spec.mesh), scale=sc, material=rmat)
     builder.add_convex_collision_from_file(
-        str(spec.mesh), material=mat, density=spec.density
+        str(spec.mesh), scale=sc, material=mat, density=spec.density
     )
     actor = builder.build(name=name)
     actor.set_pose(pose)
