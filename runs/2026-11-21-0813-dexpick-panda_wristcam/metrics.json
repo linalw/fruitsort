@@ -1,0 +1,39 @@
+{
+  "robot": "panda_wristcam",
+  "offset": 0.0,
+  "episodes": 1,
+  "summary": {
+    "success": 0,
+    "n": 4
+  },
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "fn": 0.0,
+      "close_gap": 3.4156811237335205,
+      "z_lift": 0.03251532092690468
+    },
+    {
+      "kind": "strawberry",
+      "ok": false,
+      "fn": 0.0,
+      "close_gap": 3.4688949584960938,
+      "z_lift": 0.018482031300663948
+    },
+    {
+      "kind": "banana",
+      "ok": false,
+      "fn": 0.0,
+      "close_gap": 4.4615631103515625,
+      "z_lift": 0.014665351249277592
+    },
+    {
+      "kind": "pear",
+      "ok": false,
+      "fn": 0.0,
+      "close_gap": 4.453097343444824,
+      "z_lift": 0.026631146669387817
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "robot": "panda_wristcam",
+  "offset": 0.0,
+  "episodes": 1,
+  "summary": {
+    "success": 0,
+    "n": 1
+  },
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "fn": 0.0,
+      "close_gap": 3.613154411315918,
+      "z_lift": 0.03235416114330292
+    }
+  ]
+}

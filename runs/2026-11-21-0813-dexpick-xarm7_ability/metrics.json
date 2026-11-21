@@ -1,0 +1,39 @@
+{
+  "robot": "xarm7_ability",
+  "offset": 0.06,
+  "episodes": 1,
+  "summary": {
+    "success": 0,
+    "n": 4
+  },
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "fn": NaN,
+      "close_gap": 570.2301025390625,
+      "z_lift": -1028.76513671875
+    },
+    {
+      "kind": "strawberry",
+      "ok": false,
+      "fn": NaN,
+      "close_gap": 342.3691101074219,
+      "z_lift": -561.0790405273438
+    },
+    {
+      "kind": "banana",
+      "ok": false,
+      "fn": NaN,
+      "close_gap": 743.3020629882812,
+      "z_lift": -1126.7852783203125
+    },
+    {
+      "kind": "pear",
+      "ok": false,
+      "fn": NaN,
+      "close_gap": 81.87368774414062,
+      "z_lift": 2.84962797164917
+    }
+  ]
+}

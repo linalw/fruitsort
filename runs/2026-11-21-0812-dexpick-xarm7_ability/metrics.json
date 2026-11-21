@@ -1,0 +1,18 @@
+{
+  "robot": "xarm7_ability",
+  "offset": 0.06,
+  "episodes": 1,
+  "summary": {
+    "success": 0,
+    "n": 1
+  },
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "fn": NaN,
+      "close_gap": 570.2301025390625,
+      "z_lift": -1028.76513671875
+    }
+  ]
+}
