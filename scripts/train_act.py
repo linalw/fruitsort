@@ -108,8 +108,11 @@ def main() -> None:
     train_idx, val_idx = [], []
     for kind, idxs in per_kind.items():
         eps = sorted({ds.index[i][0] for i in idxs})
-        k = max(1, int(round(len(eps) * args.val_frac)))
-        hold = set(eps[-k:])
+        # 只从**主数据**里留验证集：aux 数据是 is_aux，若按全量留，
+        # 最后 k 个 episode 恰好全是 aux → val 永远为空（曾导致 val 全 0、无法选模型）
+        eps_main = [e for e in eps if not ds.episodes[e].get("aux_only", False)] or eps
+        k = max(1, int(round(len(eps_main) * args.val_frac)))
+        hold = set(eps_main[-k:])
         for i in idxs:
             is_aux = ds.episodes[ds.index[i][0]].get("aux_only", False)
             (train_idx if (is_aux or ds.index[i][0] not in hold) else val_idx).append(i)
