@@ -1,5 +1,5 @@
 {
-  "robot": "panda_dclaw",
+  "robot": "panda_wristcam",
   "belt": 0.08,
   "success": 32,
   "n": 32,
