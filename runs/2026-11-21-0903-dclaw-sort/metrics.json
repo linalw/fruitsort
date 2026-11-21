@@ -1,0 +1,14 @@
+{
+  "robot": "panda_dclaw",
+  "belt": 0.08,
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "steps": 1200,
+      "t_s": 40.0
+    }
+  ],
+  "success": 0,
+  "n": 1
+}
