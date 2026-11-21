@@ -1,0 +1,15 @@
+{
+  "robot": "xarm7_ability",
+  "belt": 0.08,
+  "results": [
+    {
+      "kind": "apple",
+      "ok": false,
+      "steps": 900,
+      "state": "TRACK"
+    }
+  ],
+  "success": 0,
+  "n": 1,
+  "rate": 0.15
+}

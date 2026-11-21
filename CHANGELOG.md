@@ -15,6 +15,24 @@
 
 ---
 
+## [1.20.0] - 2026-11-21
+
+### Retraction（重要更正）
+- **撤回灵巧手抓取强度对比**（此前"梨 8.8N vs Ability Hand >60N"）：`xarm7_ability` 在本机
+  ManiSkill 里物理不稳定，**连保持位姿都会 NaN**，所有读数都是爆炸残留
+- 证据：三处 `robot_base` 均 NaN；换 sim_config 仍 NaN；**ManiSkill 自带 PushT-v1 也 NaN**
+
+### Added
+- `scripts/dexterous_sort2.py`：用仿真自身 FK 的数值 IK（0.01cm/1ms）+ 启动时预计算查表
+  + 运行期关节限速；基座变换标定正确（`R_z(+90°)` + `(0,-0.5,0)`）
+
+### Known Issues
+- `xarm7_ability` 在本机 ManiSkill 版本不可用（需升级/修补资产与控制器）；
+  准入门槛：保持位姿 100 步不 NaN
+- 平行夹爪结果不受影响：0.08 87.5% / 0.15 96.9%
+
+---
+
 ## [1.19.0] - 2026-11-21
 
 ### Fixed（根因）
