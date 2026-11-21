@@ -218,6 +218,7 @@ def main() -> None:
         belt_speed_range=(args.belt, args.belt), spawn_x=args.spawn_x,
         slots_per_kind=args.slots, gap_range=(args.gap_min, args.gap_max),
         scale_range=(args.scale_min, args.scale_max),
+        always_stock=bool(args.record),
         sim_config=dict(control_freq=args.control_freq,
                         sim_freq=120 if args.control_freq == 30 else 100))
     runner = ActPureRunner(env, args.ckpt, "apple", fb=args.fb, grip_ema=args.grip_ema,
@@ -258,6 +259,12 @@ def main() -> None:
                 flush()
                 if it is not None:
                     buf["id"], buf["kind"] = it["id"], it["kind"]
+            # 只用"四类都在场"的帧录制：缺类时我们喂的是 ghost 观测，
+            # 图像里没有这颗水果、状态里却有 → 图文不一致会污染训练数据
+            all_live = all(any(sl["live"] for sl in u._slots[k]) for k in KINDS)
+            if rec_dir is not None and not all_live:
+                flush()          # 缺类 → 结束当前段，等四类齐全再开新段
+                buf["id"] = None
             if buf["id"] is not None and ctrl.scripted and rec_dir is not None:
                 buf["obs"].append(build_obs(u, buf["kind"]))
                 # 专家的 last_target 是 4 维绝对目标（与 record_demos 一致）

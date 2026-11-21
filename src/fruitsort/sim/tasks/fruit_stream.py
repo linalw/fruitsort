@@ -40,12 +40,15 @@ class FruitStreamEnv(FruitSortEnv):
         scale_range: tuple = (0.85, 1.15),
         gap_range: tuple = (0.60, 1.20),
         stream_x: float = -0.85,
+        always_stock: bool = False,
         **kwargs,
     ):
         self.slots_per_kind = int(slots_per_kind)
         self.scale_range = tuple(scale_range)
         self.gap_range = tuple(gap_range)
         self.stream_x = float(stream_x)
+        # True：某类空了立刻补一件（录制训练数据用：保证"四类都在场"，图文一致）
+        self.always_stock = bool(always_stock)
         super().__init__(*args, **kwargs)
         if self.num_envs != 1:
             raise ValueError("FruitSortStream-v1 只支持 num_envs=1（评测场景）")
