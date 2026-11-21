@@ -62,9 +62,24 @@ def patch_hand():
 
 
 class ArmIK:
-    """xArm7 7 关节数值 IK（手部姿态固定）。"""
+    """xArm7 7 关节数值 IK（手部姿态固定）。
 
-    def __init__(self, urdf: str, arm_joints: list[str], palm_frame: str, tip_frames: list[str]):
+    仿真世界系 → URDF 基座系：p_world = R_z(+90°)·p_pin + base（实测标定，
+    sim link7 = (-0.02,-0.161,0.325) 与 pin link7 = (0.339,0.02,0.325) 完全吻合）。
+    """
+
+    def __init__(self, urdf: str, arm_joints: list[str], palm_frame: str, tip_frames: list[str],
+                 base_p=(0.0, -0.5, 0.0)):
+        self.R_wb = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # R_z(+90°)
+        self.p_wb = np.asarray(base_p, dtype=float)
+
+    def world_to_pin(self, p_world):
+        return self.R_wb.T @ (np.asarray(p_world, dtype=float) - self.p_wb)
+
+    def __init_rest__(self):  # pragma: no cover
+        pass
+
+    def _build(self, urdf: str, arm_joints: list[str], palm_frame: str, tip_frames: list[str]):
         self.model = pin.buildModelFromUrdf(urdf)
         self.data = self.model.createData()
         self.arm_joints = arm_joints
@@ -73,6 +88,14 @@ class ArmIK:
         self.tip_ids = [self.model.getFrameId(f) for f in tip_frames if f in
                         [fr.name for fr in self.model.frames]]
         self.q_nom = pin.neutral(self.model)
+
+    def __init__(self, urdf, arm_joints, palm_frame, tip_frames, base_p=(0.0, -0.5, 0.0)):
+        self.R_wb = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        self.p_wb = np.asarray(base_p, dtype=float)
+        self._build(urdf, arm_joints, palm_frame, tip_frames)
+
+    def world_to_pin(self, p_world):
+        return self.R_wb.T @ (np.asarray(p_world, dtype=float) - self.p_wb)
 
     def fk(self, q):
         return pin.forwardKinematics(self.model, self.data, q), pin.updateFramePlacements(self.model, self.data)
@@ -91,21 +114,23 @@ class ArmIK:
         c = self.tip_center(q0)
         return M.inverse() * c
 
-    def solve(self, q_init, palm_target: pin.SE3, iters: int = 60, damping: float = 1e-2):
+    def solve_tip(self, q_init, tip_target_pin: np.ndarray, iters: int = 50,
+                  damping: float = 1e-3, step_clip: float = 0.15):
+        """位置数值 IK：只对齐指尖中心的 xyz（姿态保持解的连续性）。"""
         q = q_init.copy()
         for _ in range(iters):
-            self.fk(q)
-            err = pin.log6(self.data.oMf[self.palm_id].inverse() * palm_target).vector
-            if np.linalg.norm(err) < 1e-3:
+            p = self.tip_center(q)
+            err = np.asarray(tip_target_pin) - p
+            if np.linalg.norm(err) < 2e-3:
                 break
-            J = pin.computeFrameJacobian(self.model, self.data, q, self.palm_id,
-                                         pin.ReferenceFrame.LOCAL)
-            cols = [self.model.joints[i].idx_q for i in self.arm_idx]
-            Jv = J[:, cols]
-            dq = -Jv.T @ np.linalg.solve(Jv @ Jv.T + damping * np.eye(6), err)
-            for k, i in enumerate(self.arm_idx):
-                j = self.model.joints[i]
-                q[j.idx_q] = np.clip(q[j.idx_q] + dq[k], -3.0, 3.0)
+            J = np.zeros((3, 7))
+            for k in range(7):
+                q2 = q.copy(); q2[k] += 1e-3
+                J[:, k] = (self.tip_center(q2) - p) / 1e-3
+            dq = J.T @ np.linalg.solve(J @ J.T + damping * np.eye(3), err)
+            dq = np.clip(dq, -step_clip, step_clip)
+            q[:7] += dq
+            q[:7] = np.clip(q[:7], -3.0, 3.0)
         return q
 
 
@@ -148,9 +173,9 @@ def main() -> None:
     off_local = ik.tip_offset_local(q_open)
 
     def cmd_to_tip(tip_target: np.ndarray, q_hand: np.ndarray, q_arm_init: np.ndarray):
-        """把"指尖目标"换成 palm 目标，再解 IK。"""
-        M_palm_des = pin.SE3(np.eye(3), tip_target) * pin.SE3(np.eye(3), -off_local)
-        q = ik.solve(np.concatenate([q_arm_init, q_open[7:]]), M_palm_des)
+        """把"指尖目标（世界系）"换成 pin 系 palm 目标，再解 IK。"""
+        tip_pin = ik.world_to_pin(tip_target)
+        q = ik.solve_tip(np.concatenate([q_arm_init, q_open[7:]]), tip_pin)
         out = q_open.copy()
         out[:7] = q[:7]
         out[7:] = q_hand[7:]
@@ -179,12 +204,14 @@ def main() -> None:
                 elif state == "TRACK":
                     x = float(np.clip(fp[0] + fv[0] * 0.15, u.pick_zone[0], u.pick_zone[1]))
                     q_arm = cmd_to_tip(np.array([x, fp[1], fp[2] + 0.10]), q_open, q_arm)[:7]
-                    if d < 0.055:
+                    # 水平对齐即进入下探（目标本身在水果上方 10cm，不能用 3D 距离）
+                    if abs(tcp_tip[0] - x) < 0.04 and abs(tcp_tip[1] - fp[1]) < 0.04:
                         state = "DESCEND"
                 elif state == "DESCEND":
                     q_arm = cmd_to_tip(np.array([fp[0] + fv[0] * 0.05, fp[1], fp[2] + 0.012]),
                                        q_close, q_arm)[:7]
-                    if d < 0.03:
+                    if abs(tcp_tip[0] - fp[0]) < 0.03 and abs(tcp_tip[1] - fp[1]) < 0.03 \
+                            and tcp_tip[2] < fp[2] + 0.05:
                         state = "CLOSE"
                 elif state == "CLOSE":
                     n_close += 1
