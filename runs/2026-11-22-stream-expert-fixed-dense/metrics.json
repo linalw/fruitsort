@@ -1,0 +1,78 @@
+{
+  "args": {
+    "ckpt": "runs/act-wide-4c/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 120.0,
+    "episodes": 1,
+    "slots": 1,
+    "spawn_x": -0.85,
+    "gap_min": 0.6,
+    "gap_max": 1.2,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "fb": 0.5,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "grasp_x": -0.1,
+    "in_dist_obs": false,
+    "policy": "scripted",
+    "only_kind": null,
+    "record": "",
+    "seed": 40000,
+    "out": "/tmp/opencode/expert-g0.6"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 120.0,
+      "spawned": 14,
+      "delivered": 10,
+      "dropped": 0,
+      "missed": 3,
+      "picked": 11,
+      "switches": 13,
+      "success_rate": 0.7692307692307693,
+      "throughput_per_min": 5.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 4,
+          "delivered": 4,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 4
+        },
+        "strawberry": {
+          "spawned": 3,
+          "delivered": 2,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 2
+        },
+        "banana": {
+          "spawned": 3,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 2,
+          "picked": 2
+        },
+        "pear": {
+          "spawned": 4,
+          "delivered": 3,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 3
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 14,
+    "delivered": 10,
+    "dropped": 0,
+    "missed": 3,
+    "picked": 11
+  }
+}
