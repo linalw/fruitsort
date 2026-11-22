@@ -1,0 +1,80 @@
+{
+  "args": {
+    "ckpt": "runs/act-gnoisy/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 120.0,
+    "episodes": 1,
+    "slots": 1,
+    "spawn_x": -0.85,
+    "gap_min": 3.0,
+    "gap_max": 4.0,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "fb": 0.5,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "grasp_x": -0.1,
+    "in_dist_obs": false,
+    "policy": "act",
+    "only_kind": null,
+    "allow_ghost_frames": false,
+    "noise": 0.0,
+    "record": "",
+    "seed": 32000,
+    "out": "/tmp/opencode/eq-gnoisy-32000"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 120.0,
+      "spawned": 6,
+      "delivered": 5,
+      "dropped": 0,
+      "missed": 1,
+      "picked": 5,
+      "switches": 5,
+      "success_rate": 0.8333333333333334,
+      "throughput_per_min": 2.5,
+      "per_kind": {
+        "apple": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "strawberry": {
+          "spawned": 2,
+          "delivered": 2,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 2
+        },
+        "banana": {
+          "spawned": 2,
+          "delivered": 2,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 2
+        },
+        "pear": {
+          "spawned": 1,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 0
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 6,
+    "delivered": 5,
+    "dropped": 0,
+    "missed": 1,
+    "picked": 5
+  }
+}

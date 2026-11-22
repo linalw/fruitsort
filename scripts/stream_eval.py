@@ -212,6 +212,9 @@ def main() -> None:
                     help="act=部署策略；scripted=规则专家（测场景上限）")
     ap.add_argument("--only-kind", default=None,
                     help="只抓这一类（诊断用：隔离'指令切换'的影响）")
+    ap.add_argument("--allow-ghost-frames", action="store_true",
+                    help="录制时允许'缺类'帧（部署端同样会喂 ghost 观测）。关闭时只录四类齐全帧，"
+                         "产量会低一个数量级（实测 4/60s vs 20/60s）")
     ap.add_argument("--noise", type=float, default=0.0,
                     help="录制时在专家动作上加的高斯噪声（米）——专家主导 + 小扰动，"
                          "比收集模型失败状态安全得多")
@@ -270,7 +273,7 @@ def main() -> None:
             # 只用"四类都在场"的帧录制：缺类时我们喂的是 ghost 观测，
             # 图像里没有这颗水果、状态里却有 → 图文不一致会污染训练数据
             all_live = all(any(sl["live"] for sl in u._slots[k]) for k in KINDS)
-            if rec_dir is not None and not all_live:
+            if rec_dir is not None and not all_live and not args.allow_ghost_frames:
                 flush()          # 缺类 → 结束当前段，等四类齐全再开新段
                 buf["id"] = None
             if buf["id"] is not None and ctrl.scripted and rec_dir is not None:
