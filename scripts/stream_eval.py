@@ -50,10 +50,11 @@ class StreamController:
 
     def __init__(self, env, runner: ActPureRunner, u, kinds=KINDS, grasp_x: float = -0.10,
                  only_kind: str | None = None, scripted: bool = False,
-                 in_dist: bool = False):
+                 in_dist: bool = False, noise: float = 0.0):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
+        self.noise = float(noise)
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -153,7 +154,11 @@ class StreamController:
             # 没活可干：回到待命位姿、张开手（基座系：x=y+0.5, y=-x, z=z）
             return np.array([0.5, 0.0, 0.55, *HOME_EULER, 1.0], dtype=np.float32)
         if self.scripted:
-            return self.sorter.act()
+            act = self.sorter.act()
+            if self.noise > 0:
+                act = act.copy()
+                act[:3] += np.random.normal(0, self.noise, 3).astype(np.float32)
+            return act
         return self.runner.act(obs)
 
 
@@ -207,6 +212,9 @@ def main() -> None:
                     help="act=部署策略；scripted=规则专家（测场景上限）")
     ap.add_argument("--only-kind", default=None,
                     help="只抓这一类（诊断用：隔离'指令切换'的影响）")
+    ap.add_argument("--noise", type=float, default=0.0,
+                    help="录制时在专家动作上加的高斯噪声（米）——专家主导 + 小扰动，"
+                         "比收集模型失败状态安全得多")
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
     ap.add_argument("--seed", type=int, default=40000)
     ap.add_argument("--out", default="")
@@ -225,7 +233,7 @@ def main() -> None:
                            carry_latch=args.carry_latch, carry_max_step=args.carry_max_step)
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
                             only_kind=args.only_kind, scripted=(args.policy == "scripted"),
-                            in_dist=args.in_dist_obs)
+                            in_dist=args.in_dist_obs, noise=args.noise)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -240,7 +248,7 @@ def main() -> None:
         runner.reset()
         ctrl = StreamController(env, runner, u, grasp_x=args.grasp_x,
                                 only_kind=args.only_kind, scripted=(args.policy == "scripted"),
-                            in_dist=args.in_dist_obs)
+                            in_dist=args.in_dist_obs, noise=args.noise)
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         def flush():
