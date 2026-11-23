@@ -52,7 +52,8 @@ class ActPureRunner:
                  side_servo: bool = False, side_step: float = 0.002,
                  width_map: dict | None = None, width_delta: float = 0.002,
                  width_g: float | None = None, close_ramp: float = 0.0,
-                 grasp_z_bias: dict | None = None):
+                 grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
+                 stall_eps: float = 0.006):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -168,6 +169,14 @@ class ActPureRunner:
             self.drop_mu = np.asarray(ck["mean"], dtype=np.float32)
             self.drop_sd = np.maximum(np.asarray(ck["std"], dtype=np.float32), 1e-6)
             self.drop_hist = h
+        # ---- 停滞守卫（stall guard）：队列里"接近相位塌陷"会让模型输出 ≈0 增量，
+        # 与残差反馈饱和值抵消 → TCP 逐帧冻结、水果被带走（docs 6.26.35 的 trace）。
+        # 检测到"指令位移≈0 且水果仍在接近窗口内、还离得远"→ 沿"朝水果"的方向
+        # 用最小接近步长强制重规划（纯执行层，不改模型权重）。
+        self.stall_guard = float(stall_guard)
+        self.stall_eps = float(stall_eps)
+        self._stall_tcp = np.zeros(3)
+        self._stall_run = 0
         self.reset()
 
     # ------------------------------------------------------------------ #
@@ -192,6 +201,8 @@ class ActPureRunner:
         self.regrasp_done = False
         self.slip_prob = None
         self.cur_grip = 1.0
+        self._stall_run = 0
+        self._stall_tcp = np.zeros(3)
         self.queue = []
         self.queue_logits = None
         self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
@@ -502,6 +513,32 @@ class ActPureRunner:
                     self.stats["slip_first"] = self.stats["steps"]
                 if self.phase_state == 2:
                     self.slip_slow = True
+
+        # ---- 停滞守卫：连续多步"实际位移≈0"且水果仍在接近窗口 → 朝水果迈最小步 ----
+        # 现象（docs 6.26.35）：模型接近增量为 0、残差反馈被 ±0.15 饱和成常数 →
+        # 两者抵消，TCP 逐帧完全不变，水果自己走掉。
+        # 注意：判据用**实际 TCP 位移**而不是指令位移——指令可能非零但被抵消/被 PD 吃掉。
+        if (self.stall_guard > 0 and not grasping and self.phase_state != 2
+                and grip > 0 and actor is not None):
+            fpos_s = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            d_xy = fpos_s[:2] - tcp[:2]
+            dist = float(np.linalg.norm(d_xy))
+            in_window = (-0.70 <= float(fpos_s[0]) <= 0.25) and 0.40 < float(fpos_s[2]) < 0.60
+            moved = float(np.linalg.norm(tcp[:2] - self._stall_tcp[:2]))
+            if in_window and dist > 0.05 and moved < self.stall_eps:
+                self._stall_run += 1
+            else:
+                self._stall_run = 0
+            if self._stall_run >= 3:
+                step = min(self.stall_guard, dist)
+                tgt = tcp.copy()
+                tgt[:2] += d_xy / max(dist, 1e-6) * step
+                # 同时抬一点：冻结常发生在"臂已到伸展极限"（水果偏 y、x 又远），
+                # 纯水平指令不可达；先回收一点高度才能继续前进
+                tgt[2] = tcp[2] + 0.025
+                self.stats["stall_fix"] = self.stats.get("stall_fix", 0) + 1
+                self._stall_run = 0
+        self._stall_tcp = np.array(tcp, dtype=np.float64, copy=True)
 
         err = tgt - tcp
         d = float(np.linalg.norm(err))

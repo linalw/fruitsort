@@ -170,6 +170,11 @@ class FruitStreamEnv(FruitSortEnv):
                 if bool(drive.any()):
                     target = torch.zeros_like(vel)
                     target[:, 0] = belt + 0.03
+                    # 导料挡边（真实皮带都有）：把横向漂移拉回中线。梨是扁长体，
+                    # 随机朝向下会持续侧滚（实测 |y| 从 0.03 漂到 0.17），
+                    # 而 y>0.12 时 Panda 从基座过去已到臂展极限、抓取高度不可达 →
+                    # 策略表现为"TCP 冻结"（docs 6.26.35）。这里按弹簧回中处理。
+                    target[:, 1] = torch.clamp(-1.5 * p[:, 1], -0.02, 0.02)
                     actor.set_linear_velocity(torch.where(drive[:, None], target, vel))
                     actor.set_angular_velocity(torch.where(
                         drive[:, None], torch.zeros_like(vel), actor.angular_velocity))

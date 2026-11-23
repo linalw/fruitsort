@@ -51,7 +51,7 @@ class StreamController:
     def __init__(self, env, runner: ActPureRunner, u, kinds=KINDS, grasp_x: float = -0.10,
                  only_kind: str | None = None, scripted: bool = False,
                  in_dist: bool = False, noise: float = 0.0, runners: dict | None = None,
-                 single_runner=None, queue_thr: float = 0.30):
+                 single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -63,6 +63,9 @@ class StreamController:
         # 队列模式用默认 runner。切换只在"选新目标"时发生，避免搬运途中换模型。
         self.single_runner = single_runner
         self.queue_thr = float(queue_thr)
+        # 只在**可达窗口**内接管目标：水果还在 x<-0.45 时，Panda 从基座 (0,-0.5) 过去
+        # 距离≈0.85 m（臂展极限），命令位姿不可达 → PD 卡住、TCP 冻结（docs 6.26.35）。
+        self.engage_x = float(engage_x)
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -144,7 +147,7 @@ class StreamController:
             p = it["actor"].pose.p[0].cpu().numpy()
             if np.linalg.norm(p - tcp) < 0.05:   # 就在指尖上（可能正抓着）
                 continue
-            if -0.60 <= p[0] <= -0.05:           # 还来得及：优先最靠前的一件
+            if self.engage_x <= p[0] <= -0.05:   # 已进入可达窗口：优先最靠前的一件
                 urg.append((p[0], it))
             elif -0.05 < p[0] <= 0.15:           # 已经比较靠后：兜底
                 late.append((p[0], it))
@@ -232,9 +235,14 @@ def main() -> None:
     ap.add_argument("--grip-ema", type=float, default=0.6)
     ap.add_argument("--carry-latch", action="store_true", default=True)
     ap.add_argument("--carry-max-step", type=float, default=0.02)
+    ap.add_argument("--engage-x", type=float, default=-0.45,
+                    help="只在 x>=该值时接管目标（更远的水果超出臂展，命令不可达会冻结）")
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
     ap.add_argument("--in-dist-obs", action="store_true",
                     help="把非目标类按训练布局重映射（让状态观测回到分布内）")
+    ap.add_argument("--stall-guard", type=float, default=0.0,
+                    help="停滞守卫的最小接近步长（米，0=关闭）：指令位移≈0 且水果仍在窗口内时"
+                         "强制朝水果迈这一步，用于打破\"接近相位塌陷→TCP 冻结\"")
     ap.add_argument("--single-ckpt", default="",
                     help="按队列状态切换的双策略：单件模式(queue<=--queue-thr)用该模型")
     ap.add_argument("--queue-thr", type=float, default=0.30)
@@ -265,7 +273,8 @@ def main() -> None:
         sim_config=dict(control_freq=args.control_freq,
                         sim_freq=120 if args.control_freq == 30 else 100))
     runner = ActPureRunner(env, args.ckpt, "apple", fb=args.fb, grip_ema=args.grip_ema,
-                           carry_latch=args.carry_latch, carry_max_step=args.carry_max_step)
+                           carry_latch=args.carry_latch, carry_max_step=args.carry_max_step,
+                           stall_guard=args.stall_guard)
     runners = {}
     if args.ckpt_map:
         for kv in args.ckpt_map.split(","):
@@ -273,19 +282,22 @@ def main() -> None:
             runners[_k.strip()] = ActPureRunner(env, _path, _k.strip(), fb=args.fb,
                                                 grip_ema=args.grip_ema,
                                                 carry_latch=args.carry_latch,
-                                                carry_max_step=args.carry_max_step)
+                                                carry_max_step=args.carry_max_step,
+                                                stall_guard=args.stall_guard)
         print("按类路由:", list(runners), flush=True)
     single_runner = None
     if args.single_ckpt:
         single_runner = ActPureRunner(env, args.single_ckpt, "apple", fb=args.fb,
                                       grip_ema=args.grip_ema,
                                       carry_latch=args.carry_latch,
-                                      carry_max_step=args.carry_max_step)
+                                      carry_max_step=args.carry_max_step,
+                                      stall_guard=args.stall_guard)
         print(f"队列切换: 单件模式={args.single_ckpt} (queue<={args.queue_thr})", flush=True)
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
                             only_kind=args.only_kind, scripted=(args.policy == "scripted"),
                             in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
-                            single_runner=single_runner, queue_thr=args.queue_thr)
+                            single_runner=single_runner, queue_thr=args.queue_thr,
+                            engage_x=args.engage_x)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:

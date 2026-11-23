@@ -79,6 +79,8 @@ def main() -> None:
     ap.add_argument("--width-g", type=float, default=None, help="直接用固定闭合指令值扫标定")
     ap.add_argument("--z-bias", type=float, default=0.0,
                     help="抓取高度偏置（米，作用于下探/闭爪段）；梨建议 +0.015")
+    ap.add_argument("--stall-guard", type=float, default=0.0,
+                    help="停滞守卫的最小接近步长（米，0=关闭）")
     ap.add_argument("--single-ckpt", default="",
                     help="双策略：队列标志<=--queue-thr 时改用该模型（单件模式）")
     ap.add_argument("--queue-thr", type=float, default=0.30)
@@ -138,7 +140,7 @@ def main() -> None:
             width_map=({"apple": 0.062, "strawberry": 0.034, "banana": 0.044, "pear": 0.068}
                        if args.width_setpoint else {}),
             width_delta=args.width_delta, width_g=args.width_g,
-            close_ramp=args.close_ramp,
+            close_ramp=args.close_ramp, stall_guard=args.stall_guard,
             grasp_z_bias=({args.instruction: args.z_bias} if args.z_bias else {}))
         zone_entry = None
         info, t = {}, 0

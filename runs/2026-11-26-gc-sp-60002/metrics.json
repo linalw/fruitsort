@@ -1,0 +1,85 @@
+{
+  "args": {
+    "ckpt": "runs/act-gnoisy/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 120.0,
+    "episodes": 1,
+    "slots": 1,
+    "spawn_x": -0.85,
+    "gap_min": 3.0,
+    "gap_max": 4.0,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "fb": 0.5,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "engage_x": -0.45,
+    "grasp_x": -0.1,
+    "in_dist_obs": false,
+    "stall_guard": 0.0,
+    "single_ckpt": "",
+    "queue_thr": 0.3,
+    "ckpt_map": "",
+    "policy": "act",
+    "only_kind": null,
+    "allow_ghost_frames": false,
+    "noise": 0.0,
+    "record": "",
+    "seed": 60002,
+    "out": "/tmp/opencode/gc-sp-60002"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 120.0,
+      "spawned": 6,
+      "delivered": 2,
+      "dropped": 0,
+      "missed": 4,
+      "picked": 6,
+      "switches": 5,
+      "success_rate": 0.3333333333333333,
+      "throughput_per_min": 1.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "strawberry": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "banana": {
+          "spawned": 3,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 3,
+          "picked": 3
+        },
+        "pear": {
+          "spawned": 1,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 1
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 6,
+    "delivered": 2,
+    "dropped": 0,
+    "missed": 4,
+    "picked": 6
+  }
+}
