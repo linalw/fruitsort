@@ -262,6 +262,12 @@ def main() -> None:
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
     ap.add_argument("--in-dist-obs", action="store_true",
                     help="把非目标类按训练布局重映射（让状态观测回到分布内）")
+    ap.add_argument("--grasp-verify", action="store_true",
+                    help="只碰到水果顶端不算抓住（要求指面到达果身高度或已被抬起）")
+    ap.add_argument("--intercept", type=float, default=0.0,
+                    help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
+    ap.add_argument("--close-win-xy", type=float, default=0.03)
+    ap.add_argument("--close-win-z", type=float, default=0.06)
     ap.add_argument("--close-z-gate", type=float, default=0.0,
                     help="闭爪高度门（米）：离果心高于该值时禁止闭爪，改为下探（0=关闭）")
     ap.add_argument("--descend-commit", type=int, default=0,
@@ -314,6 +320,10 @@ def main() -> None:
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
                              close_z_gate=args.close_z_gate,
+                             grasp_verify=args.grasp_verify,
+                             intercept=args.intercept,
+                             close_win_xy=args.close_win_xy,
+                             close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
                              yaw_map=parse_map(args.yaw_map),
                              width_map=(dict(WIDTH_MAP) if args.width_setpoint else None))

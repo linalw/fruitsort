@@ -54,7 +54,9 @@ class ActPureRunner:
                  width_g: float | None = None, close_ramp: float = 0.0,
                  grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
-                 close_z_gate: float = 0.0):
+                 close_z_gate: float = 0.0, intercept: float = 0.0,
+                 close_win_xy: float = 0.03, close_win_z: float = 0.06,
+                 grasp_verify: bool = False):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -181,6 +183,17 @@ class ActPureRunner:
         # 闭爪高度门：离水果还很高就闭爪 = 夹空气（实测队列里发生在 z 高 9 cm 处）。
         # >0 时：若"想闭爪"但 TCP 比果心高超过该值，则改为张开并下探到果心上方 2 cm。
         self.close_z_gate = float(close_z_gate)
+        # ---- 拦截式下探（intercept）----
+        # 队列里水果一直在走，"按当前位置下探"会永远追不上（trace: x 对齐后不下降/空中闭爪）。
+        # intercept>0 时：模型一旦在空中想闭爪，就按"下探耗时 × 带速"预测落点，
+        # 一次下探到预测点；只有 |x_err|<close_win_xy 且离果心 <close_win_z 才真正闭爪。
+        self.intercept = float(intercept)
+        self.close_win_xy = float(close_win_xy)
+        self.close_win_z = float(close_win_z)
+        # 抓取确认：只"碰到顶端"不算抓住（队列里会误判成 phase 2、随后水果滑走）
+        self.grasp_verify = bool(grasp_verify)
+        self._descend_target = None
+        self._descend_steps = 0
         self._stall_tcp = np.zeros(3)
         self._stall_run = 0
         self.reset()
@@ -207,6 +220,8 @@ class ActPureRunner:
         self.regrasp_done = False
         self.slip_prob = None
         self.cur_grip = 1.0
+        self._descend_target = None
+        self._descend_steps = 0
         self._stall_run = 0
         self._stall_tcp = np.zeros(3)
         self.queue = []
@@ -235,6 +250,12 @@ class ActPureRunner:
             else:
                 grasping = grabbing
             fz = float(actor.pose.p[0, 2])
+            if grasping and self.grasp_verify:
+                belt_z = float(getattr(u, "belt_top_z", 0.45))
+                lifted = fz > belt_z + 0.06
+                at_pad = abs(float(tcp[2]) - fz) < 0.045
+                if not (lifted or at_pad):
+                    grasping = False
             if grasping:
                 self.phase_state, self.grasp_lost = 2, 0
             elif self.phase_state == 2:
@@ -495,6 +516,28 @@ class ActPureRunner:
             self.regrasp_done = True
             self.stats["regrasp"] += 1
             self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 12
+
+        # ---- 拦截式下探：预测水果在下探耗时后的位置，一次下到那里并在到位瞬间闭爪 ----
+        if (self.intercept > 0 and not grasping and self.phase_state != 2
+                and actor is not None):
+            fpos_i = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            fv_i = actor.linear_velocity[0].cpu().numpy().astype(np.float64)
+            dz_i = float(tcp[2] - fpos_i[2])
+            if self._descend_target is None and grip < 0 and dz_i > 0.05:
+                self._descend_target = True
+                self._descend_steps = 0
+                self.stats["intercept"] = self.stats.get("intercept", 0) + 1
+            if self._descend_target is not None:
+                self._descend_steps += 1
+                t_desc = max(dz_i, 0.0) / self.intercept
+                ix = float(fpos_i[0] + fv_i[0] * t_desc)
+                tgt = np.array([ix, float(fpos_i[1]), float(fpos_i[2]) + 0.01])
+                aligned = (abs(float(tcp[0] - fpos_i[0])) < self.close_win_xy
+                           and float(np.linalg.norm(tcp - fpos_i)) < self.close_win_z)
+                grip = -1.0 if aligned else 1.0
+                self.phase_state = 1
+                if self._descend_steps > 45 or dz_i < 0.012:
+                    self._descend_target = None
 
         # ---- 闭爪高度门：禁止在空中闭爪，改为继续下探 ----
         if (self.close_z_gate > 0 and grip < 0 and not grasping
