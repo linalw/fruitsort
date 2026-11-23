@@ -50,13 +50,19 @@ class StreamController:
 
     def __init__(self, env, runner: ActPureRunner, u, kinds=KINDS, grasp_x: float = -0.10,
                  only_kind: str | None = None, scripted: bool = False,
-                 in_dist: bool = False, noise: float = 0.0, runners: dict | None = None):
+                 in_dist: bool = False, noise: float = 0.0, runners: dict | None = None,
+                 single_runner=None, queue_thr: float = 0.30):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
         self.noise = float(noise)
+        self.default_runner = runner
         # 按类路由：不同类别用不同模型（banana 用未被流数据稀释的版本）
         self.runners = dict(runners or {})
+        # 按**队列状态**切换的双策略：单件模式（queue<=thr）用 single_runner，
+        # 队列模式用默认 runner。切换只在"选新目标"时发生，避免搬运途中换模型。
+        self.single_runner = single_runner
+        self.queue_thr = float(queue_thr)
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -67,6 +73,18 @@ class StreamController:
         self._repoint()
 
     # ---------------- 内部 ----------------
+    def _queue_level(self) -> float:
+        """队列标志：场上 |x|<0.6 且在带面的水果数 /4（与训练/推理的特征同源）。"""
+        n = 0
+        for k in self.kinds:
+            a = self.u.fruit_actors.get(k)
+            if a is None:
+                continue
+            arr = a.pose.p[0].cpu().numpy() if hasattr(a, "pose") else np.zeros(3)
+            if abs(float(arr[0])) < 0.6 and 0.40 < float(arr[2]) < 0.60:
+                n += 1
+        return n / 4.0
+
     def _live(self):
         items = []
         ks = (self.only_kind,) if self.only_kind else self.kinds
@@ -146,7 +164,12 @@ class StreamController:
         if self.target is None:
             self.target = self._pick_target()
             if self.target is not None:
-                if self.target["kind"] in self.runners:
+                q = self._queue_level()
+                if q <= self.queue_thr and self.single_runner is not None:
+                    # 单件模式：用"干净单件数据"训练的模型（apple 8/8、banana 7/8）
+                    self.runner = self.single_runner
+                elif self.target["kind"] in self.runners:
+                    # 队列模式：优先按类专用模型（各类自带流上下文数据）
                     self.runner = self.runners[self.target["kind"]]
                 self.runner.kind = self.target["kind"]
                 self.runner.reset()
@@ -212,6 +235,9 @@ def main() -> None:
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
     ap.add_argument("--in-dist-obs", action="store_true",
                     help="把非目标类按训练布局重映射（让状态观测回到分布内）")
+    ap.add_argument("--single-ckpt", default="",
+                    help="按队列状态切换的双策略：单件模式(queue<=--queue-thr)用该模型")
+    ap.add_argument("--queue-thr", type=float, default=0.30)
     ap.add_argument("--ckpt-map", default="",
                     help="按类路由模型：'banana=runs/act-noisy/ckpt.pt'（逗号分隔多条）")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
@@ -249,9 +275,17 @@ def main() -> None:
                                                 carry_latch=args.carry_latch,
                                                 carry_max_step=args.carry_max_step)
         print("按类路由:", list(runners), flush=True)
+    single_runner = None
+    if args.single_ckpt:
+        single_runner = ActPureRunner(env, args.single_ckpt, "apple", fb=args.fb,
+                                      grip_ema=args.grip_ema,
+                                      carry_latch=args.carry_latch,
+                                      carry_max_step=args.carry_max_step)
+        print(f"队列切换: 单件模式={args.single_ckpt} (queue<={args.queue_thr})", flush=True)
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
                             only_kind=args.only_kind, scripted=(args.policy == "scripted"),
-                            in_dist=args.in_dist_obs, noise=args.noise, runners=runners)
+                            in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
+                            single_runner=single_runner, queue_thr=args.queue_thr)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:

@@ -29,6 +29,24 @@ ROOT = Path(__file__).resolve().parent.parent
 SIM_FREQ = {20: 100, 30: 120, 60: 240}
 
 
+def queue_level(u) -> float:
+    """队列标志：场上 |x|<0.6 且在带面的水果数 /4（与训练特征同源计算）。
+
+    用于"按队列状态切换双策略"：<=阈值视为单件模式（用单发更强的模型），
+    否则视为队列模式（用连续更强的模型）。
+    """
+    n = 0
+    for k in ("apple", "strawberry", "banana", "pear"):
+        a = u.fruit_actors.get(k)
+        if a is None:
+            continue
+        p = a.pose.p[0].cpu().numpy()
+        if abs(float(p[0])) < 0.6 and 0.40 < float(p[2]) < 0.60:
+            n += 1
+    return n / 4.0
+
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
@@ -61,6 +79,9 @@ def main() -> None:
     ap.add_argument("--width-g", type=float, default=None, help="直接用固定闭合指令值扫标定")
     ap.add_argument("--z-bias", type=float, default=0.0,
                     help="抓取高度偏置（米，作用于下探/闭爪段）；梨建议 +0.015")
+    ap.add_argument("--single-ckpt", default="",
+                    help="双策略：队列标志<=--queue-thr 时改用该模型（单件模式）")
+    ap.add_argument("--queue-thr", type=float, default=0.30)
     ap.add_argument("--close-ramp", type=float, default=0.0,
                     help="渐进闭爪步长（如 0.15）：不一步合到底，减少闭爪瞬间弹飞")
     ap.add_argument("--side-servo", action="store_true",
@@ -95,8 +116,15 @@ def main() -> None:
         obs, _ = env.reset(seed=args.seed + ep)
         u = env.unwrapped
         kind = args.instruction
+        # 按队列状态切换的双策略（单发场景 queue≈0.25 → 单件模式）
+        if args.single_ckpt:
+            q = queue_level(u)
+            ckpt = args.single_ckpt if q <= args.queue_thr else args.ckpt
+            print(f"[dual] queue={q:.2f} -> {Path(ckpt).parent.name}", flush=True)
+        else:
+            ckpt = args.ckpt
         runner = ActPureRunner(
-            env, args.ckpt, kind, device=args.device, fb=args.fb, fb_z=args.fb_z,
+            env, ckpt, kind, device=args.device, fb=args.fb, fb_z=args.fb_z,
             grip_ema=args.grip_ema, carry_latch=args.carry_latch,
             descend_commit=args.descend_commit, max_step=args.max_step, lead=args.lead,
             z_gate=args.z_gate, phase_fb=not args.no_phase_fb,
