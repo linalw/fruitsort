@@ -1,0 +1,97 @@
+{
+  "args": {
+    "ckpt": "runs/act-yaw/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 120.0,
+    "episodes": 1,
+    "slots": 1,
+    "spawn_x": -0.85,
+    "gap_min": 3.0,
+    "gap_max": 4.0,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "fb": 0.5,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "engage_x": -0.45,
+    "grasp_x": -0.1,
+    "in_dist_obs": false,
+    "yaw_align": true,
+    "yaw_align_off": 0.0,
+    "grasp_verify": false,
+    "intercept": 0.0,
+    "close_win_xy": 0.03,
+    "close_win_z": 0.06,
+    "close_z_gate": 0.0,
+    "descend_commit": 0,
+    "z_bias_map": "",
+    "yaw_map": "",
+    "width_setpoint": false,
+    "stall_guard": 0.0,
+    "single_ckpt": "",
+    "queue_thr": 0.3,
+    "ckpt_map": "",
+    "scripted_kinds": "",
+    "policy": "act",
+    "only_kind": "pear",
+    "allow_ghost_frames": false,
+    "noise": 0.0,
+    "record": "",
+    "seed": 60001,
+    "out": "/tmp/opencode/yq-pear"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 120.0,
+      "spawned": 6,
+      "delivered": 0,
+      "dropped": 0,
+      "missed": 6,
+      "picked": 0,
+      "switches": 2,
+      "success_rate": 0.0,
+      "throughput_per_min": 0.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 1,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 0
+        },
+        "strawberry": {
+          "spawned": 1,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 0
+        },
+        "banana": {
+          "spawned": 2,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 2,
+          "picked": 0
+        },
+        "pear": {
+          "spawned": 2,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 2,
+          "picked": 0
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 6,
+    "delivered": 0,
+    "dropped": 0,
+    "missed": 6,
+    "picked": 0
+  }
+}

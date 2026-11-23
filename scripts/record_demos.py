@@ -61,6 +61,8 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=1200)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--noise", type=float, default=0.0, help="执行动作上加的高斯噪声（米），用于鲁棒化")
+    ap.add_argument("--grasp-yaw-range", type=float, nargs=2, default=None,
+                    help="每集随机的手腕偏航范围（rad），用于让'腕部朝向'成为分布内变量")
     ap.add_argument("--robot", default="panda")
     ap.add_argument("--spawn-x", type=float, default=-0.55,
                     help="第一个水果的出生 x（与评测一致，默认 -0.55）")
@@ -104,7 +106,13 @@ def main() -> None:
     n_ok = 0
     for ep in range(args.episodes):
         obs, _ = env.reset(seed=args.seed + ep)
-        policy = ScriptedSorter(env, only_kind=None if args.instruction == 'all' else args.instruction)
+        cfg = None
+        if args.grasp_yaw_range is not None:
+            from fruitsort.policies.scripted import PolicyConfig
+            yaw0 = float(rng.uniform(*args.grasp_yaw_range))
+            cfg = PolicyConfig(grasp_yaw=yaw0)
+        policy = ScriptedSorter(env, cfg=cfg,
+                                only_kind=None if args.instruction == 'all' else args.instruction)
         u = env.unwrapped
         obs_list, act_list = [], []
         over_list, wrist_list = [], []

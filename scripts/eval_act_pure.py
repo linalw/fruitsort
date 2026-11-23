@@ -79,6 +79,9 @@ def main() -> None:
     ap.add_argument("--width-g", type=float, default=None, help="直接用固定闭合指令值扫标定")
     ap.add_argument("--z-bias", type=float, default=0.0,
                     help="抓取高度偏置（米，作用于下探/闭爪段）；梨建议 +0.015")
+    ap.add_argument("--yaw-align", action="store_true",
+                    help="用仿真真值 yaw 旋转手腕，使闭合方向垂直于水果长轴")
+    ap.add_argument("--yaw-align-off", type=float, default=0.0)
     ap.add_argument("--stall-guard", type=float, default=0.0,
                     help="停滞守卫的最小接近步长（米，0=关闭）")
     ap.add_argument("--single-ckpt", default="",
@@ -141,6 +144,7 @@ def main() -> None:
                        if args.width_setpoint else {}),
             width_delta=args.width_delta, width_g=args.width_g,
             close_ramp=args.close_ramp, stall_guard=args.stall_guard,
+            yaw_align=args.yaw_align, yaw_align_off=args.yaw_align_off,
             grasp_z_bias=({args.instruction: args.z_bias} if args.z_bias else {}))
         zone_entry = None
         info, t = {}, 0
