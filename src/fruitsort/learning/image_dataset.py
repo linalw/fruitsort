@@ -164,6 +164,13 @@ class ImageDemoDataset(Dataset):
             if len(pc) < K:
                 pc = np.concatenate([pc, np.repeat(pc[-1:], K - len(pc))])
             phase_chunk = pc
+        # 队列条件（**放在 phase 之后**，与 runner 一致）：场上 |x|<0.6 且在带面的水果数 /4
+        _b = states[:, :49] if states.shape[1] >= 49 else states
+        _qx = _b[:, [17 + 8 * k for k in range(4)]]
+        _qz = _b[:, [19 + 8 * k for k in range(4)]]
+        _q = (((np.abs(_qx) < 0.6) & (_qz > 0.40) & (_qz < 0.60)).sum(1, keepdims=True)
+              / 4.0).astype(np.float32)
+        states = np.concatenate([states, _q], axis=1)
         # 延迟增强：随机把最后一帧替换成上一帧，模拟 1 帧推理/感知延迟
         if self.delay_prob > 0 and np.random.rand() < self.delay_prob:
             if len(oh) > 1:

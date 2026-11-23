@@ -65,6 +65,7 @@ class ActPureRunner:
         self.use_force = bool(getattr(self.cfg, "use_force_head", False))
         # 布局：[49 base][9 tactile][3 phase]。触觉与否由 obs_dim 决定
         self.tactile_dim = 9 if (self.cfg.obs_dim - (3 if self.use_phase else 0)) >= 58 else 0
+        self.use_queue = (self.cfg.obs_dim - (3 if self.use_phase else 0)) == 50
 
         self.env, self.u, self.device = env, env.unwrapped, device
         self.kind = kind
@@ -233,6 +234,13 @@ class ActPureRunner:
             onehot = np.zeros(3, dtype=np.float32)
             onehot[self.phase_state if self.phase_fb else 0] = 1.0
             sb = np.concatenate([sb, onehot])
+        # 队列条件（与训练同源）：场上 |x|<0.6 且在带面的水果个数 /4
+        if self.use_queue:
+            qx = sb[[17 + 8 * k for k in range(4)]]
+            qz = sb[[19 + 8 * k for k in range(4)]]
+            sb = np.concatenate([sb, np.array(
+                [(float(((np.abs(qx) < 0.6) & (qz > 0.40) & (qz < 0.60)).sum()) / 4.0)],
+                dtype=np.float32)])
         self.st.append(sb)
         if self.tactile_token:
             self.tac.append(build_tactile(u, kind))
