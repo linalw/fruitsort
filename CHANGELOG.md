@@ -15,6 +15,33 @@
 
 ---
 
+## [1.48.0] - 2026-11-26
+
+### Added（默认关闭，供实验）
+- `act_runner`：`yaw_map`（按类手腕偏航）、`close_z_gate`（禁止空中闭爪，改为下探）。
+- `stream_eval`：`--z-bias-map`、`--yaw-map`、`--width-setpoint`、`--descend-commit`、
+  `--close-z-gate`、`--scripted-kinds`（模型+专家混合系统）。
+
+### Results — 全部按类抓取参数扫描**均未改善**（`--only-kind`，6 件/局，seed 60001）
+| 配置（banana） | 送达 |
+| --- | --- |
+| 基线 | **1/6** |
+| 宽度设定点 / z-bias −0.01 / −0.02 / yaw 0.6 / 组合 | 0/6 |
+| descend-commit 5/10/16 | 1/6（无变化） |
+| close-z-gate 0.04/0.06 | 0/6 |
+
+- pear 同样：close-z-gate → 0/6。
+- **专用模型在队列里反而更差**：act-banana2 1/6（vs act-gnoisy 3/7）、act-pear 1/6（vs 1/4）。
+- **混合系统**（专家做 banana/pear）：稀疏 7/18 = 38.9%，还打崩 strawberry（0/3）
+  —— 交接发生在任意臂位姿，专家 FSM 与模型 runner 都被打断。
+
+### Conclusion
+- 队列内 banana/pear 的损失不是抓取高度/宽度/偏航参数、也不是"改用专用模型/专家交接"能解决的；
+- trace 显示失败形态为 **"x 对齐后不下降、沿带面追随水果，并在空中闭爪"**（TCP 比果心高 9 cm）；
+- 当前最优仍是**纯模型双策略**：稀疏 55.6%、密集 55.0%（部署 38.9% / 21.4%），单发 8/8 + 7/8。
+
+---
+
 ## [1.47.0] - 2026-11-26
 
 ### Fixed — 队列内"冻结"的真正原因

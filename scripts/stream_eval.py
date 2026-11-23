@@ -51,7 +51,8 @@ class StreamController:
     def __init__(self, env, runner: ActPureRunner, u, kinds=KINDS, grasp_x: float = -0.10,
                  only_kind: str | None = None, scripted: bool = False,
                  in_dist: bool = False, noise: float = 0.0, runners: dict | None = None,
-                 single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45):
+                 single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45,
+                 scripted_kinds=()):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -66,6 +67,10 @@ class StreamController:
         # 只在**可达窗口**内接管目标：水果还在 x<-0.45 时，Panda 从基座 (0,-0.5) 过去
         # 距离≈0.85 m（臂展极限），命令位姿不可达 → PD 卡住、TCP 冻结（docs 6.26.35）。
         self.engage_x = float(engage_x)
+        # 混合系统：这些类别交给规则专家（模型在队列里做不好的长条类），
+        # 其余类别仍由模型驱动。只在"选新目标"时决定，搬运途中不换。
+        self.scripted_kinds = tuple(scripted_kinds)
+        self.use_scripted = False
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -178,18 +183,35 @@ class StreamController:
                 self.runner.reset()
                 self.switches += 1
                 self.u.fruit_actors[self.target["kind"]] = self.target["actor"]
-                if self.scripted:
+                self.use_scripted = (self.scripted
+                                     or self.target["kind"] in self.scripted_kinds)
+                if self.use_scripted:
                     self.sorter = ScriptedSorter(self.env, only_kind=self.target["kind"])
         if self.target is None:
             # 没活可干：回到待命位姿、张开手（基座系：x=y+0.5, y=-x, z=z）
             return np.array([0.5, 0.0, 0.55, *HOME_EULER, 1.0], dtype=np.float32)
-        if self.scripted:
+        if self.use_scripted:
             act = self.sorter.act()
             if self.noise > 0:
                 act = act.copy()
                 act[:3] += np.random.normal(0, self.noise, 3).astype(np.float32)
             return act
         return self.runner.act(obs)
+
+
+def parse_map(spec: str) -> dict:
+    """'banana=-0.01,pear=0.015' -> {'banana': -0.01, 'pear': 0.015}"""
+    out = {}
+    for kv in (spec or "").split(","):
+        kv = kv.strip()
+        if not kv or "=" not in kv:
+            continue
+        k, v = kv.split("=", 1)
+        out[k.strip()] = float(v)
+    return out
+
+
+WIDTH_MAP = {"apple": 0.062, "strawberry": 0.034, "banana": 0.044, "pear": 0.068}
 
 
 def _pack_images(obs):
@@ -240,6 +262,16 @@ def main() -> None:
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
     ap.add_argument("--in-dist-obs", action="store_true",
                     help="把非目标类按训练布局重映射（让状态观测回到分布内）")
+    ap.add_argument("--close-z-gate", type=float, default=0.0,
+                    help="闭爪高度门（米）：离果心高于该值时禁止闭爪，改为下探（0=关闭）")
+    ap.add_argument("--descend-commit", type=int, default=0,
+                    help="下探承诺步数：模型一旦判定下探，就保持该相位 N 步，避免 0/1 抖动")
+    ap.add_argument("--z-bias-map", default="",
+                    help="按类抓取高度偏置，如 'pear=0.015,banana=-0.01'")
+    ap.add_argument("--yaw-map", default="",
+                    help="按类手腕偏航（rad），如 'banana=0.6'（让夹爪闭合方向对齐长轴）")
+    ap.add_argument("--width-setpoint", action="store_true",
+                    help="闭爪到按类的宽度设定点(LeTac 式)，而不是合到底")
     ap.add_argument("--stall-guard", type=float, default=0.0,
                     help="停滞守卫的最小接近步长（米，0=关闭）：指令位移≈0 且水果仍在窗口内时"
                          "强制朝水果迈这一步，用于打破\"接近相位塌陷→TCP 冻结\"")
@@ -248,6 +280,9 @@ def main() -> None:
     ap.add_argument("--queue-thr", type=float, default=0.30)
     ap.add_argument("--ckpt-map", default="",
                     help="按类路由模型：'banana=runs/act-noisy/ckpt.pt'（逗号分隔多条）")
+    ap.add_argument("--scripted-kinds", default="",
+                    help="混合系统：这些类（逗号分隔）交给规则专家，其余由模型驱动，"
+                         "如 'banana,pear'")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
                     help="act=部署策略；scripted=规则专家（测场景上限）")
     ap.add_argument("--only-kind", default=None,
@@ -272,32 +307,34 @@ def main() -> None:
         always_stock=bool(args.record),
         sim_config=dict(control_freq=args.control_freq,
                         sim_freq=120 if args.control_freq == 30 else 100))
-    runner = ActPureRunner(env, args.ckpt, "apple", fb=args.fb, grip_ema=args.grip_ema,
-                           carry_latch=args.carry_latch, carry_max_step=args.carry_max_step,
-                           stall_guard=args.stall_guard)
+    def _mk(ckpt, kind):
+        return ActPureRunner(env, ckpt, kind, fb=args.fb, grip_ema=args.grip_ema,
+                             carry_latch=args.carry_latch,
+                             carry_max_step=args.carry_max_step,
+                             stall_guard=args.stall_guard,
+                             descend_commit=args.descend_commit,
+                             close_z_gate=args.close_z_gate,
+                             grasp_z_bias=parse_map(args.z_bias_map),
+                             yaw_map=parse_map(args.yaw_map),
+                             width_map=(dict(WIDTH_MAP) if args.width_setpoint else None))
+
+    runner = _mk(args.ckpt, "apple")
     runners = {}
     if args.ckpt_map:
         for kv in args.ckpt_map.split(","):
             _k, _path = kv.split("=", 1)
-            runners[_k.strip()] = ActPureRunner(env, _path, _k.strip(), fb=args.fb,
-                                                grip_ema=args.grip_ema,
-                                                carry_latch=args.carry_latch,
-                                                carry_max_step=args.carry_max_step,
-                                                stall_guard=args.stall_guard)
+            runners[_k.strip()] = _mk(_path, _k.strip())
         print("按类路由:", list(runners), flush=True)
     single_runner = None
     if args.single_ckpt:
-        single_runner = ActPureRunner(env, args.single_ckpt, "apple", fb=args.fb,
-                                      grip_ema=args.grip_ema,
-                                      carry_latch=args.carry_latch,
-                                      carry_max_step=args.carry_max_step,
-                                      stall_guard=args.stall_guard)
+        single_runner = _mk(args.single_ckpt, "apple")
         print(f"队列切换: 单件模式={args.single_ckpt} (queue<={args.queue_thr})", flush=True)
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
                             only_kind=args.only_kind, scripted=(args.policy == "scripted"),
                             in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
                             single_runner=single_runner, queue_thr=args.queue_thr,
-                            engage_x=args.engage_x)
+                            engage_x=args.engage_x,
+                            scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()])
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -312,7 +349,10 @@ def main() -> None:
         runner.reset()
         ctrl = StreamController(env, runner, u, grasp_x=args.grasp_x,
                                 only_kind=args.only_kind, scripted=(args.policy == "scripted"),
-                            in_dist=args.in_dist_obs, noise=args.noise, runners=runners)
+                                in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
+                                single_runner=single_runner, queue_thr=args.queue_thr,
+                                engage_x=args.engage_x,
+                                scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()])
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         def flush():

@@ -53,7 +53,8 @@ class ActPureRunner:
                  width_map: dict | None = None, width_delta: float = 0.002,
                  width_g: float | None = None, close_ramp: float = 0.0,
                  grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
-                 stall_eps: float = 0.006):
+                 stall_eps: float = 0.006, yaw_map: dict | None = None,
+                 close_z_gate: float = 0.0):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -175,6 +176,11 @@ class ActPureRunner:
         # 用最小接近步长强制重规划（纯执行层，不改模型权重）。
         self.stall_guard = float(stall_guard)
         self.stall_eps = float(stall_eps)
+        # 按类的手腕偏航（绕竖直轴）：用于让夹爪闭合方向对齐长条水果的长轴
+        self.yaw_map = yaw_map or {}
+        # 闭爪高度门：离水果还很高就闭爪 = 夹空气（实测队列里发生在 z 高 9 cm 处）。
+        # >0 时：若"想闭爪"但 TCP 比果心高超过该值，则改为张开并下探到果心上方 2 cm。
+        self.close_z_gate = float(close_z_gate)
         self._stall_tcp = np.zeros(3)
         self._stall_run = 0
         self.reset()
@@ -490,6 +496,15 @@ class ActPureRunner:
             self.stats["regrasp"] += 1
             self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 12
 
+        # ---- 闭爪高度门：禁止在空中闭爪，改为继续下探 ----
+        if (self.close_z_gate > 0 and grip < 0 and not grasping
+                and self.phase_state != 2 and actor is not None):
+            fpos_g = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            if float(tcp[2] - fpos_g[2]) > self.close_z_gate:
+                grip = 1.0
+                tgt = np.array([fpos_g[0], fpos_g[1], fpos_g[2] + 0.02])
+                self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 8
+                self.stats["zgate"] = self.stats.get("zgate", 0) + 1
         # 抓空复位（对应专家 close_steps=12）
         if grip < 0 and not grasping:
             self.closed_steps += 1
@@ -557,4 +572,7 @@ class ActPureRunner:
                     self.phase_state, self.same, self.phase_cand = 0, 0, 0
 
         self.prev_grip = grip
-        return np.array([tgt[1] + 0.5, -tgt[0], tgt[2], *HOME_EULER, grip], dtype=np.float32)
+        yaw = float(self.yaw_map.get(kind, 0.0))
+        return np.array([tgt[1] + 0.5, -tgt[0], tgt[2],
+                         HOME_EULER[0], HOME_EULER[1], HOME_EULER[2] + yaw, grip],
+                        dtype=np.float32)
