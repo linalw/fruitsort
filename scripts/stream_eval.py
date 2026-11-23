@@ -52,7 +52,7 @@ class StreamController:
                  only_kind: str | None = None, scripted: bool = False,
                  in_dist: bool = False, noise: float = 0.0, runners: dict | None = None,
                  single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45,
-                 scripted_kinds=()):
+                 scripted_kinds=(), scripted_yaw: float = 0.0):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -71,6 +71,9 @@ class StreamController:
         # 其余类别仍由模型驱动。只在"选新目标"时决定，搬运途中不换。
         self.scripted_kinds = tuple(scripted_kinds)
         self.use_scripted = False
+        # 队列上下文录制时的手腕偏航（每集随机一个，与 record_demos 的 --grasp-yaw-range 同义）：
+        # 让"腕部朝向"成为训练分布内的变量，执行期才可能按水果长轴对准。
+        self.scripted_yaw = float(scripted_yaw)
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -186,7 +189,12 @@ class StreamController:
                 self.use_scripted = (self.scripted
                                      or self.target["kind"] in self.scripted_kinds)
                 if self.use_scripted:
-                    self.sorter = ScriptedSorter(self.env, only_kind=self.target["kind"])
+                    cfg_yaw = None
+                    if self.scripted_yaw:
+                        from fruitsort.policies.scripted import PolicyConfig
+                        cfg_yaw = PolicyConfig(grasp_yaw=self.scripted_yaw)
+                    self.sorter = ScriptedSorter(
+                        self.env, cfg=cfg_yaw, only_kind=self.target["kind"])
         if self.target is None:
             # 没活可干：回到待命位姿、张开手（基座系：x=y+0.5, y=-x, z=z）
             return np.array([0.5, 0.0, 0.55, *HOME_EULER, 1.0], dtype=np.float32)
@@ -262,6 +270,8 @@ def main() -> None:
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
     ap.add_argument("--in-dist-obs", action="store_true",
                     help="把非目标类按训练布局重映射（让状态观测回到分布内）")
+    ap.add_argument("--grasp-yaw-range", type=float, nargs=2, default=None,
+                    help="录制时每集随机手腕偏航（rad）：'队列上下文 + 随机腕部'合并成一批数据")
     ap.add_argument("--yaw-align", action="store_true",
                     help="验证性实验：用仿真真值 yaw 旋转手腕，使夹爪闭合方向垂直于水果长轴")
     ap.add_argument("--yaw-align-off", type=float, default=0.0,
@@ -345,6 +355,8 @@ def main() -> None:
     if args.single_ckpt:
         single_runner = _mk(args.single_ckpt, "apple")
         print(f"队列切换: 单件模式={args.single_ckpt} (queue<={args.queue_thr})", flush=True)
+    yaw_rng = np.random.default_rng(args.seed + 7)
+    ep_yaw = 0.0
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
                             only_kind=args.only_kind, scripted=(args.policy == "scripted"),
                             in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
@@ -363,12 +375,15 @@ def main() -> None:
         obs, _ = env.reset(seed=args.seed + ep)
         u = env.unwrapped
         runner.reset()
+        if args.grasp_yaw_range is not None:
+            ep_yaw = float(yaw_rng.uniform(*args.grasp_yaw_range))
         ctrl = StreamController(env, runner, u, grasp_x=args.grasp_x,
                                 only_kind=args.only_kind, scripted=(args.policy == "scripted"),
                                 in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
                                 single_runner=single_runner, queue_thr=args.queue_thr,
                                 engage_x=args.engage_x,
-                                scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()])
+                                scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
+                                scripted_yaw=ep_yaw)
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         def flush():
