@@ -50,11 +50,13 @@ class StreamController:
 
     def __init__(self, env, runner: ActPureRunner, u, kinds=KINDS, grasp_x: float = -0.10,
                  only_kind: str | None = None, scripted: bool = False,
-                 in_dist: bool = False, noise: float = 0.0):
+                 in_dist: bool = False, noise: float = 0.0, runners: dict | None = None):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
         self.noise = float(noise)
+        # 按类路由：不同类别用不同模型（banana 用未被流数据稀释的版本）
+        self.runners = dict(runners or {})
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -144,6 +146,8 @@ class StreamController:
         if self.target is None:
             self.target = self._pick_target()
             if self.target is not None:
+                if self.target["kind"] in self.runners:
+                    self.runner = self.runners[self.target["kind"]]
                 self.runner.kind = self.target["kind"]
                 self.runner.reset()
                 self.switches += 1
@@ -208,6 +212,8 @@ def main() -> None:
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
     ap.add_argument("--in-dist-obs", action="store_true",
                     help="把非目标类按训练布局重映射（让状态观测回到分布内）")
+    ap.add_argument("--ckpt-map", default="",
+                    help="按类路由模型：'banana=runs/act-noisy/ckpt.pt'（逗号分隔多条）")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
                     help="act=部署策略；scripted=规则专家（测场景上限）")
     ap.add_argument("--only-kind", default=None,
@@ -234,9 +240,18 @@ def main() -> None:
                         sim_freq=120 if args.control_freq == 30 else 100))
     runner = ActPureRunner(env, args.ckpt, "apple", fb=args.fb, grip_ema=args.grip_ema,
                            carry_latch=args.carry_latch, carry_max_step=args.carry_max_step)
+    runners = {}
+    if args.ckpt_map:
+        for kv in args.ckpt_map.split(","):
+            _k, _path = kv.split("=", 1)
+            runners[_k.strip()] = ActPureRunner(env, _path, _k.strip(), fb=args.fb,
+                                                grip_ema=args.grip_ema,
+                                                carry_latch=args.carry_latch,
+                                                carry_max_step=args.carry_max_step)
+        print("按类路由:", list(runners), flush=True)
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
                             only_kind=args.only_kind, scripted=(args.policy == "scripted"),
-                            in_dist=args.in_dist_obs, noise=args.noise)
+                            in_dist=args.in_dist_obs, noise=args.noise, runners=runners)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -251,7 +266,7 @@ def main() -> None:
         runner.reset()
         ctrl = StreamController(env, runner, u, grasp_x=args.grasp_x,
                                 only_kind=args.only_kind, scripted=(args.policy == "scripted"),
-                            in_dist=args.in_dist_obs, noise=args.noise)
+                            in_dist=args.in_dist_obs, noise=args.noise, runners=runners)
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         def flush():
