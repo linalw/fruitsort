@@ -262,6 +262,10 @@ def main() -> None:
     ap.add_argument("--grasp-x", type=float, default=-0.10, help="理想拦截点 x（米）")
     ap.add_argument("--in-dist-obs", action="store_true",
                     help="把非目标类按训练布局重映射（让状态观测回到分布内）")
+    ap.add_argument("--yaw-align", action="store_true",
+                    help="验证性实验：用仿真真值 yaw 旋转手腕，使夹爪闭合方向垂直于水果长轴")
+    ap.add_argument("--yaw-align-off", type=float, default=0.0,
+                    help="长轴假设偏移（0 或 π/2），用于试两种本地轴")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="只碰到水果顶端不算抓住（要求指面到达果身高度或已被抬起）")
     ap.add_argument("--intercept", type=float, default=0.0,
@@ -321,6 +325,8 @@ def main() -> None:
                              descend_commit=args.descend_commit,
                              close_z_gate=args.close_z_gate,
                              grasp_verify=args.grasp_verify,
+                             yaw_align=args.yaw_align,
+                             yaw_align_off=args.yaw_align_off,
                              intercept=args.intercept,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,

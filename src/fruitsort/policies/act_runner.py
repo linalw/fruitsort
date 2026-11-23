@@ -56,7 +56,8 @@ class ActPureRunner:
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
                  close_z_gate: float = 0.0, intercept: float = 0.0,
                  close_win_xy: float = 0.03, close_win_z: float = 0.06,
-                 grasp_verify: bool = False):
+                 grasp_verify: bool = False, yaw_align: bool = False,
+                 yaw_align_off: float = 0.0):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -192,6 +193,13 @@ class ActPureRunner:
         self.close_win_z = float(close_win_z)
         # 抓取确认：只"碰到顶端"不算抓住（队列里会误判成 phase 2、随后水果滑走）
         self.grasp_verify = bool(grasp_verify)
+        # ---- 手腕对准（验证性实验，用仿真真值 yaw）----
+        # 让"两指连线（闭合方向）"垂直于水果长轴：实测 δ 旋转 → 指面轴角度变化 ≈ −δ。
+        # yaw_align_off 用来试两种假设（长轴沿本地 x / 沿本地 y，差 π/2）。
+        self.yaw_align = bool(yaw_align)
+        self.yaw_align_off = float(yaw_align_off)
+        self._yaw_cmd = 0.0
+        self._yaw_target = None
         self._descend_target = None
         self._descend_steps = 0
         self._stall_tcp = np.zeros(3)
@@ -220,6 +228,8 @@ class ActPureRunner:
         self.regrasp_done = False
         self.slip_prob = None
         self.cur_grip = 1.0
+        self._yaw_cmd = 0.0
+        self._yaw_target = None
         self._descend_target = None
         self._descend_steps = 0
         self._stall_run = 0
@@ -616,6 +626,26 @@ class ActPureRunner:
 
         self.prev_grip = grip
         yaw = float(self.yaw_map.get(kind, 0.0))
+        if self.yaw_align and actor is not None and not grasping:
+            # 每次"下探尝试"只算一次：连续迭代会因为测量滞后而振荡（实测 yaw 在 ±70° 抖）
+            if self._yaw_target is None:
+                try:
+                    q = actor.pose.q[0].cpu().numpy()
+                    w, xq, yq, zq = float(q[0]), float(q[1]), float(q[2]), float(q[3])
+                    phi = float(np.arctan2(2.0 * (w * zq + xq * yq),
+                                           1.0 - 2.0 * (yq * yq + zq * zq)))
+                    pL = u.agent.robot.links_map["panda_leftfinger"].pose.p[0].cpu().numpy()
+                    pR = u.agent.robot.links_map["panda_rightfinger"].pose.p[0].cpu().numpy()
+                    d = pL - pR
+                    psi = float(np.arctan2(d[1], d[0]))
+                    want = phi + np.pi / 2.0 + self.yaw_align_off
+                    delta = float(np.arctan2(np.sin(psi - want), np.cos(psi - want)))
+                    self._yaw_target = float(np.clip(self._yaw_cmd + delta, -1.2, 1.2))
+                except Exception:  # noqa: BLE001
+                    self._yaw_target = 0.0
+            self._yaw_cmd = self._yaw_target
+            yaw += self._yaw_cmd
+            self.stats["yaw_align_deg"] = float(np.degrees(self._yaw_cmd))
         return np.array([tgt[1] + 0.5, -tgt[0], tgt[2],
                          HOME_EULER[0], HOME_EULER[1], HOME_EULER[2] + yaw, grip],
                         dtype=np.float32)
