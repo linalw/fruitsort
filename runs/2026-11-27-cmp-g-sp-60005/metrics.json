@@ -1,0 +1,98 @@
+{
+  "args": {
+    "ckpt": "runs/act-gnoisy/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 120.0,
+    "episodes": 1,
+    "slots": 1,
+    "spawn_x": -0.85,
+    "gap_min": 3.0,
+    "gap_max": 4.0,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "fb": 0.5,
+    "grip_ema": 0.6,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "engage_x": -0.45,
+    "grasp_x": -0.1,
+    "in_dist_obs": false,
+    "grasp_yaw_range": null,
+    "yaw_align": false,
+    "yaw_align_off": 0.0,
+    "grasp_verify": false,
+    "intercept": 0.0,
+    "close_win_xy": 0.03,
+    "close_win_z": 0.06,
+    "close_z_gate": 0.0,
+    "descend_commit": 0,
+    "z_bias_map": "",
+    "yaw_map": "",
+    "width_setpoint": false,
+    "stall_guard": 0.0,
+    "single_ckpt": "",
+    "queue_thr": 0.3,
+    "ckpt_map": "",
+    "scripted_kinds": "",
+    "policy": "act",
+    "only_kind": null,
+    "allow_ghost_frames": false,
+    "noise": 0.0,
+    "record": "",
+    "seed": 60005,
+    "out": "/tmp/opencode/cmp-g-sp-60005"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 120.0,
+      "spawned": 6,
+      "delivered": 3,
+      "dropped": 1,
+      "missed": 2,
+      "picked": 6,
+      "switches": 5,
+      "success_rate": 0.5,
+      "throughput_per_min": 1.5,
+      "per_kind": {
+        "apple": {
+          "spawned": 2,
+          "delivered": 2,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 2
+        },
+        "strawberry": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "banana": {
+          "spawned": 1,
+          "delivered": 0,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 1
+        },
+        "pear": {
+          "spawned": 2,
+          "delivered": 0,
+          "dropped": 1,
+          "missed": 1,
+          "picked": 2
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 6,
+    "delivered": 3,
+    "dropped": 1,
+    "missed": 2,
+    "picked": 6
+  }
+}

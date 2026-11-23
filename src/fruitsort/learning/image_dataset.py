@@ -52,12 +52,13 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, use_geom: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
                  aux_dirs=(), split_tactile: bool = False, force_label: bool = False):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
         self.use_phase = use_phase
+        self.use_geom = use_geom
         self.delta_clip = delta_clip
         self.descend_boost = max(1, int(descend_boost))
         self.carry_boost = max(1, int(carry_boost))
@@ -171,6 +172,16 @@ class ImageDemoDataset(Dataset):
         _q = (((np.abs(_qx) < 0.6) & (_qz > 0.40) & (_qz < 0.60)).sum(1, keepdims=True)
               / 4.0).astype(np.float32)
         states = np.concatenate([states, _q], axis=1)
+        # 抓取几何（显式给"TCP 相对目标水果"的偏差）：模型原本要自己从
+        # 两个绝对位置里减出来，回归头很难学到"差 6 cm 该继续下沉"这种量。
+        if self.use_geom:
+            _tcp = states[:, 0:3]
+            _instr = ep["instruction"]
+            j = ALL.index(_instr) if _instr in ALL else 0
+            _fp = states[:, 17 + 8 * j: 17 + 8 * j + 3]
+            _d = (_tcp - _fp).astype(np.float32)
+            _norm = np.linalg.norm(_d, axis=1, keepdims=True).astype(np.float32)
+            states = np.concatenate([states, _d, _norm], axis=1)
         # 延迟增强：随机把最后一帧替换成上一帧，模拟 1 帧推理/感知延迟
         if self.delay_prob > 0 and np.random.rand() < self.delay_prob:
             if len(oh) > 1:
