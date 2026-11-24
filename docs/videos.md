@@ -12,6 +12,8 @@
 | `stream_geom_dense_1m.mp4` | v1.53 | 同上 | 连续作业 0.08 m/s，间距 0.6–1.2 m（超载） | **12/14 = 92.3%** | 完整 120 s 不剪辑（seed 60002）；同配置 5 局 51/69 = 73.9% |
 | `assets/videos/stream_demo_v153.gif` | v1.53 | 同上 | 稀疏档片段 | — | README 首页用（12 s，8 fps） |
 | `assets/videos/stream_demo_v153_dense.gif` | v1.53 | 同上 | 密集档片段 | — | 12 s，8 fps |
+| `stream_fast_dense_1m.mp4` | v1.54 | 按类提速（apple/straw 0.12、pear 0.10、banana 0.06） | 连续作业 0.08 m/s，间距 0.6–1.2 m | **12/14 = 92.3%**（机会内 12/12，单件 6.1 s，6.0 件/min） | 完整 120 s；5 局 55/68 = 80.9% |
+| `assets/videos/stream_fast_v154.gif` | v1.54 | 同上 | 密集档片段 | — | 12 s，8 fps，README 用 |
 
 ## 早期（混合架构，非纯策略）
 

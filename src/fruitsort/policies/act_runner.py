@@ -57,7 +57,9 @@ class ActPureRunner:
                  close_z_gate: float = 0.0, intercept: float = 0.0,
                  close_win_xy: float = 0.03, close_win_z: float = 0.06,
                  grasp_verify: bool = False, yaw_align: bool = False,
-                 yaw_align_off: float = 0.0):
+                 yaw_align_off: float = 0.0,
+                 max_step_map: dict | None = None,
+                 carry_step_map: dict | None = None):
         ck = torch.load(Path(ckpt_path), map_location="cpu", weights_only=False)
         self.cfg = ActConfig(**ck["cfg"])
         self.model = ActPolicy(self.cfg).to(device)
@@ -79,6 +81,9 @@ class ActPureRunner:
         self.fb, self.fb_z, self.grip_ema = fb, fb_z, grip_ema
         self.carry_latch, self.descend_commit = carry_latch, descend_commit
         self.max_step, self.lead, self.z_gate = max_step, lead, z_gate
+        # 按类限速：长条/易滑类（banana/pear）需要更小的步长，其余可以更快
+        self.max_step_map = max_step_map or {}
+        self.carry_step_map = carry_step_map or {}
         self.phase_fb, self.hold_latch, self.grasp_retry = phase_fb, hold_latch, grasp_retry
         self.chunk_exec = chunk_exec
         # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
@@ -617,9 +622,11 @@ class ActPureRunner:
 
         err = tgt - tcp
         d = float(np.linalg.norm(err))
-        step = self.max_step
-        if self.carry_max_step > 0 and self.phase_state == 2:
-            step = self.carry_max_step
+        step = float(self.max_step_map.get(kind, self.max_step))
+        if self.phase_state == 2:
+            _c = float(self.carry_step_map.get(kind, self.carry_max_step))
+            if _c > 0:
+                step = _c
         if getattr(self, "slip_slow", False) and self.phase_state == 2:
             step = min(step, self.slip_slow_step)
         if d > step:

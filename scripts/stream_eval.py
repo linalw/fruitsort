@@ -69,6 +69,7 @@ class StreamController:
         self.engage_x = float(engage_x)
         # 混合系统：这些类别交给规则专家（模型在队列里做不好的长条类），
         # 其余类别仍由模型驱动。只在"选新目标"时决定，搬运途中不换。
+        self.engaged_ids = set()     # 被本臂"接管过"的件（= 我们的机会）
         self.scripted_kinds = tuple(scripted_kinds)
         self.use_scripted = False
         # 队列上下文录制时的手腕偏航（每集随机一个，与 record_demos 的 --grasp-yaw-range 同义）：
@@ -175,6 +176,9 @@ class StreamController:
         if self.target is None:
             self.target = self._pick_target()
             if self.target is not None:
+                self.engaged_ids.add(self.target["id"])
+                if "t_engage" not in self.target:
+                    self.target["t_engage"] = float(self.u._t)
                 q = self._queue_level()
                 if q <= self.queue_thr and self.single_runner is not None:
                     # 单件模式：用"干净单件数据"训练的模型（apple 8/8、banana 7/8）
@@ -261,6 +265,12 @@ def main() -> None:
     ap.add_argument("--scale-max", type=float, default=1.15)
     ap.add_argument("--control-freq", type=int, default=30,
                     help="与部署评测一致（act-wide-4c 的 87.5%/96.9% 都是 30 Hz）")
+    ap.add_argument("--max-step-map", default="",
+                    help="按类接近步长，如 'apple=0.12,strawberry=0.12,pear=0.10,banana=0.06'")
+    ap.add_argument("--carry-step-map", default="",
+                    help="按类搬运步长，如 'apple=0.04,pear=0.03,banana=0.02'")
+    ap.add_argument("--max-step", type=float, default=0.06,
+                    help="接近段每步最大位移（米/步）：调大可加速机械臂，代价是精度/稳定性")
     ap.add_argument("--fb", type=float, default=0.5)
     ap.add_argument("--grip-ema", type=float, default=0.6)
     ap.add_argument("--carry-latch", action="store_true", default=True)
@@ -334,6 +344,9 @@ def main() -> None:
                         sim_freq=120 if args.control_freq == 30 else 100))
     def _mk(ckpt, kind):
         return ActPureRunner(env, ckpt, kind, fb=args.fb, grip_ema=args.grip_ema,
+                             max_step=args.max_step,
+                             max_step_map=parse_map(args.max_step_map),
+                             carry_step_map=parse_map(args.carry_step_map),
                              carry_latch=args.carry_latch,
                              carry_max_step=args.carry_max_step,
                              stall_guard=args.stall_guard,
@@ -445,7 +458,10 @@ def main() -> None:
                 lines = [f"t={u._t:5.1f}s   belt={args.belt:.2f} m/s   gap={args.gap_min}-{args.gap_max} m",
                          f"target={tgt_v}   phase={ph}   grip={'closed' if ctrl.runner.prev_grip < 0 else 'open'}",
                          f"delivered={st_v['delivered']}   missed={st_v['missed']}   dropped={st_v['dropped']}"
-                         f"   spawned={st_v['spawned']}"]
+                         f"   spawned={st_v['spawned']}",
+                         f"engaged={len(getattr(ctrl, 'engaged_ids', ()))}   "
+                         f"handed_to_peers={max(0, st_v['missed'] - 0)}   "
+                         f"step_mode={'per-class' if args.max_step_map else 'uniform'}"]
                 hh, ww = img.shape[:2]
                 fs = max(0.6, ww / 1920.0 * 1.0)
                 lh = int(round(34 * fs))
@@ -467,16 +483,35 @@ def main() -> None:
         if writer is not None:
             writer.release(); writer = None
         st = u.stream_stats
+        # "机会内"口径：只算本臂接管过的件（其余漏检视为让给旁边的工作臂）
+        items = st.get("items", {})
+        eng = [it for it in items.values() if it.get("id") in getattr(ctrl, "engaged_ids", set())]
+        eng_done = [it for it in eng if it.get("outcome") == "delivered"]
+        eng_res = [it for it in eng if it.get("outcome") in ("delivered", "dropped", "missed")]
+        declined = [it for it in items.values()
+                    if it.get("outcome") == "missed" and it.get("id") not in getattr(ctrl, "engaged_ids", set())]
+        handle = [it["t_end"] - it["t_engage"] for it in eng
+                  if it.get("outcome") == "delivered" and it.get("t_end") and it.get("t_engage")]
+        st["handle_s"] = float(np.mean(handle)) if handle else 0.0
+        st["engaged"] = len(eng)
+        st["engaged_delivered"] = len(eng_done)
+        st["declined"] = len(declined)
         resolved = st["delivered"] + st["dropped"] + st["missed"]
         row = dict(ep=ep, belt=args.belt, seconds=round(u._t, 1),
                    spawned=st["spawned"], delivered=st["delivered"],
                    dropped=st["dropped"], missed=st["missed"], picked=st["picked"],
                    switches=ctrl.switches,
                    success_rate=(st["delivered"] / resolved) if resolved else 0.0,
+                   engaged=st["engaged"], engaged_delivered=st["engaged_delivered"],
+                   engaged_success=(len(eng_done) / len(eng_res)) if eng_res else 0.0,
+                   declined=st["declined"], handle_s=st["handle_s"],
                    throughput_per_min=60.0 * st["delivered"] / max(u._t, 1e-6),
                    per_kind=st["per_kind"])
         runs.append(row)
         print(f"[ep{ep}] {row['seconds']:.0f}s 上料 {row['spawned']} | 送达 {row['delivered']} "
+              f"| 机会内 {row['engaged_delivered']}/{row['engaged']} "
+              f"= {(row['engaged_delivered']/row['engaged']*100) if row['engaged'] else 0:.0f}% "
+              f"| 让给同伴 {row['declined']} | 单件 {row['handle_s']:.1f}s "
               f"掉落 {row['dropped']} 漏过 {row['missed']} | 抓取过 {row['picked']} | "
               f"成功率 {row['success_rate']*100:.1f}% | 吞吐 {row['throughput_per_min']:.2f} 件/min "
               f"| 换目标 {row['switches']}", flush=True)
@@ -493,6 +528,9 @@ def main() -> None:
     print(f"总上料 {agg['spawned']} | 送达 {agg['delivered']} | 掉落 {agg['dropped']} | "
           f"漏过 {agg['missed']} | 成功率 {agg['delivered']/max(resolved,1)*100:.1f}% | "
           f"吞吐 {np.mean([r['throughput_per_min'] for r in runs]):.2f} 件/min")
+    eng = sum(r["engaged"] for r in runs); engd = sum(r["engaged_delivered"] for r in runs)
+    print(f"机会内成功率: {engd}/{eng} = {(engd / eng * 100) if eng else 0:.1f}% | "
+          f"让给同伴（未接管即漏检）: {sum(r['declined'] for r in runs)} 件")
     for k in KINDS:
         d = sum(r["per_kind"][k]["delivered"] for r in runs)
         s = sum(r["per_kind"][k]["spawned"] for r in runs)

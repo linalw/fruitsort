@@ -1,0 +1,108 @@
+{
+  "args": {
+    "ckpt": "runs/act-geom/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 120.0,
+    "episodes": 1,
+    "slots": 1,
+    "spawn_x": -0.85,
+    "gap_min": 0.6,
+    "gap_max": 1.2,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "max_step_map": "apple=0.12,strawberry=0.12,pear=0.10,banana=0.06",
+    "carry_step_map": "apple=0.04,strawberry=0.04,pear=0.03,banana=0.02",
+    "max_step": 0.06,
+    "fb": 0.7,
+    "grip_ema": 0.7,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "engage_x": -0.45,
+    "grasp_x": -0.1,
+    "in_dist_obs": false,
+    "grasp_yaw_range": null,
+    "yaw_align": false,
+    "yaw_align_off": 0.0,
+    "grasp_verify": false,
+    "intercept": 0.0,
+    "close_win_xy": 0.03,
+    "close_win_z": 0.06,
+    "close_z_gate": 0.0,
+    "descend_commit": 0,
+    "z_bias_map": "",
+    "yaw_map": "",
+    "width_setpoint": false,
+    "stall_guard": 0.0,
+    "single_ckpt": "",
+    "queue_thr": 0.3,
+    "ckpt_map": "",
+    "scripted_kinds": "",
+    "policy": "act",
+    "only_kind": null,
+    "allow_ghost_frames": false,
+    "noise": 0.0,
+    "video": "data/fruitsort/eval/stream_fast_dense_1m.mp4",
+    "video_fps": 0,
+    "record": "",
+    "seed": 60002,
+    "out": "runs/2026-11-27-stream-demo-fast-dense"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 120.0,
+      "spawned": 14,
+      "delivered": 12,
+      "dropped": 0,
+      "missed": 1,
+      "picked": 12,
+      "switches": 12,
+      "success_rate": 0.9230769230769231,
+      "engaged": 12,
+      "engaged_delivered": 12,
+      "engaged_success": 1.0,
+      "declined": 1,
+      "handle_s": 6.072916666666668,
+      "throughput_per_min": 6.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 7,
+          "delivered": 6,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 6
+        },
+        "strawberry": {
+          "spawned": 3,
+          "delivered": 3,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 3
+        },
+        "banana": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "pear": {
+          "spawned": 3,
+          "delivered": 2,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 2
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 14,
+    "delivered": 12,
+    "dropped": 0,
+    "missed": 1,
+    "picked": 12
+  }
+}
