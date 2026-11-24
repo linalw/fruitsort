@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from ..sim.assets.fruits import load_specs
+from .rgbd import RGBDPerception
 from .vision import BeltHomography, VisionState
 
 KINDS = ("apple", "strawberry", "banana", "pear")
@@ -78,6 +79,64 @@ class VisionSource:
                     v = np.array([belt, 0.0, 0.0])
             # 已确认夹住（由指端接触力判定）：位置跟着 TCP
             # （头顶相机此时多半被手臂挡住，不能靠检测）
+            if held_kind == k and tcp is not None:
+                p = np.array([tcp[0], tcp[1], tcp[2] - 0.02], dtype=np.float64)
+                v = np.zeros(3, dtype=np.float64)
+            self.last[k] = (p, v)
+            out[k] = _Stub(p, v)
+        return out
+
+
+class RGBDSource(VisionSource):
+    """RGB-D 版本：多实例跟踪，每类暴露"最靠前（离机械臂最近）"的实例。
+
+    与真值同接口，因此 runner / build_obs 不需要任何改动。
+    """
+
+    def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
+                 clip_x: float = -1.10):
+        specs = load_specs()
+        self.u = u
+        self.kinds = tuple(kinds)
+        self.specs = specs
+        self.clip_x = float(clip_x)
+        self.plane_z = float(getattr(u, "belt_top_z", 0.45))
+        self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds)
+        self.last = {k: (np.array([self.clip_x, 0.0,
+                                   self.plane_z + specs[k].half_height], dtype=np.float64),
+                         np.zeros(3, dtype=np.float64))
+                     for k in self.kinds}
+        self.miss = {k: 99 for k in self.kinds}
+
+    def update(self, obs, held_kind: str | None = None) -> dict:
+        got = self.vs.update(obs)
+        try:
+            belt = float(self.u.belt_speed[0])
+        except Exception:  # noqa: BLE001
+            belt = 0.08
+        try:
+            tcp = self.u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
+        except Exception:  # noqa: BLE001
+            tcp = None
+        out = {}
+        for k in self.kinds:
+            cands = [it for it in got.get(k, []) if it.pos[0] >= self.clip_x]
+            if cands:
+                it = max(cands, key=lambda i: i.pos[0])       # 最靠前的一件
+                p = np.array(it.pos, dtype=np.float64)
+                v = np.array(it.vel, dtype=np.float64)
+                v[2] = 0.0
+                self.miss[k] = 0
+            elif self.miss[k] < 12:
+                # 短暂丢检（遮挡/反光）：沿用上一次并外推，别跳回"场外幽灵"
+                p, v = self.last[k]
+                p = p.copy(); p[0] += v[0] * self.vs.dt
+                self.miss[k] += 1
+            else:
+                p = np.array([self.clip_x, 0.0,
+                              self.plane_z + self.specs[k].half_height], dtype=np.float64)
+                v = np.array([belt, 0.0, 0.0])
+                self.miss[k] = 99
             if held_kind == k and tcp is not None:
                 p = np.array([tcp[0], tcp[1], tcp[2] - 0.02], dtype=np.float64)
                 v = np.zeros(3, dtype=np.float64)
