@@ -59,6 +59,7 @@ class ActPureRunner:
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
                  yaw_align_ready: float = 0.17, yaw_align_pre_max: int = 70,
+                 yaw_align_rot_frac: float = 0.0,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
@@ -250,6 +251,9 @@ class ActPureRunner:
         self.yaw_align_hold_dist = float(yaw_align_hold_dist)
         self.yaw_align_ready = float(yaw_align_ready)
         self.yaw_align_pre_max = int(yaw_align_pre_max)
+        # 预转时是否允许**同时**靠近：0=原地只转（v1.66 行为），>0=按该比例下发放平移
+        # （0.35 表示靠近速度降到 35%，避免"先停 2 s 转腕"吃掉单件时间）
+        self.yaw_align_rot_frac = float(yaw_align_rot_frac)
         self._pre_steps = 0
         self._yaw_cmd = 0.0
         self._yaw_target = None
@@ -767,9 +771,14 @@ class ActPureRunner:
                 and _ya_ext >= self.yaw_align_extent):
             # 闭环：phase 0/1 期间每 period 步重算一次（v1.64 的一次性修正在大力矩下
             # 实际增益只有 ~0.3，残差 20–30°；闭环后收敛到 <10°）
+            # 预转阶段（残差还大、且位置基本不动）可以每步都修正、满增益：
+            # 此时不存在"平移导致测量滞后"的问题，能把手腕转到物理最快
+            _fast = self.yaw_err_deg > float(np.degrees(self.yaw_align_ready))
+            _period = 1 if _fast else self.yaw_align_period
+            _gain = 0.9 if _fast else self.yaw_align_gain
             self._yaw_t += 1
             _recalc = (self._yaw_target is None
-                       or (self._yaw_t % self.yaw_align_period == 0))
+                       or (self._yaw_t % _period == 0))
             if not grasping and self.phase_state in (0, 1) and _recalc:
                 try:
                     # 优先用感知给出的长轴朝向（`_Stub.yaw`）；没有就退回真值四元数
@@ -795,7 +804,7 @@ class ActPureRunner:
                     # 标定关系 ψ ≈ 92° − δ ⇒ Δδ ≈ ψ − want；加阻尼 gain、留容差死区，
                     # 避免"测滞后 → 过冲 → 再来回"
                     if abs(d) > self.yaw_align_tol:
-                        delta = self.yaw_align_gain * d
+                        delta = _gain * d
                         self._yaw_target = float(np.clip(self._yaw_cmd + delta, -1.2, 1.2))
                 except Exception:  # noqa: BLE001
                     self._yaw_target = 0.0
@@ -809,8 +818,13 @@ class ActPureRunner:
                     and self._pre_steps < self.yaw_align_pre_max):
                 dist = float(np.hypot(tcp[0] - actor.pose.p[0, 0], tcp[1] - actor.pose.p[0, 1]))
                 if dist > self.yaw_align_hold_dist and self.yaw_err_deg > np.degrees(self.yaw_align_ready):
-                    tgt = np.array(tcp, dtype=np.float64)     # 只下发姿态：位置保持
-                    grip = 1.0                                # 对准期间保持张开
+                    if self.yaw_align_rot_frac > 0:
+                        # 边转边靠近：位置步长按比例压小（不产生 2 s 的停顿）
+                        tgt = np.array(tcp + (tgt - tcp) * self.yaw_align_rot_frac,
+                                       dtype=np.float64)
+                    else:
+                        tgt = np.array(tcp, dtype=np.float64)  # 只下发姿态：位置保持
+                    grip = 1.0                                 # 对准期间保持张开
                     self._pre_steps += 1
                     self.stats["pre_rot"] = self.stats.get("pre_rot", 0) + 1
         return np.array([tgt[1] + 0.5, -tgt[0], tgt[2],

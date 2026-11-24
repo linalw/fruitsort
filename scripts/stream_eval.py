@@ -326,6 +326,8 @@ def main() -> None:
                     help="长轴假设偏移（0 或 π/2），用于试两种本地轴")
     ap.add_argument("--yaw-align-extent", type=float, default=0.0,
                     help="只对世界长度 ≥ 该值的目标做腕部对准（0=全部；香蕉建议 0.12）")
+    ap.add_argument("--yaw-align-rot-frac", type=float, default=0.0,
+                    help="预转腕时同时靠近的比例（0=原地只转；0.35=边转边靠近，省单件时间）")
     ap.add_argument("--close-commit", type=float, default=0.0,
                     help="闭爪承诺：离果心 z 低于该值且水平对齐时强制闭爪并冻结水平目标（0=关闭）")
     ap.add_argument("--close-commit-xy", type=float, default=0.030)
@@ -444,6 +446,7 @@ def main() -> None:
                              yaw_align=args.yaw_align,
                              yaw_align_off=args.yaw_align_off,
                              yaw_align_extent=args.yaw_align_extent,
+                             yaw_align_rot_frac=args.yaw_align_rot_frac,
                              intercept=args.intercept,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
