@@ -55,7 +55,8 @@ class ActPureRunner:
                  grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
                  close_z_gate: float = 0.0, intercept: float = 0.0,
-                 yaw_align_extent: float = 0.0,
+                 yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
+                 yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
@@ -234,8 +235,16 @@ class ActPureRunner:
         self.yaw_align_off = float(yaw_align_off)
         # 只对"够长"的目标对准（圆形水果主轴没定义，感知 yaw 误差 24–28°）
         self.yaw_align_extent = float(yaw_align_extent)
+        # 闭环对准：每 period 步重算一次（腕部转动到位要 ~10-20 步，太密会追滞后 → 振荡）
+        self.yaw_align_period = max(1, int(yaw_align_period))
+        self.yaw_align_gain = float(yaw_align_gain)
+        self.yaw_align_tol = float(yaw_align_tol)
+        self._yaw_t = 0
+        self.yaw_err_deg = 0.0
         self._yaw_cmd = 0.0
         self._yaw_target = None
+        self._yaw_t = 0
+        self.yaw_err_deg = 0.0
         self._descend_target = None
         self._descend_steps = 0
         self._stall_tcp = np.zeros(3)
@@ -288,6 +297,8 @@ class ActPureRunner:
         self.cur_grip = 1.0
         self._yaw_cmd = 0.0
         self._yaw_target = None
+        self._yaw_t = 0
+        self.yaw_err_deg = 0.0
         self._descend_target = None
         self._descend_steps = 0
         self._stall_run = 0
@@ -742,8 +753,12 @@ class ActPureRunner:
         _ya_ext = float(getattr(actor, "extent", 0.0) or 0.0) if actor is not None else 0.0
         if (self.yaw_align and actor is not None
                 and _ya_ext >= self.yaw_align_extent):
-            # 每次"下探尝试"只算一次：连续迭代会因为测量滞后而振荡（实测 yaw 在 ±70° 抖）
-            if not grasping and self._yaw_target is None:
+            # 闭环：phase 0/1 期间每 period 步重算一次（v1.64 的一次性修正在大力矩下
+            # 实际增益只有 ~0.3，残差 20–30°；闭环后收敛到 <10°）
+            self._yaw_t += 1
+            _recalc = (self._yaw_target is None
+                       or (self._yaw_t % self.yaw_align_period == 0))
+            if not grasping and self.phase_state in (0, 1) and _recalc:
                 try:
                     # 优先用感知给出的长轴朝向（`_Stub.yaw`）；没有就退回真值四元数
                     yy = getattr(actor, "yaw", None)
@@ -764,9 +779,12 @@ class ActPureRunner:
                     # （v1.64 实测：yaw_cmd 一直顶在 -68.8°，ψ 反而从 92° 跑到 156°）。
                     d = psi - want
                     d = float(np.arctan2(np.sin(2.0 * d), np.cos(2.0 * d)) / 2.0)
-                    # 标定关系 ψ ≈ 92° − δ ⇒ Δδ = ψ − want（再减一次会来回振荡）
-                    delta = d
-                    self._yaw_target = float(np.clip(self._yaw_cmd + delta, -1.2, 1.2))
+                    self.yaw_err_deg = float(np.degrees(abs(d)))
+                    # 标定关系 ψ ≈ 92° − δ ⇒ Δδ ≈ ψ − want；加阻尼 gain、留容差死区，
+                    # 避免"测滞后 → 过冲 → 再来回"
+                    if abs(d) > self.yaw_align_tol:
+                        delta = self.yaw_align_gain * d
+                        self._yaw_target = float(np.clip(self._yaw_cmd + delta, -1.2, 1.2))
                 except Exception:  # noqa: BLE001
                     self._yaw_target = 0.0
             # 抓住之后**保持**这个腕部朝向：以前这里只在"未抓住"时叠加，

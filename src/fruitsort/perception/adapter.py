@@ -123,7 +123,8 @@ class RGBDSource(VisionSource):
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
                  clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
                  near_hold: bool = True, near_dist: float = 0.10,
-                 near_extent: float = 0.11, near_extent_min: float = 0.05):
+                 near_extent: float = 0.11, near_extent_min: float = 0.05,
+                 grasp_axis_offset: float = 0.0, grasp_axis_extent: float = 0.12):
         specs = load_specs()
         self.u = u
         self.kinds = tuple(kinds)
@@ -143,6 +144,10 @@ class RGBDSource(VisionSource):
         # 梨 0.09（紧凑但另有滑脱问题）/ 香蕉 0.17 ✗（长条，果心可能离 TCP 几厘米）
         self.near_extent = float(near_extent)
         self.near_extent_min = float(near_extent_min)
+        # 抓取点沿长轴的偏移（米）：弧形香蕉的"最好夹"位置未必是包围盒中心，
+        # 用感知 yaw 把控制点沿长轴挪 offset（raw_p 仍是真实中心，不参与抓取确认）
+        self.grasp_axis_offset = float(grasp_axis_offset)
+        self.grasp_axis_extent = float(grasp_axis_extent)
         self.plane_z = float(getattr(u, "belt_top_z", 0.45))
         self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds)
         self.last = {k: (np.array([self.clip_x, 0.0,
@@ -211,6 +216,11 @@ class RGBDSource(VisionSource):
                 p = np.array([tcp[0], tcp[1], max(float(p[2]), self.plane_z)], dtype=np.float64)
                 v = np.zeros(3, dtype=np.float64)
             raw = p.copy()
+            if (self.grasp_axis_offset and held_kind != k and yy is not None
+                    and self._extent_of(k) > self.grasp_axis_extent):
+                p = np.array([p[0] + self.grasp_axis_offset * np.cos(yy),
+                              p[1] + self.grasp_axis_offset * np.sin(yy), p[2]],
+                             dtype=np.float64)
             if held_kind == k and tcp is not None:
                 p = np.array([tcp[0], tcp[1], tcp[2] - 0.02], dtype=np.float64)
                 v = np.zeros(3, dtype=np.float64)
@@ -226,7 +236,8 @@ class FusedSource(RGBDSource):
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
                  clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
                  use_hand: bool = False, near_hold: bool = True, near_dist: float = 0.10,
-                 near_extent: float = 0.11, near_extent_min: float = 0.05):
+                 near_extent: float = 0.11, near_extent_min: float = 0.05,
+                 grasp_axis_offset: float = 0.0, grasp_axis_extent: float = 0.12):
         from .side import SideCamera
         specs = load_specs()
         self.u = u
@@ -242,6 +253,10 @@ class FusedSource(RGBDSource):
         # 梨 0.09（紧凑但另有滑脱问题）/ 香蕉 0.17 ✗（长条，果心可能离 TCP 几厘米）
         self.near_extent = float(near_extent)
         self.near_extent_min = float(near_extent_min)
+        # 抓取点沿长轴的偏移（米）：弧形香蕉的"最好夹"位置未必是包围盒中心，
+        # 用感知 yaw 把控制点沿长轴挪 offset（raw_p 仍是真实中心，不参与抓取确认）
+        self.grasp_axis_offset = float(grasp_axis_offset)
+        self.grasp_axis_extent = float(grasp_axis_extent)
         self.plane_z = float(getattr(u, "belt_top_z", 0.45))
         # 腕部相机（hand.py）已评估：最终下探段确实能看见被手臂挡住的目标，
         # 但精度只有 1–3 cm（俯视 0.2 cm），混进来反而让单发 apple 4/6 → 3/6、

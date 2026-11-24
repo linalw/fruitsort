@@ -136,6 +136,9 @@ def main() -> None:
                     help="抓取近似判据（离得近+闭爪）：auto=仅当查不到真实接触时用")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="接触但指面未到果身高度/未抬起时不算抓住（避免'带空气搬运'）")
+    ap.add_argument("--grasp-axis-offset", type=float, default=0.0,
+                    help="抓取点沿长轴偏移（米，只作用于长条目标；感知 yaw 给方向）")
+    ap.add_argument("--grasp-axis-extent", type=float, default=0.12)
     ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
                     help="感知：丢检且夹爪已压到目标上方时，位置取 TCP（不按带速外推；默认开）")
     ap.add_argument("--hand-cam", action="store_true",
@@ -166,7 +169,9 @@ def main() -> None:
         elif args.perception == "fused":
             from fruitsort.perception.adapter import FusedSource
             src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq,
-                              use_hand=args.hand_cam, near_hold=args.near_hold)
+                              use_hand=args.hand_cam, near_hold=args.near_hold,
+                              grasp_axis_offset=args.grasp_axis_offset,
+                              grasp_axis_extent=args.grasp_axis_extent)
         u = env.unwrapped
         kind = args.instruction
         # 按队列状态切换的双策略（单发场景 queue≈0.25 → 单件模式）

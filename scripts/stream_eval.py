@@ -362,6 +362,9 @@ def main() -> None:
     ap.add_argument("--decline-yaw", type=float, default=0.64,
                     help="长条目标：|sin(长轴)| 超过该值就不接管（长轴贴住闭合方向夹不住；0=关）")
     ap.add_argument("--long-extent", type=float, default=0.11)
+    ap.add_argument("--grasp-axis-offset", type=float, default=0.0,
+                    help="抓取点沿长轴偏移（米，只作用于长条目标；感知 yaw 给方向）")
+    ap.add_argument("--grasp-axis-extent", type=float, default=0.12)
     ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
                     help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效；默认开）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
@@ -399,11 +402,15 @@ def main() -> None:
     if args.perception == "fused":
         from fruitsort.perception.adapter import FusedSource
         src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq,
-                          near_hold=args.near_hold)
+                          near_hold=args.near_hold,
+                          grasp_axis_offset=args.grasp_axis_offset,
+                          grasp_axis_extent=args.grasp_axis_extent)
     elif args.perception == "rgbd":
         from fruitsort.perception.adapter import RGBDSource
         src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq,
-                         near_hold=args.near_hold)
+                         near_hold=args.near_hold,
+                         grasp_axis_offset=args.grasp_axis_offset,
+                         grasp_axis_extent=args.grasp_axis_extent)
     elif args.perception == "vision":
         from fruitsort.perception.adapter import VisionSource
         src = VisionSource(env.unwrapped, dt=1.0 / args.control_freq)
