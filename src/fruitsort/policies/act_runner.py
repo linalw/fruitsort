@@ -297,9 +297,14 @@ class ActPureRunner:
                 grasping = grabbing
             fz = float(actor.pose.p[0, 2])
             if grasping and self.grasp_verify:
+                # "碰到上表面"不算抓住：要求指面到达果身高度（|dz|<3 cm）或已被抬起。
+                # 注意：感知模式下 object 的位姿可能已被"跟随夹爪"平滑，确认要用 raw_p，
+                # 否则判据会自证（snap 之后永远满足）。
+                raw = getattr(actor, "raw_p", None)
+                fz_chk = float(raw[2]) if raw is not None else fz
                 belt_z = float(getattr(u, "belt_top_z", 0.45))
-                lifted = fz > belt_z + 0.06
-                at_pad = abs(float(tcp[2]) - fz) < 0.045
+                lifted = fz_chk > belt_z + 0.05
+                at_pad = abs(float(tcp[2]) - fz_chk) < 0.030
                 if not (lifted or at_pad):
                     grasping = False
             if grasping:

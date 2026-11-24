@@ -23,11 +23,15 @@ KINDS = ("apple", "strawberry", "banana", "pear")
 
 
 class _Stub:
-    """最小物体接口：pose.p / linear_velocity（形状 (1,3)）。"""
+    """最小物体接口：pose.p / linear_velocity（形状 (1,3)）。
 
-    def __init__(self, p, v):
+    `raw_p` 是**未做"跟随夹爪"平滑**的估计，用于抓取确认（避免自证）。
+    """
+
+    def __init__(self, p, v, raw_p=None):
         self.pose = SimpleNamespace(p=torch.tensor([p], dtype=torch.float32))
         self.linear_velocity = torch.tensor([v], dtype=torch.float32)
+        self.raw_p = np.asarray(raw_p if raw_p is not None else p, dtype=np.float64)
 
 
 class VisionSource:
@@ -79,11 +83,12 @@ class VisionSource:
                     v = np.array([belt, 0.0, 0.0])
             # 已确认夹住（由指端接触力判定）：位置跟着 TCP
             # （头顶相机此时多半被手臂挡住，不能靠检测）
+            raw = p.copy()
             if held_kind == k and tcp is not None:
                 p = np.array([tcp[0], tcp[1], tcp[2] - 0.02], dtype=np.float64)
                 v = np.zeros(3, dtype=np.float64)
             self.last[k] = (p, v)
-            out[k] = _Stub(p, v)
+            out[k] = _Stub(p, v, raw_p=raw)
         return out
 
 
@@ -137,11 +142,12 @@ class RGBDSource(VisionSource):
                               self.plane_z + self.specs[k].half_height], dtype=np.float64)
                 v = np.array([belt, 0.0, 0.0])
                 self.miss[k] = 99
+            raw = p.copy()
             if held_kind == k and tcp is not None:
                 p = np.array([tcp[0], tcp[1], tcp[2] - 0.02], dtype=np.float64)
                 v = np.zeros(3, dtype=np.float64)
             self.last[k] = (p, v)
-            out[k] = _Stub(p, v)
+            out[k] = _Stub(p, v, raw_p=raw)
         return out
 
 

@@ -52,7 +52,7 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, use_geom: bool = False, view_clip_x: float = -9.0, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, use_geom: bool = False, view_clip_x: float = -9.0, obj_noise: float = 0.0, vel_noise: float = 0.0, drop_prob: float = 0.0, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
                  aux_dirs=(), split_tactile: bool = False, force_label: bool = False):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
@@ -63,6 +63,11 @@ class ImageDemoDataset(Dataset):
         # （与 perception/adapter.py 的未见处理完全一致）——否则真机看不到远处水果，
         # 观测会与训练不一致（实测导致策略不去拦截）。
         self.view_clip_x = float(view_clip_x)
+        # 感知噪声增强：位置/速度加高斯噪声 + 偶发丢检（沿用上一帧位置），
+        # 让策略习惯"1–3 cm 定位误差 / 偶尔看不到目标"的真机感知条件。
+        self.obj_noise = float(obj_noise)
+        self.vel_noise = float(vel_noise)
+        self.drop_prob = float(drop_prob)
         self.delta_clip = delta_clip
         self.descend_boost = max(1, int(descend_boost))
         self.carry_boost = max(1, int(carry_boost))
@@ -176,6 +181,24 @@ class ImageDemoDataset(Dataset):
         _q = (((np.abs(_qx) < 0.6) & (_qz > 0.40) & (_qz < 0.60)).sum(1, keepdims=True)
               / 4.0).astype(np.float32)
         states = np.concatenate([states, _q], axis=1)
+        if (self.obj_noise > 0 or self.vel_noise > 0 or self.drop_prob > 0):
+            Tn = states.shape[0]
+            for _k in range(4):
+                _o = 17 + 8 * _k
+                if self.obj_noise > 0:
+                    states[:, _o:_o + 2] += np.random.normal(0, self.obj_noise,
+                                                             (Tn, 2)).astype(np.float32)
+                    states[:, _o + 2] += np.random.normal(0, self.obj_noise * 0.5,
+                                                          Tn).astype(np.float32)
+                if self.vel_noise > 0:
+                    states[:, _o + 3:_o + 5] += np.random.normal(0, self.vel_noise,
+                                                                 (Tn, 2)).astype(np.float32)
+                if self.drop_prob > 0:
+                    d = np.random.rand(Tn) < self.drop_prob
+                    if bool(d.any()):
+                        src = np.concatenate([states[:1, _o:_o + 6],
+                                              states[:-1, _o:_o + 6]], axis=0)
+                        states[d, _o:_o + 6] = src[d]
         if self.view_clip_x > -8.0:
             _belt = states[:, 16].copy()
             for _k in range(4):

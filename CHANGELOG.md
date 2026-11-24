@@ -15,6 +15,24 @@
 
 ---
 
+## [1.58.0] - 2026-11-28
+
+### Added — 感知噪声增强（负结果）
+- `train_act --obj-noise/--vel-noise/--drop-prob`（+ `ImageDemoDataset` 对应字段）。
+- `act-geom-n`（pos 1.5 cm / vel 0.03 / 丢检 8%，val 0.1279）：
+  fused 单发 apple **6/8**（对照 `act-geom-v` 7/8），banana/pear 仍 0 → **增强无收益**。
+
+### Fixed — 抓取确认在感知模式下"自证"
+- 感知替身新增 `raw_p`（未随夹爪平滑的估计）；`--grasp-verify` 改用 `raw_p` 判定
+  "指面是否到达果身高度"，否则 snap 之后判据永远满足。
+- 效果（fused，6 局）：apple 3/6（旧）→ **5/6 = 83%（新）**。
+
+### Diagnosed — 香蕉/梨的失败循环（trace）
+接触上表面 → 误判 phase=2 → verify 否掉 → 张开 → 再下探 → 循环，水果走掉。
+平口夹爪从正上方无法包住长条果身：属抓取几何问题，与感知/真值无关。
+
+---
+
 ## [1.57.0] - 2026-11-28
 
 ### Added — 侧视相机（`side`）补俯视盲区

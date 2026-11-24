@@ -105,6 +105,8 @@ def main() -> None:
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--carry-max-step", type=float, default=0.0,
                     help="搬运段专用步长上限（0=与 max-step 相同）；抑制在料框处过冲")
+    ap.add_argument("--grasp-verify", action="store_true",
+                    help="接触但指面未到果身高度/未抬起时不算抓住（避免'带空气搬运'）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
                     help="oracle=仿真真值（默认）；vision=只用 overhead RGB 感知")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -157,6 +159,7 @@ def main() -> None:
             width_delta=args.width_delta, width_g=args.width_g,
             close_ramp=args.close_ramp, stall_guard=args.stall_guard,
             yaw_align=args.yaw_align, yaw_align_off=args.yaw_align_off,
+            grasp_verify=args.grasp_verify,
             grasp_z_bias=({args.instruction: args.z_bias} if args.z_bias else {}))
         zone_entry = None
         info, t = {}, 0
