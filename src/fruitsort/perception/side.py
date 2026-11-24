@@ -80,10 +80,16 @@ class SideCamera:
             kind = self._classify(fam, extent)
             if kind is None:
                 continue
+            # 长轴朝向：3D 点云主轴投影到 xy（斜视只看到上表面，但长轴方向仍可靠）
+            c0 = pts.mean(axis=0)
+            d0 = pts - c0
+            wv, vec = np.linalg.eigh(d0.T @ d0 / max(len(d0), 1))
+            e1 = vec[:, int(np.argmax(wv))]
+            yaw = float(np.arctan2(e1[1], e1[0]))
             pos = np.median(pts, axis=0)
             z_c = max(self.belt_z + self.half[kind] * 0.6, float(pos[2]) - self.half[kind] * 0.4)
             out.append(dict(kind=kind, pos=np.array([pos[0], pos[1], z_c]),
-                            extent=extent, area=area, hue=hue))
+                            extent=extent, area=area, hue=hue, yaw=yaw))
         return out
 
     def cam_name_rgb(self) -> str:

@@ -672,16 +672,27 @@ class ActPureRunner:
                 if float(tcp[0] - fpos[0]) < -0.08 and self.phase_state == 1:
                     self.phase_state, self.same, self.phase_cand = 0, 0, 0
 
+        # 诊断用（不影响控制）：本步模型输出/目标点/状态
+        self.last_dbg = dict(p4=np.array(p4, dtype=np.float64), tgt=np.array(tgt, dtype=np.float64),
+                             tcp=np.array(tcp, dtype=np.float64), phase=int(self.phase_state),
+                             grasp=bool(grasping), grip=float(grip),
+                             logits=(None if logits is None else logits[0].detach().cpu().numpy().copy()),
+                             sb=np.array(sb, dtype=np.float64))
         self.prev_grip = grip
         yaw = float(self.yaw_map.get(kind, 0.0))
         if self.yaw_align and actor is not None and not grasping:
             # 每次"下探尝试"只算一次：连续迭代会因为测量滞后而振荡（实测 yaw 在 ±70° 抖）
             if self._yaw_target is None:
                 try:
-                    q = actor.pose.q[0].cpu().numpy()
-                    w, xq, yq, zq = float(q[0]), float(q[1]), float(q[2]), float(q[3])
-                    phi = float(np.arctan2(2.0 * (w * zq + xq * yq),
-                                           1.0 - 2.0 * (yq * yq + zq * zq)))
+                    # 优先用感知给出的长轴朝向（`_Stub.yaw`）；没有就退回真值四元数
+                    yy = getattr(actor, "yaw", None)
+                    if yy is not None:
+                        phi = float(yy)
+                    else:
+                        q = actor.pose.q[0].cpu().numpy()
+                        w, xq, yq, zq = float(q[0]), float(q[1]), float(q[2]), float(q[3])
+                        phi = float(np.arctan2(2.0 * (w * zq + xq * yq),
+                                               1.0 - 2.0 * (yq * yq + zq * zq)))
                     pL = u.agent.robot.links_map["panda_leftfinger"].pose.p[0].cpu().numpy()
                     pR = u.agent.robot.links_map["panda_rightfinger"].pose.p[0].cpu().numpy()
                     d = pL - pR

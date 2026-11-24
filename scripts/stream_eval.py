@@ -162,6 +162,12 @@ class StreamController:
             p = it["actor"].pose.p[0].cpu().numpy()
             if np.linalg.norm(p - tcp) < 0.05:   # 就在指尖上（可能正抓着）
                 continue
+            if self.objs is not None:
+                # 感知模式下不要追"场外幽灵"：该类当前没有检测（替身停在 clip_x）时，
+                # 说明还看不见它，接管只会让手臂朝 -1.1 m 走（不可达 → 冻结）
+                est = self.objs.get(it["kind"])
+                if est is None or float(est.pose.p[0, 0]) <= -1.05:
+                    continue
             if self.engage_x <= p[0] <= -0.05:   # 已进入可达窗口：优先最靠前的一件
                 urg.append((p[0], it))
             elif -0.05 < p[0] <= 0.15:           # 已经比较靠后：兜底
@@ -179,6 +185,8 @@ class StreamController:
         if self.target is not None and not any(
                 self.target is s["item"] for s in self.u._slots[self.target["kind"]] if s["live"]):
             self.target = None
+            # 目标结束（送达/掉落/漏过）：清掉执行器状态，否则 phase 会停在"搬运"
+            self.runner.reset()
         if self.target is None:
             self.target = self._pick_target()
             if self.target is not None:
@@ -194,6 +202,9 @@ class StreamController:
                     self.runner = self.runners[self.target["kind"]]
                 self.runner.kind = self.target["kind"]
                 self.runner.reset()
+                # 切模型后必须重新注入感知替身（否则新 runner 这一步读到仿真真值）
+                if self.objs is not None:
+                    self.runner.set_actors(self.objs)
                 self.switches += 1
                 if self.objs is None:
                     self.u.fruit_actors[self.target["kind"]] = self.target["actor"]

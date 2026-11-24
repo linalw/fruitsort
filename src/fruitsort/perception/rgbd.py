@@ -40,6 +40,7 @@ class Instance:
     area: int = 0
     hue: float = 0.0
     extent: float = 0.0      # 世界长度（m），用于区分香蕉/梨
+    yaw: float = 0.0         # 主轴朝向（rad，世界系，mod π）
     hits: int = 1
     last_t: int = 0
     lost: int = 0
@@ -102,10 +103,33 @@ class RGBDPerception:
             xy = self.homography.pixel_to_world(uv)      # 先在带面(z=0.45)上反投影
             if not (-1.35 <= xy[0] <= 0.60 and abs(xy[1]) <= 0.22):
                 continue                               # 视野外/料框
-            w = int(st[i, cv2.CC_STAT_WIDTH]); h = int(st[i, cv2.CC_STAT_HEIGHT])
-            p0 = self.homography.pixel_to_world(uv)
-            p1 = self.homography.pixel_to_world(uv + np.array([w, h]) / 2.0)
-            extent = float(np.linalg.norm(p1 - p0))
+            # ---- 用"有向包围盒中心"代替像素质心 ----
+            # 弯曲的香蕉/梨的像素质心被弯月面积拉向凹侧（实测 y 偏 3 cm），
+            # 而物体的真实中心是（有向）包围盒中心。主轴同时给出长轴朝向，
+            # 供夹爪对准（平行夹爪应垂直于长轴闭合）。
+            # 注意：单应在图像边缘会外推出几十厘米，必须先在**带面范围**内筛掉离群像
+            # 素（实测料框红线一条 1.4 m 的"假苹果"），再用分位数而不是 min/max。
+            ys_, xs_ = np.nonzero(m)
+            pw = self._pixels_to_world(np.stack([xs_, ys_], axis=1))
+            pw = pw[(pw[:, 0] > -1.35) & (pw[:, 0] < 0.60) & (np.abs(pw[:, 1]) < 0.25)]
+            if len(pw) < max(12, self.min_area // 3):
+                continue
+            c = pw.mean(axis=0)
+            d = pw - c
+            wv, vec = np.linalg.eigh((d.T @ d) / len(d))
+            e1 = vec[:, int(np.argmax(wv))]
+            e2 = np.array([-e1[1], e1[0]])
+            u_, v_ = d @ e1, d @ e2
+            lo, hi = np.percentile(u_, [1, 99])
+            vlo, vhi = np.percentile(v_, [1, 99])
+            extent = float(hi - lo)
+            width = float(vhi - vlo)
+            if extent > 0.30 or width > 0.16 or width < 0.012:
+                continue                               # 细线（料框/带边）或过大 → 不是水果
+            if area / max(extent * width, 1e-9) < 4e3:  # 像素² / m²：太稀疏的轮廓
+                continue
+            xy = c + e1 * 0.5 * (lo + hi) + e2 * 0.5 * (vlo + vhi)
+            yaw = float(np.arctan2(e1[1], e1[0]))
             kind = self._classify(fam, extent, area)
             if kind is None:
                 continue
@@ -114,8 +138,24 @@ class RGBDPerception:
             # 注：x,y 用带面标定的单应；物体比带面高 3–5 cm 时的视差 <4 mm，
             # 实测加视差修正反而略差（z 估计本身有 3–5 mm 偏差），故不做二次修正。
             out.append(Instance(kind=kind, pos=np.array([xy[0], xy[1], z_c]),
-                                vel=np.zeros(3), area=area, hue=hue, extent=extent))
+                                vel=np.zeros(3), area=area, hue=hue, extent=extent,
+                                yaw=yaw))
         return out
+
+    def _pixels_to_world(self, uv: np.ndarray) -> np.ndarray:
+        """(N,2) 像素 → (N,2) 带面世界坐标（向量化单应）。
+
+        `uv` 必须是 (N,2)（每行 (u,v)）；传 (2,N) 会按 C 序错位，务必先转置。
+        """
+        uv = np.asarray(uv, dtype=np.float64)
+        if uv.ndim == 1:
+            uv = uv.reshape(1, 2)
+        if uv.shape[-1] != 2:
+            uv = uv.T
+        H_inv = self.homography.H_inv
+        h = np.stack([uv[:, 0], uv[:, 1], np.ones(len(uv))], axis=0)
+        p = H_inv @ h
+        return (p[:2] / p[2]).T
 
     def _classify(self, fam: str, extent: float, area: int) -> str | None:
         """颜色族 + 世界尺寸分类（同类多件时也一致）。"""
@@ -162,6 +202,13 @@ class RGBDPerception:
             tr.vel = self.vel_alpha * v + (1 - self.vel_alpha) * tr.vel
             tr.pos = det.pos
             tr.kind, tr.area, tr.hue, tr.extent = det.kind, det.area, det.hue, det.extent
+            # 长轴朝向按 π 周期平滑（相差 π 等价，先折到同一侧再混）
+            if np.isfinite(det.yaw) and np.isfinite(tr.yaw):
+                dy = float(np.arctan2(np.sin(2 * (det.yaw - tr.yaw)),
+                                      np.cos(2 * (det.yaw - tr.yaw))))
+                tr.yaw = float(tr.yaw + 0.4 * dy / 2.0)
+            elif np.isfinite(det.yaw):
+                tr.yaw = det.yaw
             tr.hits += 1; tr.last_t = self.t; tr.lost = 0
             out.append(tr); used_det.add(j)
         for j, det in enumerate(dets):
@@ -191,7 +238,8 @@ class RGBDPerception:
                     dets.append(Instance(kind=d["kind"], pos=np.asarray(d["pos"], float),
                                          vel=np.zeros(3), area=int(d.get("area", 0)),
                                          hue=float(d.get("hue", 0.0)),
-                                         extent=float(d.get("extent", 0.0))))
+                                         extent=float(d.get("extent", 0.0)),
+                                         yaw=float(d.get("yaw", float("nan")))))
             except Exception:  # noqa: BLE001
                 pass
         inst = self._associate(dets)
