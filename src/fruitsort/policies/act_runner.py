@@ -57,6 +57,8 @@ class ActPureRunner:
                  close_z_gate: float = 0.0, intercept: float = 0.0,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
+                 lead_long: float = 0.0, lead_long_extent: float = 0.11,
+                 lead_long_taper: float = 0.15, grasp_proxy: str = "always",
                  close_win_xy: float = 0.03, close_win_z: float = 0.06,
                  grasp_verify: bool = False, yaw_align: bool = False,
                  yaw_align_off: float = 0.0,
@@ -202,6 +204,17 @@ class ActPureRunner:
         self.close_commit = float(close_commit)
         self.close_commit_xy = float(close_commit_xy)
         self.close_commit_map = dict(close_commit_map or {})
+        # ---- 长条目标的"拦截点前移"（按带速，单位：秒）----
+        # 追一个 0.08 m/s 的目标时，反馈项本身有滞后；长条目标（香蕉 0.17 m）
+        # 又被尺寸闸排除在 near-hold 之外，横向/纵向偏移都没人补 → 每步都差一点。
+        # 这里按感知到的世界长度设闸，只对长条目标把瞄准点沿带速前移 lead_long 秒。
+        # 抓取近似判据：auto=只在查不到真实接触时用 / always=总是用 / never=从不用
+        self.grasp_proxy = str(grasp_proxy)
+        self.lead_long = float(lead_long)
+        self.lead_long_extent = float(lead_long_extent)
+        # 前移只在"还离得远"时生效，靠近后线性衰减到 0：
+        # 恒定前移会把长条目标的抓取点推到最后 2 cm（实测单发 4/6 → 0/6）
+        self.lead_long_taper = float(lead_long_taper)
         self.close_commit_steps = int(close_commit_steps)
         self._commit_left = 0
         # ---- 拦截式下探（intercept）----
@@ -304,7 +317,12 @@ class ActPureRunner:
             if _real is not None and not hasattr(_real, "_bodies"):
                 _real = None            # 该槽位被替身占用（感知模式）：跳过接触查询
             grabbing = bool(u.agent.is_grasping(_real)[0]) if _real is not None else False
-            if self.grasp_retry:
+            # 近似判据（"离得近 + 上一步闭爪"）只在**查不到真实接触**时才用：
+            # 感知模式下估计误差 3–6 cm 时，它会把"在果实上方 10 cm 闭爪"误判成抓住，
+            # 之后一路搬运空气、果实从指间滑走（连续流 banana 0/4 的直接原因）。
+            use_proxy = {"always": True, "never": False}.get(
+                self.grasp_proxy, not (self.actors is not None and _real is not None))
+            if self.grasp_retry and use_proxy:
                 grasping = grabbing or (fd < 0.045 and self.prev_grip < 0)
             else:
                 grasping = grabbing
@@ -412,6 +430,14 @@ class ActPureRunner:
             tgt = tgt + self.retry_bias
         if self.lead and kind in self._objs:
             tgt[0] += self.lead * float(u.belt_speed[0])
+        if (self.lead_long > 0 and actor is not None and self.phase_state != 2
+                and float(getattr(actor, "extent", 0.0) or 0.0) > self.lead_long_extent):
+            # 长条目标：瞄准点沿带速前移（补偿反馈滞后），靠近后衰减到 0 保住抓取点
+            fp = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            dist = float(np.hypot(tcp[0] - fp[0], tcp[1] - fp[1]))
+            w = 1.0 if self.lead_long_taper <= 0 else min(1.0, dist / self.lead_long_taper)
+            tgt[0] += w * self.lead_long * float(u.belt_speed[0])
+            self.stats["lead_long"] = self.stats.get("lead_long", 0) + 1
         if self.z_gate and kind in self._objs:
             fz = self._objs[kind].pose.p[0, 2].item()
             tgt[2] = float(np.clip(tgt[2], fz - 0.02, 0.90))

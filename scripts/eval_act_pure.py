@@ -111,6 +111,11 @@ def main() -> None:
     ap.add_argument("--descend-commit", type=int, default=0, help="下探承诺步数（相位迟滞）")
     ap.add_argument("--hold-latch", action="store_true", help="闭爪期间锁存目标（停住等水果）")
     ap.add_argument("--lead", type=float, default=0.0, help="前馈超前（秒）：目标 x += v*lead")
+    ap.add_argument("--lead-long", type=float, default=0.0,
+                    help="长条目标的拦截点前移（秒）。实测有害：长条会被推到尖端去抓（默认关）")
+    ap.add_argument("--lead-long-extent", type=float, default=0.11)
+    ap.add_argument("--lead-long-taper", type=float, default=0.15,
+                    help="前移在距果心该距离内线性衰减到 0（0=不衰减）")
     ap.add_argument("--z-gate", action="store_true")
     ap.add_argument("--chunk-exec", type=int, default=1, help="每 s 步重规划一次（增量模式下有意义）")
     ap.add_argument("--no-phase-fb", action="store_true", help="相位输入恒为 0（消融）")
@@ -125,6 +130,8 @@ def main() -> None:
     ap.add_argument("--close-commit-map", default="",
                     help="按类闭爪承诺阈值，如 'apple=0.025,banana=0.02'（覆盖 --close-commit）")
     ap.add_argument("--close-commit-steps", type=int, default=8)
+    ap.add_argument("--grasp-proxy", default="auto", choices=["auto", "always", "never"],
+                    help="抓取近似判据（离得近+闭爪）：auto=仅当查不到真实接触时用")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="接触但指面未到果身高度/未抬起时不算抓住（避免'带空气搬运'）")
     ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
@@ -172,6 +179,8 @@ def main() -> None:
             grip_ema=args.grip_ema, carry_latch=args.carry_latch,
             descend_commit=args.descend_commit, max_step=args.max_step, lead=args.lead,
             z_gate=args.z_gate, phase_fb=not args.no_phase_fb,
+            lead_long=args.lead_long, lead_long_extent=args.lead_long_extent,
+            lead_long_taper=args.lead_long_taper,
             hold_latch=args.hold_latch, chunk_exec=args.chunk_exec,
             carry_max_step=args.carry_max_step, slip_guard=args.slip_guard,
             slip_thr=args.slip_thr, regrasp=args.regrasp,
@@ -184,7 +193,7 @@ def main() -> None:
             width_delta=args.width_delta, width_g=args.width_g,
             close_ramp=args.close_ramp, stall_guard=args.stall_guard,
             yaw_align=args.yaw_align, yaw_align_off=args.yaw_align_off,
-            grasp_verify=args.grasp_verify, close_z_gate=args.close_z_gate,
+            grasp_verify=args.grasp_verify, grasp_proxy=args.grasp_proxy, close_z_gate=args.close_z_gate,
             close_commit=args.close_commit, close_commit_xy=args.close_commit_xy,
             close_commit_map=parse_map(args.close_commit_map),
             close_commit_steps=args.close_commit_steps,

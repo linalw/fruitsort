@@ -28,7 +28,7 @@ class _Stub:
     `raw_p` 是**未做"跟随夹爪"平滑**的估计，用于抓取确认（避免自证）。
     """
 
-    def __init__(self, p, v, raw_p=None, yaw=None):
+    def __init__(self, p, v, raw_p=None, yaw=None, extent=None):
         # np.array([...]) 再 as_tensor：避免 "list of ndarrays" 的慢路径（每步 4 次 × 数千步）
         self.pose = SimpleNamespace(p=torch.as_tensor(
             np.array([p], dtype=np.float32)))
@@ -36,6 +36,8 @@ class _Stub:
         self.raw_p = np.array(raw_p if raw_p is not None else p, dtype=np.float64)
         # 长轴朝向（感知提供；None 表示未知 → 执行层可退回真值四元数或不做对准）
         self.yaw = None if yaw is None else float(yaw)
+        # 世界长度（长条目标要做"拦截点前移"；未知时 0.0）
+        self.extent = 0.0 if extent is None else float(extent)
 
 
 class VisionSource:
@@ -62,6 +64,10 @@ class VisionSource:
                      for k in self.kinds}
         # 单应视觉没有朝向估计（只能退回四元数/不估计）
         self.yaw = {k: None for k in self.kinds}
+
+    def _extent_of(self, k: str) -> float:
+        """单应视觉不估世界长度（→ 不做长条目标的前移）。"""
+        return 0.0
 
     def update(self, obs, held_kind: str | None = None) -> dict:
         rgb = obs["sensor_data"]["overhead"]["rgb"][0].cpu().numpy()
@@ -104,7 +110,7 @@ class VisionSource:
                 v = np.zeros(3, dtype=np.float64)
             self.last[k] = (p, v)
             self.yaw[k] = yy
-            out[k] = _Stub(p, v, raw_p=raw, yaw=yy)
+            out[k] = _Stub(p, v, raw_p=raw, yaw=yy, extent=self._extent_of(k))
         return out
 
 
@@ -210,7 +216,7 @@ class RGBDSource(VisionSource):
                 v = np.zeros(3, dtype=np.float64)
             self.last[k] = (p, v)
             self.yaw[k] = yy
-            out[k] = _Stub(p, v, raw_p=raw, yaw=yy)
+            out[k] = _Stub(p, v, raw_p=raw, yaw=yy, extent=self._extent_of(k))
         return out
 
 

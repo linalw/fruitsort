@@ -52,7 +52,8 @@ class StreamController:
                  only_kind: str | None = None, scripted: bool = False,
                  in_dist: bool = False, noise: float = 0.0, runners: dict | None = None,
                  single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45,
-                 scripted_kinds=(), scripted_yaw: float = 0.0, objs: dict | None = None):
+                 scripted_kinds=(), scripted_yaw: float = 0.0, objs: dict | None = None,
+                 decline_yaw: float = 0.0, long_extent: float = 0.11):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -77,6 +78,11 @@ class StreamController:
         self.scripted_yaw = float(scripted_yaw)
         # 感知模式：目标选择/队列标志都读这个字典（而不是仿真真值）
         self.objs = objs
+        # 长条目标（世界长度 > long_extent）只在"长轴与夹爪闭合方向够垂直"时接管：
+        # 平口夹爪沿世界 y 闭合，香蕉长轴若也接近 y，只能夹住两端 → 必失败。
+        # 现场语义：不接这些件，让给旁边朝向更合适的臂（记账里算 declined）。
+        self.decline_yaw = float(decline_yaw)
+        self.long_extent = float(long_extent)
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -168,6 +174,14 @@ class StreamController:
                 est = self.objs.get(it["kind"])
                 if est is None or float(est.pose.p[0, 0]) <= -1.05:
                     continue
+                if self.decline_yaw > 0:
+                    ext = float(getattr(est, "extent", 0.0) or 0.0)
+                    yy = getattr(est, "yaw", None)
+                    if ext > self.long_extent and yy is not None:
+                        # 夹爪闭合方向≈世界 y：|sin(yaw)| 大 → 长轴贴着闭合方向 → 夹不住
+                        if abs(float(np.sin(yy))) > self.decline_yaw:
+                            self.declined_yaw = getattr(self, "declined_yaw", 0) + 1
+                            continue
             if self.engage_x <= p[0] <= -0.05:   # 已进入可达窗口：优先最靠前的一件
                 urg.append((p[0], it))
             elif -0.05 < p[0] <= 0.15:           # 已经比较靠后：兜底
@@ -282,7 +296,7 @@ def main() -> None:
     ap.add_argument("--scale-min", type=float, default=0.85)
     ap.add_argument("--scale-max", type=float, default=1.15)
     ap.add_argument("--control-freq", type=int, default=30,
-                    help="与部署评测一致（act-wide-4c 的 87.5%/96.9% 都是 30 Hz）")
+                    help="与部署评测一致（act-wide-4c 的 87.5%%/96.9%% 都是 30 Hz）")
     ap.add_argument("--max-step-map", default="",
                     help="按类接近步长，如 'apple=0.12,strawberry=0.12,pear=0.10,banana=0.06'")
     ap.add_argument("--carry-step-map", default="",
@@ -309,8 +323,15 @@ def main() -> None:
     ap.add_argument("--close-commit-xy", type=float, default=0.030)
     ap.add_argument("--close-commit-map", default="",
                     help="按类闭爪承诺阈值，如 'apple=0.025,strawberry=0.025'")
+    ap.add_argument("--grasp-proxy", default="auto", choices=["auto", "always", "never"],
+                    help="抓取近似判据（离得近+闭爪）：auto=仅当查不到真实接触时用")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="只碰到水果顶端不算抓住（要求指面到达果身高度或已被抬起）")
+    ap.add_argument("--lead-long", type=float, default=0.0,
+                    help="长条目标的拦截点前移（秒）。实测有害：长条会被推到尖端去抓（默认关）")
+    ap.add_argument("--lead-long-extent", type=float, default=0.11)
+    ap.add_argument("--lead-long-taper", type=float, default=0.15,
+                    help="前移在距果心该距离内线性衰减到 0（0=不衰减）")
     ap.add_argument("--intercept", type=float, default=0.0,
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
@@ -336,6 +357,9 @@ def main() -> None:
     ap.add_argument("--scripted-kinds", default="",
                     help="混合系统：这些类（逗号分隔）交给规则专家，其余由模型驱动，"
                          "如 'banana,pear'")
+    ap.add_argument("--decline-yaw", type=float, default=0.64,
+                    help="长条目标：|sin(长轴)| 超过该值就不接管（长轴贴住闭合方向夹不住；0=关）")
+    ap.add_argument("--long-extent", type=float, default=0.11)
     ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
                     help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效；默认开）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
@@ -392,10 +416,14 @@ def main() -> None:
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
                              close_z_gate=args.close_z_gate,
+                             lead_long=args.lead_long,
+                             lead_long_extent=args.lead_long_extent,
+                             lead_long_taper=args.lead_long_taper,
                              close_commit=args.close_commit,
                              close_commit_xy=args.close_commit_xy,
                              close_commit_map=parse_map(args.close_commit_map),
                              grasp_verify=args.grasp_verify,
+                             grasp_proxy=args.grasp_proxy,
                              yaw_align=args.yaw_align,
                              yaw_align_off=args.yaw_align_off,
                              intercept=args.intercept,
@@ -424,7 +452,8 @@ def main() -> None:
                             in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
                             single_runner=single_runner, queue_thr=args.queue_thr,
                             engage_x=args.engage_x,
-                            scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()])
+                            scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
+                            decline_yaw=args.decline_yaw, long_extent=args.long_extent)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -446,7 +475,8 @@ def main() -> None:
                                 single_runner=single_runner, queue_thr=args.queue_thr,
                                 engage_x=args.engage_x,
                                 scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
-                                scripted_yaw=ep_yaw)
+                                scripted_yaw=ep_yaw,
+                                decline_yaw=args.decline_yaw, long_extent=args.long_extent)
         writer = None
         if args.video:
             _v = Path(args.video)
@@ -543,6 +573,11 @@ def main() -> None:
                   if it.get("outcome") == "delivered" and it.get("t_end") and it.get("t_engage")]
         st["handle_s"] = float(np.mean(handle)) if handle else 0.0
         st["engaged"] = len(eng)
+        st["engaged_by_kind"] = {}
+        for k in KINDS:
+            e_k = [it for it in eng if it.get("kind") == k]
+            d_k = [it for it in e_k if it.get("outcome") == "delivered"]
+            st["engaged_by_kind"][k] = (len(e_k), len(d_k))
         st["engaged_delivered"] = len(eng_done)
         st["declined"] = len(declined)
         resolved = st["delivered"] + st["dropped"] + st["missed"]
@@ -567,6 +602,9 @@ def main() -> None:
         print("      每类: " + "  ".join(
             f"{k} {v['delivered']}/{v['spawned']}(drop {v['dropped']}) "
             for k, v in row["per_kind"].items()), flush=True)
+        ebk = st.get("engaged_by_kind", {})
+        print("      机会内每类: " + "  ".join(
+            f"{k} {ebk.get(k, (0, 0))[1]}/{ebk.get(k, (0, 0))[0]}" for k in KINDS), flush=True)
 
     n = len(runs)
     agg = {k: sum(r[k] for r in runs) for k in
