@@ -55,6 +55,7 @@ class ActPureRunner:
                  grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
                  close_z_gate: float = 0.0, intercept: float = 0.0,
+                 yaw_align_extent: float = 0.0,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
@@ -231,6 +232,8 @@ class ActPureRunner:
         # yaw_align_off 用来试两种假设（长轴沿本地 x / 沿本地 y，差 π/2）。
         self.yaw_align = bool(yaw_align)
         self.yaw_align_off = float(yaw_align_off)
+        # 只对"够长"的目标对准（圆形水果主轴没定义，感知 yaw 误差 24–28°）
+        self.yaw_align_extent = float(yaw_align_extent)
         self._yaw_cmd = 0.0
         self._yaw_target = None
         self._descend_target = None
@@ -736,9 +739,11 @@ class ActPureRunner:
                              sb=np.array(sb, dtype=np.float64))
         self.prev_grip = grip
         yaw = float(self.yaw_map.get(kind, 0.0))
-        if self.yaw_align and actor is not None and not grasping:
+        _ya_ext = float(getattr(actor, "extent", 0.0) or 0.0) if actor is not None else 0.0
+        if (self.yaw_align and actor is not None
+                and _ya_ext >= self.yaw_align_extent):
             # 每次"下探尝试"只算一次：连续迭代会因为测量滞后而振荡（实测 yaw 在 ±70° 抖）
-            if self._yaw_target is None:
+            if not grasping and self._yaw_target is None:
                 try:
                     # 优先用感知给出的长轴朝向（`_Stub.yaw`）；没有就退回真值四元数
                     yy = getattr(actor, "yaw", None)
@@ -754,10 +759,18 @@ class ActPureRunner:
                     d = pL - pR
                     psi = float(np.arctan2(d[1], d[0]))
                     want = phi + np.pi / 2.0 + self.yaw_align_off
-                    delta = float(np.arctan2(np.sin(psi - want), np.cos(psi - want)))
+                    # **轴向**角度（mod π）：ψ 和 want 都只定义到 π。
+                    # 用 mod 2π 的差值会算出 ±131°，被 ±1.2 rad 限幅后朝相反方向转
+                    # （v1.64 实测：yaw_cmd 一直顶在 -68.8°，ψ 反而从 92° 跑到 156°）。
+                    d = psi - want
+                    d = float(np.arctan2(np.sin(2.0 * d), np.cos(2.0 * d)) / 2.0)
+                    # 标定关系 ψ ≈ 92° − δ ⇒ Δδ = ψ − want（再减一次会来回振荡）
+                    delta = d
                     self._yaw_target = float(np.clip(self._yaw_cmd + delta, -1.2, 1.2))
                 except Exception:  # noqa: BLE001
                     self._yaw_target = 0.0
+            # 抓住之后**保持**这个腕部朝向：以前这里只在"未抓住"时叠加，
+            # 一进入搬运就瞬间转回 HOME → 把果子甩脱（v1.64 实测 4/6 抓起后全掉）
             self._yaw_cmd = self._yaw_target
             yaw += self._yaw_cmd
             self.stats["yaw_align_deg"] = float(np.degrees(self._yaw_cmd))

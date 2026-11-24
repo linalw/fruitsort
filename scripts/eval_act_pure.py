@@ -94,6 +94,8 @@ def main() -> None:
     ap.add_argument("--yaw-align", action="store_true",
                     help="用仿真真值 yaw 旋转手腕，使闭合方向垂直于水果长轴")
     ap.add_argument("--yaw-align-off", type=float, default=0.0)
+    ap.add_argument("--yaw-align-extent", type=float, default=0.0,
+                    help="只对世界长度 ≥ 该值的目标做腕部对准（0=全部；香蕉建议 0.12）")
     ap.add_argument("--stall-guard", type=float, default=0.0,
                     help="停滞守卫的最小接近步长（米，0=关闭）")
     ap.add_argument("--single-ckpt", default="",
@@ -193,6 +195,7 @@ def main() -> None:
             width_delta=args.width_delta, width_g=args.width_g,
             close_ramp=args.close_ramp, stall_guard=args.stall_guard,
             yaw_align=args.yaw_align, yaw_align_off=args.yaw_align_off,
+            yaw_align_extent=args.yaw_align_extent,
             grasp_verify=args.grasp_verify, grasp_proxy=args.grasp_proxy, close_z_gate=args.close_z_gate,
             close_commit=args.close_commit, close_commit_xy=args.close_commit_xy,
             close_commit_map=parse_map(args.close_commit_map),
