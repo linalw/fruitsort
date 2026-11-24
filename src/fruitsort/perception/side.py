@@ -84,12 +84,17 @@ class SideCamera:
             kind = self._classify(fam, extent)
             if kind is None:
                 continue
-            # 长轴朝向：3D 点云主轴投影到 xy（斜视只看到上表面，但长轴方向仍可靠）
+            # 长轴朝向 + 中心：3D 点云主轴（斜视只看到上表面，但长轴方向仍可靠）。
+            # 中心用"沿主轴的 5%–95% 分位中点"而不是点坐标中位数：弯曲物体（香蕉）
+            # 的表面点中位数会被弯月拉偏，和俯视那边是同一个坑。
             c0 = pts.mean(axis=0)
             d0 = pts - c0
             wv, vec = np.linalg.eigh(d0.T @ d0 / max(len(d0), 1))
             e1 = vec[:, int(np.argmax(wv))]
             yaw = float(np.arctan2(e1[1], e1[0]))
+            # 中心仍用表面点中位数。试过"沿主轴 5–95% 分位中点"（更接近包围盒中心，
+            # 远端平均误差 3.6→1.7 cm），但单发香蕉闭环反而 4/6→2/6：blob 在画面边缘
+            # 只露一半时中点会跳，早段接管就被带偏。故保留中位数（负结果）。
             pos = np.median(pts, axis=0)
             z_c = max(self.belt_z + self.half[kind] * 0.6,
                       float(pos[2]) - self.half[kind] * self.z_center_frac)
