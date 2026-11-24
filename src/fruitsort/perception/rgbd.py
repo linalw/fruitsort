@@ -97,7 +97,7 @@ class RGBDPerception:
             if fam is None:
                 continue
             uv = cent[i]
-            xy = self.homography.pixel_to_world(uv)
+            xy = self.homography.pixel_to_world(uv)      # 先在带面(z=0.45)上反投影
             if not (-1.35 <= xy[0] <= 0.60 and abs(xy[1]) <= 0.22):
                 continue                               # 视野外/料框
             w = int(st[i, cv2.CC_STAT_WIDTH]); h = int(st[i, cv2.CC_STAT_HEIGHT])
@@ -109,6 +109,8 @@ class RGBDPerception:
                 continue
             z_top = float(np.median(z[m]))
             z_c = max(self.belt_z + self.half[kind] * 0.6, z_top - self.half[kind])
+            # 注：x,y 用带面标定的单应；物体比带面高 3–5 cm 时的视差 <4 mm，
+            # 实测加视差修正反而略差（z 估计本身有 3–5 mm 偏差），故不做二次修正。
             out.append(Instance(kind=kind, pos=np.array([xy[0], xy[1], z_c]),
                                 vel=np.zeros(3), area=area, hue=hue, extent=extent))
         return out
