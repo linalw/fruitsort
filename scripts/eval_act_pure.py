@@ -25,6 +25,18 @@ from fruitsort.eval import format_summary, summarize
 from fruitsort.learning.bc import build_tactile
 from fruitsort.policies.act_runner import ActPureRunner
 
+
+def parse_map(spec: str) -> dict:
+    """'apple=0.025,banana=0.02' -> {'apple': 0.025, 'banana': 0.02}"""
+    out = {}
+    for kv in (spec or "").split(","):
+        kv = kv.strip()
+        if not kv or "=" not in kv:
+            continue
+        k, v = kv.split("=", 1)
+        out[k.strip()] = float(v)
+    return out
+
 ROOT = Path(__file__).resolve().parent.parent
 SIM_FREQ = {20: 100, 30: 120, 60: 240}
 
@@ -107,8 +119,16 @@ def main() -> None:
                     help="搬运段专用步长上限（0=与 max-step 相同）；抑制在料框处过冲")
     ap.add_argument("--close-z-gate", type=float, default=0.0,
                     help="闭爪高度门：离果心高于该值时禁止闭爪、继续下探（0=关闭）")
+    ap.add_argument("--close-commit", type=float, default=0.0,
+                    help="闭爪承诺：离果心 z 低于该值且水平对齐时强制闭爪并冻结水平目标（0=关闭）")
+    ap.add_argument("--close-commit-xy", type=float, default=0.030)
+    ap.add_argument("--close-commit-map", default="",
+                    help="按类闭爪承诺阈值，如 'apple=0.025,banana=0.02'（覆盖 --close-commit）")
+    ap.add_argument("--close-commit-steps", type=int, default=8)
     ap.add_argument("--grasp-verify", action="store_true",
                     help="接触但指面未到果身高度/未抬起时不算抓住（避免'带空气搬运'）")
+    ap.add_argument("--near-hold", action="store_true",
+                    help="感知：丢检且夹爪已压到目标上方时，位置取 TCP（不按带速外推）")
     ap.add_argument("--hand-cam", action="store_true",
                     help="fused 时再用腕部相机补最后 5 cm 的盲区（实验项，实测精度 1-3 cm）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
@@ -137,7 +157,7 @@ def main() -> None:
         elif args.perception == "fused":
             from fruitsort.perception.adapter import FusedSource
             src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq,
-                              use_hand=args.hand_cam)
+                              use_hand=args.hand_cam, near_hold=args.near_hold)
         u = env.unwrapped
         kind = args.instruction
         # 按队列状态切换的双策略（单发场景 queue≈0.25 → 单件模式）
@@ -165,6 +185,9 @@ def main() -> None:
             close_ramp=args.close_ramp, stall_guard=args.stall_guard,
             yaw_align=args.yaw_align, yaw_align_off=args.yaw_align_off,
             grasp_verify=args.grasp_verify, close_z_gate=args.close_z_gate,
+            close_commit=args.close_commit, close_commit_xy=args.close_commit_xy,
+            close_commit_map=parse_map(args.close_commit_map),
+            close_commit_steps=args.close_commit_steps,
             grasp_z_bias=({args.instruction: args.z_bias} if args.z_bias else {}))
         zone_entry = None
         info, t = {}, 0

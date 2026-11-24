@@ -115,7 +115,9 @@ class RGBDSource(VisionSource):
     """
 
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
-                 clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30):
+                 clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
+                 near_hold: bool = False, near_dist: float = 0.10,
+                 near_extent: float = 0.11, near_extent_min: float = 0.05):
         specs = load_specs()
         self.u = u
         self.kinds = tuple(kinds)
@@ -127,6 +129,14 @@ class RGBDSource(VisionSource):
         # 会去够一个不存在的东西，整件丢掉）
         self.hold_max = int(hold_max)
         self.hold_x_max = float(hold_x_max)
+        # 丢检且夹爪已压到目标上方时，位置直接取 TCP（果实此刻跟着爪子走，
+        # 再按带速外推会**系统性超前 ~2 cm** → 策略每步"再挪一点"，闭爪永远差一点）
+        self.near_hold = bool(near_hold)
+        self.near_dist = float(near_dist)
+        # 只对"够大且紧凑"的目标吸附：苹果 0.065 ✅ / 草莓 0.043 ✗（太小，会提前闭爪）/
+        # 梨 0.09（紧凑但另有滑脱问题）/ 香蕉 0.17 ✗（长条，果心可能离 TCP 几厘米）
+        self.near_extent = float(near_extent)
+        self.near_extent_min = float(near_extent_min)
         self.plane_z = float(getattr(u, "belt_top_z", 0.45))
         self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds)
         self.last = {k: (np.array([self.clip_x, 0.0,
@@ -135,6 +145,16 @@ class RGBDSource(VisionSource):
                      for k in self.kinds}
         self.miss = {k: 99 for k in self.kinds}
         self.yaw = {k: None for k in self.kinds}
+        # 每类最近 15 次检测到的世界长度：取**中位数**做"是否紧凑"的判据
+        # （单帧在边缘/被挡时会偏小或合并偏大，中位数最稳）
+        from collections import deque
+        self.extent_hist = {k: deque(maxlen=15) for k in self.kinds}
+
+    def _extent_of(self, k: str) -> float:
+        h = self.extent_hist.get(k)
+        if not h:
+            return 0.0
+        return float(np.median(np.fromiter(h, dtype=np.float64, count=len(h))))
 
     def update(self, obs, held_kind: str | None = None) -> dict:
         got = self.vs.update(obs)
@@ -156,6 +176,9 @@ class RGBDSource(VisionSource):
                 v = np.array(it.vel, dtype=np.float64)
                 v[2] = 0.0
                 self.miss[k] = 0
+                e_new = float(getattr(it, "extent", 0.0) or 0.0)
+                if e_new > 0:
+                    self.extent_hist[k].append(e_new)
                 yy = float(getattr(it, "yaw", float("nan")))
                 if not np.isfinite(yy):
                     yy = self.yaw[k]                    # 该视角没给朝向 → 沿用上次
@@ -175,6 +198,12 @@ class RGBDSource(VisionSource):
                 v = np.array([belt, 0.0, 0.0])
                 yy = None
                 self.miss[k] = 99
+            if (self.near_hold and self.miss[k] > 0 and held_kind is None
+                    and self.near_extent_min <= self._extent_of(k) <= self.near_extent
+                    and tcp is not None
+                    and float(np.hypot(p[0] - tcp[0], p[1] - tcp[1])) < self.near_dist):
+                p = np.array([tcp[0], tcp[1], max(float(p[2]), self.plane_z)], dtype=np.float64)
+                v = np.zeros(3, dtype=np.float64)
             raw = p.copy()
             if held_kind == k and tcp is not None:
                 p = np.array([tcp[0], tcp[1], tcp[2] - 0.02], dtype=np.float64)
@@ -190,7 +219,8 @@ class FusedSource(RGBDSource):
 
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
                  clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
-                 use_hand: bool = False):
+                 use_hand: bool = False, near_hold: bool = False, near_dist: float = 0.10,
+                 near_extent: float = 0.11, near_extent_min: float = 0.05):
         from .side import SideCamera
         specs = load_specs()
         self.u = u
@@ -200,6 +230,12 @@ class FusedSource(RGBDSource):
         self.dt = float(dt)
         self.hold_max = int(hold_max)
         self.hold_x_max = float(hold_x_max)
+        self.near_hold = bool(near_hold)
+        self.near_dist = float(near_dist)
+        # 只对"够大且紧凑"的目标吸附：苹果 0.065 ✅ / 草莓 0.043 ✗（太小，会提前闭爪）/
+        # 梨 0.09（紧凑但另有滑脱问题）/ 香蕉 0.17 ✗（长条，果心可能离 TCP 几厘米）
+        self.near_extent = float(near_extent)
+        self.near_extent_min = float(near_extent_min)
         self.plane_z = float(getattr(u, "belt_top_z", 0.45))
         # 腕部相机（hand.py）已评估：最终下探段确实能看见被手臂挡住的目标，
         # 但精度只有 1–3 cm（俯视 0.2 cm），混进来反而让单发 apple 4/6 → 3/6、
@@ -216,3 +252,7 @@ class FusedSource(RGBDSource):
                      for k in self.kinds}
         self.miss = {k: 99 for k in self.kinds}
         self.yaw = {k: None for k in self.kinds}
+        # 每类最近 15 次检测到的世界长度：取**中位数**做"是否紧凑"的判据
+        # （单帧在边缘/被挡时会偏小或合并偏大，中位数最稳）
+        from collections import deque
+        self.extent_hist = {k: deque(maxlen=15) for k in self.kinds}

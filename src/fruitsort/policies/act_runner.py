@@ -55,6 +55,8 @@ class ActPureRunner:
                  grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
                  close_z_gate: float = 0.0, intercept: float = 0.0,
+                 close_commit: float = 0.0, close_commit_xy: float = 0.030,
+                 close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  close_win_xy: float = 0.03, close_win_z: float = 0.06,
                  grasp_verify: bool = False, yaw_align: bool = False,
                  yaw_align_off: float = 0.0,
@@ -193,6 +195,15 @@ class ActPureRunner:
         # 闭爪高度门：离水果还很高就闭爪 = 夹空气（实测队列里发生在 z 高 9 cm 处）。
         # >0 时：若"想闭爪"但 TCP 比果心高超过该值，则改为张开并下探到果心上方 2 cm。
         self.close_z_gate = float(close_z_gate)
+        # ---- 闭爪承诺：到果身高度且水平对齐 → 强制闭爪 + 冻结水平目标 ----
+        # 动机（v1.62 诊断）：手臂悬到果子上方时俯视被自己挡住，估计值按带速外推，
+        # 而果实在指间已经不再跟带面同速 → 估计**系统性超前 ~2 cm**。策略于是每步
+        # "再挪 2 cm"，闭爪条件永远差一点，表现为 descend≈700 步、全程悬停。
+        self.close_commit = float(close_commit)
+        self.close_commit_xy = float(close_commit_xy)
+        self.close_commit_map = dict(close_commit_map or {})
+        self.close_commit_steps = int(close_commit_steps)
+        self._commit_left = 0
         # ---- 拦截式下探（intercept）----
         # 队列里水果一直在走，"按当前位置下探"会永远追不上（trace: x 对齐后不下降/空中闭爪）。
         # intercept>0 时：模型一旦在空中想闭爪，就按"下探耗时 × 带速"预测落点，
@@ -212,6 +223,7 @@ class ActPureRunner:
         self._descend_target = None
         self._descend_steps = 0
         self._stall_tcp = np.zeros(3)
+        self._commit_left = 0
         self._stall_run = 0
         self.reset()
 
@@ -264,6 +276,7 @@ class ActPureRunner:
         self._descend_steps = 0
         self._stall_run = 0
         self._stall_tcp = np.zeros(3)
+        self._commit_left = 0
         self.queue = []
         self.queue_logits = None
         self.stats = {"close": 0, "descend": 0, "carry": 0, "steps": 0,
@@ -672,6 +685,23 @@ class ActPureRunner:
                 if float(tcp[0] - fpos[0]) < -0.08 and self.phase_state == 1:
                     self.phase_state, self.same, self.phase_cand = 0, 0, 0
 
+        # ---- 闭爪承诺（见上面构造参数处的动机）----
+        _cc = float(self.close_commit_map.get(kind, self.close_commit))
+        if _cc > 0 and not grasping and actor is not None:
+            fpos_c = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            dz_c = float(tcp[2] - fpos_c[2])
+            dxy_c = float(np.hypot(tcp[0] - fpos_c[0], tcp[1] - fpos_c[1]))
+            if self.phase_state == 1 and -0.005 <= dz_c <= _cc \
+                    and dxy_c <= self.close_commit_xy:
+                self._commit_left = self.close_commit_steps
+                self.stats["close_commit"] = self.stats.get("close_commit", 0) + 1
+            if self._commit_left > 0:
+                # 冻结水平（不再追会"往前滑"的估计），只往下压到果心附近
+                tgt[0], tgt[1] = float(tcp[0]), float(tcp[1])
+                tgt[2] = (float(tcp[2]) - 0.006
+                          if float(tcp[2]) > float(fpos_c[2]) - 0.005 else float(tcp[2]))
+                grip = -1.0
+                self._commit_left -= 1
         # 诊断用（不影响控制）：本步模型输出/目标点/状态
         self.last_dbg = dict(p4=np.array(p4, dtype=np.float64), tgt=np.array(tgt, dtype=np.float64),
                              tcp=np.array(tcp, dtype=np.float64), phase=int(self.phase_state),

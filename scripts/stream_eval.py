@@ -304,6 +304,11 @@ def main() -> None:
                     help="验证性实验：用仿真真值 yaw 旋转手腕，使夹爪闭合方向垂直于水果长轴")
     ap.add_argument("--yaw-align-off", type=float, default=0.0,
                     help="长轴假设偏移（0 或 π/2），用于试两种本地轴")
+    ap.add_argument("--close-commit", type=float, default=0.0,
+                    help="闭爪承诺：离果心 z 低于该值且水平对齐时强制闭爪并冻结水平目标（0=关闭）")
+    ap.add_argument("--close-commit-xy", type=float, default=0.030)
+    ap.add_argument("--close-commit-map", default="",
+                    help="按类闭爪承诺阈值，如 'apple=0.025,strawberry=0.025'")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="只碰到水果顶端不算抓住（要求指面到达果身高度或已被抬起）")
     ap.add_argument("--intercept", type=float, default=0.0,
@@ -331,6 +336,8 @@ def main() -> None:
     ap.add_argument("--scripted-kinds", default="",
                     help="混合系统：这些类（逗号分隔）交给规则专家，其余由模型驱动，"
                          "如 'banana,pear'")
+    ap.add_argument("--near-hold", action="store_true",
+                    help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
                     help="oracle=仿真真值；fused=俯视+侧视 RGB-D 感知（无真值）")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
@@ -365,10 +372,12 @@ def main() -> None:
     src = None
     if args.perception == "fused":
         from fruitsort.perception.adapter import FusedSource
-        src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq)
+        src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq,
+                          near_hold=args.near_hold)
     elif args.perception == "rgbd":
         from fruitsort.perception.adapter import RGBDSource
-        src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq)
+        src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq,
+                         near_hold=args.near_hold)
     elif args.perception == "vision":
         from fruitsort.perception.adapter import VisionSource
         src = VisionSource(env.unwrapped, dt=1.0 / args.control_freq)
@@ -383,6 +392,9 @@ def main() -> None:
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
                              close_z_gate=args.close_z_gate,
+                             close_commit=args.close_commit,
+                             close_commit_xy=args.close_commit_xy,
+                             close_commit_map=parse_map(args.close_commit_map),
                              grasp_verify=args.grasp_verify,
                              yaw_align=args.yaw_align,
                              yaw_align_off=args.yaw_align_off,
