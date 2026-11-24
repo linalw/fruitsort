@@ -10,6 +10,37 @@
 - `data/fruitsort/eval/pure_policy_v015.mp4` —— **0.15 m/s，四类各一次，4/4**，1080p/40s，
   左上角叠加 kind / 带速 / 时间 / 相位
 
+## 连续作业（v1.53，传送带不停 / 随机间隔 / 尺寸 ±15% / 多件在飞）
+
+`FruitSortStream-v1`：单一下料流、间隔随机 `U(0.6–1.2)` 或 `U(2–4)` m、尺寸 `U(0.85,1.15)`、
+按件统计 spawned / delivered / dropped / missed。**固定种子 60001–60005，5 局/档**：
+
+| 模型 | 稀疏 3–4 m | 密集 0.6–1.2 m |
+| --- | --- | --- |
+| **`act-geom`（观测含抓取几何）** | **26/30 = 86.7%** | **51/69 = 73.9%** |
+| `act-gnoisy`（无几何观测） | 18/30 = 60.0% | 36/67 = 53.7% |
+| `act-wide-4c`（历史部署基线） | 10/30 = 33.3% | 14/68 = 20.6% |
+| 规则专家（参考上限） | 5/6 = 83.3% | 10/14 = 76.9% |
+
+单发（同一模型、`--fb 0.7 --grip-ema 0.7`）：**苹果 8/8、香蕉 7/8**。
+
+关键改动：状态从 49 维扩到 **57 维**，末尾 4 维是 `(TCP − 目标水果)` 的 `dx, dy, dz, |d|`——
+模型原本要从两个绝对坐标里自己相减才能判断"离果心还有 6 cm、该继续下沉"，回归头学不到。
+
+```bash
+# 训练
+python scripts/train_act.py --data <repro-*> <noisy-*> <gnoisy-*> --geom --phase \
+    --delta-actions --no-cvae --epochs 12 --batch 32 --stride 2 --lr 3e-4 \
+    --descend-boost 3 --carry-boost 3 --out runs/act-geom
+
+# 连续作业评测（另一档把 3.0/4.0 换成 0.6/1.2）
+python scripts/stream_eval.py --ckpt runs/act-geom/ckpt.pt --fb 0.7 --grip-ema 0.7 \
+    --belt 0.08 --seconds 120 --slots 1 --gap-min 3.0 --gap-max 4.0 --seed 60001
+```
+
+评测链路里的一个关键 bug 已修（v1.27）：缺类时 `fruit_actors[kind]` 指向场外 `z=-5` 的 ghost，
+观测离开分布导致策略冻结；现在缺类会给"刚上料"的替身。详见 `docs/model-architecture.md` 6.26。
+
 ## 纯策略里程碑（v1.7，0.06–0.18 m/s 宽速域单一策略，无脚本执行器）
 
 `runs/act-wide-4c` + `--fb 0.5 --grip-ema 0.6 --carry-latch --carry-max-step 0.02`：
