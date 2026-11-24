@@ -64,6 +64,8 @@ def main() -> None:
                     help="从已有 ckpt 初始化权重（微调用；仍会按 --data 重新拟合归一化）")
     ap.add_argument("--no-cvae", action="store_true", help="关闭 CVAE 隐变量（纯确定性 ACT）")
     ap.add_argument("--delta-actions", action="store_true", help="预测相对当前 TCP 的增量")
+    ap.add_argument("--view-clip-x", type=float, default=-9.0,
+                    help="相机视野裁剪：x 小于该值的类替换成'刚上料'占位（与感知一致）")
     ap.add_argument("--geom", action="store_true",
                     help="观测加抓取几何（TCP 相对目标水果的 dx,dy,dz,|d|）")
     ap.add_argument("--phase", action="store_true",
@@ -102,7 +104,7 @@ def main() -> None:
     ds = ImageDemoDataset(list(data_dirs) + aux_dirs, hist=args.hist, chunk=args.chunk,
                           stride=args.stride, delay_prob=args.delay_prob,
                           delta_actions=args.delta_actions, use_phase=args.phase,
-                          use_geom=args.geom,
+                          use_geom=args.geom, view_clip_x=args.view_clip_x,
                           descend_boost=args.descend_boost, carry_boost=args.carry_boost,
                           boost_kind=args.boost_kind, kind_boost=args.kind_boost,
                           drop_tactile=args.no_tactile, aux_dirs=aux_dirs,

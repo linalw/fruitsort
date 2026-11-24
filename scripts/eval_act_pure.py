@@ -105,6 +105,8 @@ def main() -> None:
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--carry-max-step", type=float, default=0.0,
                     help="搬运段专用步长上限（0=与 max-step 相同）；抑制在料框处过冲")
+    ap.add_argument("--perception", default="oracle", choices=["oracle", "vision"],
+                    help="oracle=仿真真值（默认）；vision=只用 overhead RGB 感知")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -119,6 +121,10 @@ def main() -> None:
             sim_config=dict(control_freq=args.control_freq,
                             sim_freq=SIM_FREQ.get(args.control_freq, 4 * args.control_freq)))
         obs, _ = env.reset(seed=args.seed + ep)
+        src = None
+        if args.perception == "vision":
+            from fruitsort.perception.adapter import VisionSource
+            src = VisionSource(env.unwrapped, dt=1.0 / args.control_freq)
         u = env.unwrapped
         kind = args.instruction
         # 按队列状态切换的双策略（单发场景 queue≈0.25 → 单件模式）
@@ -157,6 +163,8 @@ def main() -> None:
                 fx = float(actor.pose.p[0, 0])
                 if u.pick_zone[0] <= fx <= u.pick_zone[1]:
                     zone_entry = t
+            if src is not None:
+                runner.set_actors(src.update(obs, held_kind=(runner.kind if runner.grasping else None)))
             cmd = runner.act(obs)
             tac = build_tactile(u, kind)
             Fn_peak = max(Fn_peak, float(tac[0]))

@@ -158,10 +158,14 @@ class VisionState:
             return 1e6
         cost = shape_cost(kind, det.blob)
         if kind in self.pos:
-            pred = self.pos[kind] + self.vel.get(kind, np.zeros(2)) * self.dt * self.lost[kind]
-            cost += 6.0 * float(np.linalg.norm(det.xy - pred))
+            # 丢太久（>max_lost）就不再强绑旧轨迹：允许按新位置重新接管，
+            # 否则目标一旦被手臂遮挡错过一次，就永远追不回来（实测會被"幽灵位"锁死）。
+            horizon = min(self.lost[kind], self.max_lost)
+            pred = self.pos[kind] + self.vel.get(kind, np.zeros(2)) * self.dt * horizon
+            w = 2.0 if self.lost[kind] > self.max_lost else 6.0
+            cost += w * float(np.linalg.norm(det.xy - pred))
         if self.lost[kind] > self.max_lost:
-            cost += 0.3  # 允许新目标，但优先延续旧轨迹
+            cost += 0.2  # 允许新目标，但优先延续旧轨迹
         return cost
 
     def update(self, rgb: np.ndarray, active: tuple[str, ...] | None = None) -> dict[str, Detection]:
@@ -179,20 +183,34 @@ class VisionState:
         rows, cols = linear_sum_assignment(cost)
         assigned: dict[str, Detection] = {}
         for i, j in zip(rows, cols):
-            if j < nd and cost[i, j] < 3.2:
+            if j < nd and cost[i, j] < 4.5:
                 assigned[kinds[i]] = dets[j]
 
-        # 黄色族消歧：本场景水果按固定顺序进料，靠前的必是香蕉。
-        # （真实产线若顺序随机，应换成训练好的小分类器 / 深度形状特征。）
-        if "banana" in kinds or "pear" in kinds:
-            yellow = [d for d in dets if d.family == YELLOW]
-            yellow.sort(key=lambda d: -d.xy[0])
+        # 黄色族消歧（香蕉 vs 梨）：用**世界长度**而不是进料顺序。
+        # 俯视下香蕉长 ~0.16–0.20 m、梨 ~0.08–0.10 m，深度已知即可从像素长度换算。
+        yellows = [d for d in dets if d.family == YELLOW]
+        if yellows and ("banana" in kinds or "pear" in kinds):
+            def _len(d):
+                p0 = self.calib.pixel_to_world(d.blob.uv)
+                p1 = self.calib.pixel_to_world(d.blob.uv + np.array([d.blob.w, d.blob.h]) / 2.0)
+                return float(np.linalg.norm(p1 - p0))
+            yellows.sort(key=lambda d: -_len(d))
             assigned.pop("banana", None)
             assigned.pop("pear", None)
-            if yellow:
-                assigned["banana"] = yellow[0]
-            if len(yellow) > 1:
-                assigned["pear"] = yellow[1]
+            rest = list(yellows)
+            for kind in ("banana", "pear"):
+                if kind not in kinds or not rest:
+                    continue
+                pick = None
+                for d in rest:
+                    long_enough = _len(d) > 0.115
+                    if (kind == "banana") == long_enough:
+                        pick = d
+                        break
+                if pick is None:
+                    pick = rest[0]
+                assigned[kind] = pick
+                rest.remove(pick)
 
         for kind in self.kinds:
             if kind in assigned:

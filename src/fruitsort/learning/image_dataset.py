@@ -52,13 +52,17 @@ def episode_phase(obs: np.ndarray, act: np.ndarray, instruction: str) -> np.ndar
 
 
 class ImageDemoDataset(Dataset):
-    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, use_geom: bool = False, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
+    def __init__(self, data_dir, hist: int = 5, chunk: int = 8, future: int = 4, stride: int = 1, delay_prob: float = 0.0, delta_actions: bool = False, use_phase: bool = False, use_geom: bool = False, view_clip_x: float = -9.0, delta_clip: float = 0.06, descend_boost: int = 1, carry_boost: int = 1, boost_kind: str = "", kind_boost: int = 1, drop_tactile: bool = False,
                  aux_dirs=(), split_tactile: bool = False, force_label: bool = False):
         self.hist, self.chunk, self.future = hist, chunk, future
         self.delay_prob = delay_prob
         self.delta_actions = delta_actions
         self.use_phase = use_phase
         self.use_geom = use_geom
+        # 相机视野裁剪：x < view_clip_x 的水果在观测里替换成"刚上料"占位
+        # （与 perception/adapter.py 的未见处理完全一致）——否则真机看不到远处水果，
+        # 观测会与训练不一致（实测导致策略不去拦截）。
+        self.view_clip_x = float(view_clip_x)
         self.delta_clip = delta_clip
         self.descend_boost = max(1, int(descend_boost))
         self.carry_boost = max(1, int(carry_boost))
@@ -172,6 +176,18 @@ class ImageDemoDataset(Dataset):
         _q = (((np.abs(_qx) < 0.6) & (_qz > 0.40) & (_qz < 0.60)).sum(1, keepdims=True)
               / 4.0).astype(np.float32)
         states = np.concatenate([states, _q], axis=1)
+        if self.view_clip_x > -8.0:
+            _belt = states[:, 16].copy()
+            for _k in range(4):
+                _o = 17 + 8 * _k
+                _far = states[:, _o] < self.view_clip_x
+                if not bool(_far.any()):
+                    continue
+                states[_far, _o] = self.view_clip_x
+                states[_far, _o + 1] = 0.0
+                states[_far, _o + 3] = _belt[_far]      # vx = 带速
+                states[_far, _o + 4] = 0.0
+                states[_far, _o + 5] = 0.0
         # 抓取几何（显式给"TCP 相对目标水果"的偏差）：模型原本要自己从
         # 两个绝对位置里减出来，回归头很难学到"差 6 cm 该继续下沉"这种量。
         if self.use_geom:

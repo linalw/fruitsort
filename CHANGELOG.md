@@ -15,6 +15,32 @@
 
 ---
 
+## [1.55.0] - 2026-11-28
+
+### Added — 纯感知闭环（去掉仿真真值）
+- `perception/adapter.py::VisionSource`：overhead RGB → 每类 `(pos, vel)` 替身，与真值同接口。
+- `build_obs(..., actors=)` / `ActPureRunner.set_actors()`：策略/执行层只换"物体源"。
+- `train_act --view-clip-x`：训练侧与相机视野一致（x<-1.10 的类用"刚上料"占位）。
+- `eval_act_pure --perception vision`：端到端纯感知评测。
+- 跟踪修复：被遮挡超过 max_lost 后允许重新接管（原来会被旧位置锁死）。
+- 香蕉/梨消歧改为"世界长度"（0.18 m vs 0.09 m），支持随机进料顺序。
+- 抓取判定改用指端接触力（现实中对应 F/T/触觉）。
+
+### Results（单发，0.08 m/s，8 局/类）
+| 类 | oracle | 纯视觉 |
+| --- | --- | --- |
+| apple | 4/4 | **3/4 = 75%** |
+| banana | 6/8 | 0/4 |
+| pear | 3/8 | 0/4 |
+
+感知位置误差：apple 0.3 cm、strawberry 0.7 cm、banana 1.5 cm（均值）。
+
+### Known issues
+- 香蕉/梨在视觉下仍失败（下探太晚/太高，抓取几何问题叠加感知误差）；
+- 目前每类只跟踪 1 个实例，同类多件依赖上层"只暴露目标件"。
+
+---
+
 ## [1.54.0] - 2026-11-27
 
 ### Added — 连续作业"机会内"口径 + 按类提速

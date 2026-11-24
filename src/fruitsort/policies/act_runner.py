@@ -77,6 +77,8 @@ class ActPureRunner:
         self.use_geom = _extra in (4, 5)
 
         self.env, self.u, self.device = env, env.unwrapped, device
+        # 观测/判据用的"物体源"：默认仿真真值；--perception vision 时换成感知替身
+        self.actors = None
         self.kind = kind
         self.fb, self.fb_z, self.grip_ema = fb, fb_z, grip_ema
         self.carry_latch, self.descend_commit = carry_latch, descend_commit
@@ -214,6 +216,27 @@ class ActPureRunner:
         self.reset()
 
     # ------------------------------------------------------------------ #
+    def set_actors(self, actors: dict | None):
+        """注入物体源（感知替身）。传 None 恢复仿真真值。"""
+        self.actors = actors
+
+    @property
+    def _objs(self) -> dict:
+        return self.actors if self.actors is not None else self.u.fruit_actors
+
+    def _grasp_proxy(self, actor, tcp) -> bool:
+        """感知模式下的"抓住"判据（无成对接触力可用）：闭合 + 水平对齐 + 指面到果身高度。"""
+        try:
+            p = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            belt = float(getattr(self.u, "belt_top_z", 0.45))
+            near_xy = float(np.linalg.norm(p[:2] - tcp[:2])) < 0.05
+            at_pad = abs(float(tcp[2] - p[2])) < 0.05
+            lifted = float(p[2]) > belt + 0.02
+            return bool(self.prev_grip < 0 and near_xy and (at_pad or lifted))
+        except Exception:  # noqa: BLE001
+            return False
+
+    # ------------------------------------------------------------------ #
     def reset(self):
         self.oh, self.wr, self.st, self.tac = [], [], [], []
         self.phase_state = 0
@@ -254,14 +277,18 @@ class ActPureRunner:
     def act(self, obs) -> np.ndarray:
         u, cfg = self.u, self.cfg
         kind = self.kind
-        actor = u.fruit_actors.get(kind)
+        actor = self._objs.get(kind)
         tcp = u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
         grasping = False
         if actor is not None:
             fpos_now = actor.pose.p[0].cpu().numpy().astype(np.float64)
             fd = float(np.linalg.norm(fpos_now - tcp))
             # 手指接触，或「贴得很近且上一步确实闭爪」
-            grabbing = bool(u.agent.is_grasping(actor)[0])
+            # 抓取判定用**指端接触力**（现实中对应指端 F/T / 触觉），
+            # 与"物体状态来自感知还是真值"无关；感知模式下 actor 是替身，
+            # 因此这里显式对真实物体做接触查询（物体身份由跟踪提供）。
+            _real = u.fruit_actors.get(kind)
+            grabbing = bool(u.agent.is_grasping(_real)[0]) if _real is not None else False
             if self.grasp_retry:
                 grasping = grabbing or (fd < 0.045 and self.prev_grip < 0)
             else:
@@ -284,7 +311,7 @@ class ActPureRunner:
         sd = obs["sensor_data"]
         self.oh.append(prep(sd["overhead"]["rgb"][0].cpu().numpy(), cfg.img_size))
         self.wr.append(prep(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
-        sb = build_obs(u, kind, tactile=bool(self.tactile_dim))
+        sb = build_obs(u, kind, tactile=bool(self.tactile_dim), actors=self.actors)
         if self.use_phase:
             onehot = np.zeros(3, dtype=np.float32)
             onehot[self.phase_state if self.phase_fb else 0] = 1.0
@@ -355,18 +382,18 @@ class ActPureRunner:
             tgt = np.clip(tgt, -2, 2)
 
         # 残差反馈（IBVS 式）：策略给前馈，反馈项收残余误差
-        if self.fb and kind in u.fruit_actors and not grasping:
-            fpos = u.fruit_actors[kind].pose.p[0].cpu().numpy().astype(np.float64)
+        if self.fb and kind in self._objs and not grasping:
+            fpos = self._objs[kind].pose.p[0].cpu().numpy().astype(np.float64)
             corr = np.clip(fpos - tcp, -0.15, 0.15)
             if not self.fb_z:
                 corr[2] = 0.0
             tgt = tgt + self.fb * corr
         if np.any(self.retry_bias) and self.phase_state != 2:
             tgt = tgt + self.retry_bias
-        if self.lead and kind in u.fruit_actors:
+        if self.lead and kind in self._objs:
             tgt[0] += self.lead * float(u.belt_speed[0])
-        if self.z_gate and kind in u.fruit_actors:
-            fz = u.fruit_actors[kind].pose.p[0, 2].item()
+        if self.z_gate and kind in self._objs:
+            fz = self._objs[kind].pose.p[0, 2].item()
             tgt[2] = float(np.clip(tgt[2], fz - 0.02, 0.90))
 
         glogit = float(p4[3])

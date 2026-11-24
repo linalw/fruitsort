@@ -138,15 +138,21 @@ def scale_tactile(t: np.ndarray) -> np.ndarray:
     return o
 
 
-def build_obs(u, kind: str | None = None, tactile: bool = False) -> np.ndarray:
-    """与 record_demos.py 一致的观测向量（49 维）。"""
+def build_obs(u, kind: str | None = None, tactile: bool = False,
+              actors: dict | None = None) -> np.ndarray:
+    """与 record_demos.py 一致的观测向量（49 维）。
+
+    `actors` 可注入"感知替身"（每类一个 .pose.p / .linear_velocity 的对象），
+    用于纯视觉闭环；默认读仿真真值。
+    """
+    objs = actors if actors is not None else u.fruit_actors
     tcp = u.agent.tcp_pose.raw_pose[0].cpu().numpy()
     qpos = u.agent.robot.get_qpos()[0].cpu().numpy()
     belt = np.array([float(u.belt_speed[0])], dtype=np.float32)
     feats = []
     for k in ALL:
-        if k in u.fruit_actors:
-            a = u.fruit_actors[k]
+        if k in objs:
+            a = objs[k]
             p = a.pose.p[0].cpu().numpy()
             v = a.linear_velocity[0].cpu().numpy()
             held = float(np.linalg.norm(p - tcp[:3]) < 0.08)
