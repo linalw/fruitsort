@@ -76,7 +76,7 @@ Fruitsort/
 | `python scripts/demo.py` | 跑仿真 + 录制视频（`--kinds` 选水果） |
 | `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
 | `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
-| `python scripts/stream_eval.py [--policy scripted]` | **连续作业**评测（`FruitSortStream-v1`：随机间隔/尺寸/多件在飞，按件统计吞吐） |
+| `python scripts/stream_eval.py [--policy scripted]` | **连续作业**评测（`FruitSortStream-v1`：随机间隔/尺寸/多件在飞，按件统计吞吐）；加 `--video out.mp4` 录演示（画面叠加时间/带速/目标/相位/计数） |
 
 `Makefile` 里提供了短命令：`make doctor` / `make digest` / `make run NAME=xxx`。
 

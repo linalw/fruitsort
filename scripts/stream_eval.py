@@ -313,6 +313,10 @@ def main() -> None:
     ap.add_argument("--noise", type=float, default=0.0,
                     help="录制时在专家动作上加的高斯噪声（米）——专家主导 + 小扰动，"
                          "比收集模型失败状态安全得多")
+    ap.add_argument("--video", default="",
+                    help="输出演示视频（mp4）。画面叠加：时间/带速/目标类别/送达·漏检·掉落/相位")
+    ap.add_argument("--video-fps", type=int, default=0,
+                    help="视频帧率，0 = 跟随 control-freq（与实时一致）")
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
     ap.add_argument("--seed", type=int, default=40000)
     ap.add_argument("--out", default="")
@@ -325,6 +329,7 @@ def main() -> None:
         slots_per_kind=args.slots, gap_range=(args.gap_min, args.gap_max),
         scale_range=(args.scale_min, args.scale_max),
         always_stock=bool(args.record),
+        render_mode=("rgb_array" if args.video else None),
         sim_config=dict(control_freq=args.control_freq,
                         sim_freq=120 if args.control_freq == 30 else 100))
     def _mk(ckpt, kind):
@@ -384,6 +389,11 @@ def main() -> None:
                                 engage_x=args.engage_x,
                                 scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
                                 scripted_yaw=ep_yaw)
+        writer = None
+        if args.video:
+            _v = Path(args.video)
+            _v.parent.mkdir(parents=True, exist_ok=True)
+            _v = _v.with_suffix(".mp4")
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         def flush():
@@ -393,7 +403,12 @@ def main() -> None:
                     and it.get("outcome") == "delivered"):
                 _save_demo(rec_dir, n_saved, buf, args.seed + ep)
                 n_saved += 1
-            buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
+            writer = None
+        if args.video:
+            _v = Path(args.video)
+            _v.parent.mkdir(parents=True, exist_ok=True)
+            _v = _v.with_suffix(".mp4")
+        buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         for t in range(max_steps):
             act = ctrl.act(obs)
@@ -415,9 +430,42 @@ def main() -> None:
                 oh, wr = _pack_images(obs)
                 buf["oh"].append(oh); buf["wr"].append(wr)
             obs, _, term, trunc, info = env.step(act)
+            if args.video:
+                frame = env.render()
+                arr = frame.cpu().numpy() if hasattr(frame, "cpu") else np.asarray(frame)
+                arr = arr[0] if arr.ndim == 4 else arr
+                img = np.ascontiguousarray(arr[..., ::-1].astype(np.uint8))   # RGB→BGR
+                if writer is None:
+                    h, w = img.shape[:2]
+                    writer = cv2.VideoWriter(str(_v), cv2.VideoWriter_fourcc(*"mp4v"),
+                                             float(args.video_fps or args.control_freq), (w, h))
+                st_v = u.stream_stats
+                tgt_v = ctrl.target["kind"] if ctrl.target is not None else "-"
+                ph = ctrl.runner.phase_state if ctrl.runner is not None else -1
+                lines = [f"t={u._t:5.1f}s   belt={args.belt:.2f} m/s   gap={args.gap_min}-{args.gap_max} m",
+                         f"target={tgt_v}   phase={ph}   grip={'closed' if ctrl.runner.prev_grip < 0 else 'open'}",
+                         f"delivered={st_v['delivered']}   missed={st_v['missed']}   dropped={st_v['dropped']}"
+                         f"   spawned={st_v['spawned']}"]
+                hh, ww = img.shape[:2]
+                fs = max(0.6, ww / 1920.0 * 1.0)
+                lh = int(round(34 * fs))
+                pad = int(round(10 * fs))
+                overlay = img.copy()
+                cv2.rectangle(overlay, (0, 0), (int(ww * 0.42), lh * len(lines) + 2 * pad),
+                              (0, 0, 0), -1)
+                cv2.addWeighted(overlay, 0.45, img, 0.55, 0, img)
+                for i, txt in enumerate(lines):
+                    org = (pad, pad + lh * (i + 1) - int(8 * fs))
+                    cv2.putText(img, txt, org, cv2.FONT_HERSHEY_SIMPLEX, fs,
+                                (0, 0, 0), 4, cv2.LINE_AA)
+                    cv2.putText(img, txt, org, cv2.FONT_HERSHEY_SIMPLEX, fs,
+                                (255, 255, 255), 2, cv2.LINE_AA)
+                writer.write(img)
             if bool(term) or bool(trunc):
                 break
         flush()
+        if writer is not None:
+            writer.release(); writer = None
         st = u.stream_stats
         resolved = st["delivered"] + st["dropped"] + st["missed"]
         row = dict(ep=ep, belt=args.belt, seconds=round(u._t, 1),

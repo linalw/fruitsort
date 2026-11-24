@@ -7,6 +7,10 @@
 
 ## 演示视频
 
+- **连续作业（v1.53）**：`assets/videos/stream_demo_v153.gif`（稀疏，间距 3–4 m）/
+  `assets/videos/stream_demo_v153_dense.gif`（密集，间距 0.6–1.2 m）
+  完整 120 s 版：`data/fruitsort/eval/stream_geom_sparse_3m.mp4`（6/6）、
+  `stream_geom_dense_1m.mp4`（12/14），同目录有 `.txt` 说明
 - `data/fruitsort/eval/pure_policy_v015.mp4` —— **0.15 m/s，四类各一次，4/4**，1080p/40s，
   左上角叠加 kind / 带速 / 时间 / 相位
 
