@@ -116,7 +116,7 @@ class RGBDSource(VisionSource):
 
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
                  clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
-                 near_hold: bool = False, near_dist: float = 0.10,
+                 near_hold: bool = True, near_dist: float = 0.10,
                  near_extent: float = 0.11, near_extent_min: float = 0.05):
         specs = load_specs()
         self.u = u
@@ -219,7 +219,7 @@ class FusedSource(RGBDSource):
 
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
                  clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
-                 use_hand: bool = False, near_hold: bool = False, near_dist: float = 0.10,
+                 use_hand: bool = False, near_hold: bool = True, near_dist: float = 0.10,
                  near_extent: float = 0.11, near_extent_min: float = 0.05):
         from .side import SideCamera
         specs = load_specs()

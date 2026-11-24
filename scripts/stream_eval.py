@@ -336,8 +336,8 @@ def main() -> None:
     ap.add_argument("--scripted-kinds", default="",
                     help="混合系统：这些类（逗号分隔）交给规则专家，其余由模型驱动，"
                          "如 'banana,pear'")
-    ap.add_argument("--near-hold", action="store_true",
-                    help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效）")
+    ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
+                    help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效；默认开）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
                     help="oracle=仿真真值；fused=俯视+侧视 RGB-D 感知（无真值）")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],

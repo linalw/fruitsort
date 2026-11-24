@@ -127,8 +127,8 @@ def main() -> None:
     ap.add_argument("--close-commit-steps", type=int, default=8)
     ap.add_argument("--grasp-verify", action="store_true",
                     help="接触但指面未到果身高度/未抬起时不算抓住（避免'带空气搬运'）")
-    ap.add_argument("--near-hold", action="store_true",
-                    help="感知：丢检且夹爪已压到目标上方时，位置取 TCP（不按带速外推）")
+    ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
+                    help="感知：丢检且夹爪已压到目标上方时，位置取 TCP（不按带速外推；默认开）")
     ap.add_argument("--hand-cam", action="store_true",
                     help="fused 时再用腕部相机补最后 5 cm 的盲区（实验项，实测精度 1-3 cm）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
