@@ -93,6 +93,11 @@ class StreamController:
         self.belt = float(getattr(u, "belt_speed", [0.08])[0]) if hasattr(u, "belt_speed") else 0.08
         self.target = None          # item dict
         self.switches = 0
+        # 空档期预转：把腕部提前转到"下一件长条目标"的长轴朝向（不占抓取窗口）
+        self.idle_align = True
+        self._idle_yaw = 0.0
+        self._idle_for = None
+        self._yaw_cache = {}        # item_id -> 已对准的 yaw 指令（接管理想值）
         self._repoint()
 
     # ---------------- 内部 ----------------
@@ -159,6 +164,35 @@ class StreamController:
                 if self.objs is None:
                     self.u.fruit_actors[k] = nearest["actor"]
 
+    def _finger_axis(self) -> float:
+        pL = self.u.agent.robot.links_map["panda_leftfinger"].pose.p[0].cpu().numpy()
+        pR = self.u.agent.robot.links_map["panda_rightfinger"].pose.p[0].cpu().numpy()
+        d = pL - pR
+        return float(np.arctan2(d[1], d[0]))
+
+    def _idle_align_yaw(self) -> float:
+        """空档（没有可接的件）时，把腕部转到"下一件香蕉"的长轴朝向。
+
+        动机（v1.67）：抓取窗口内的原地预转要 1–2 s，而香蕉单件只允许 ~5 s。
+        空档期手腕本来就闲着，用它提前转到位，窗口内就不用再转。
+        """
+        if not self.idle_align or self.objs is None:
+            return 0.0
+        a = self.objs.get("banana")
+        yy = getattr(a, "yaw", None) if a is not None else None
+        x = float(a.pose.p[0, 0]) if a is not None else -9.0
+        if yy is None or not (-1.15 < x < -0.30):
+            self._idle_yaw *= 0.9          # 没有目标：缓慢回正
+            self._idle_for = None
+            return self._idle_yaw
+        psi = self._finger_axis()
+        want = float(yy) + np.pi / 2.0
+        d = psi - want
+        d = float(np.arctan2(np.sin(2.0 * d), np.cos(2.0 * d)) / 2.0)
+        if abs(np.degrees(d)) > 5.0:
+            self._idle_yaw = float(np.clip(self._idle_yaw + 0.9 * d, -1.2, 1.2))
+        return self._idle_yaw
+
     def _pick_target(self):
         """选**最接近理想拦截点**的一件（不是最紧急的）。
 
@@ -222,6 +256,9 @@ class StreamController:
                     self.runner = self.runners[self.target["kind"]]
                 self.runner.kind = self.target["kind"]
                 self.runner.reset()
+                _yc = self._yaw_cache.get(self.target["id"])
+                if _yc is not None and getattr(self.runner, "yaw_align", False):
+                    self.runner._yaw_target = float(_yc)   # 空档期已转到位：窗口内不用再转
                 # 切模型后必须重新注入感知替身（否则新 runner 这一步读到仿真真值）
                 if self.objs is not None:
                     self.runner.set_actors(self.objs)
@@ -239,7 +276,18 @@ class StreamController:
                         self.env, cfg=cfg_yaw, only_kind=self.target["kind"])
         if self.target is None:
             # 没活可干：回到待命位姿、张开手（基座系：x=y+0.5, y=-x, z=z）
-            return np.array([0.5, 0.0, 0.55, *HOME_EULER, 1.0], dtype=np.float32)
+            # 顺便把腕部预转到"下一件香蕉"的长轴朝向（空档期不占抓取窗口）
+            iy = self._idle_align_yaw()
+            a = (self.objs or {}).get("banana")
+            if self.objs is not None and a is not None and abs(iy) > 1e-3:
+                for it in self._live():
+                    if it["kind"] != "banana":
+                        continue
+                    if -1.15 < float(it["actor"].pose.p[0, 0]) < -0.30:
+                        self._yaw_cache[it["id"]] = iy
+                        break
+            return np.array([0.5, 0.0, 0.55, HOME_EULER[0], HOME_EULER[1],
+                             HOME_EULER[2] + iy, 1.0], dtype=np.float32)
         if self.use_scripted:
             act = self.sorter.act()
             if self.noise > 0:
@@ -326,6 +374,8 @@ def main() -> None:
                     help="长轴假设偏移（0 或 π/2），用于试两种本地轴")
     ap.add_argument("--yaw-align-extent", type=float, default=0.0,
                     help="只对世界长度 ≥ 该值的目标做腕部对准（0=全部；香蕉建议 0.12）")
+    ap.add_argument("--yaw-align-fast", action="store_true",
+                    help="预转用满增益/每步修正（快 3 倍，但抓取瞬间带角速度，易甩掉薄果）")
     ap.add_argument("--yaw-align-rot-frac", type=float, default=0.0,
                     help="预转腕时同时靠近的比例（0=原地只转；0.35=边转边靠近，省单件时间）")
     ap.add_argument("--close-commit", type=float, default=0.0,
@@ -447,6 +497,7 @@ def main() -> None:
                              yaw_align_off=args.yaw_align_off,
                              yaw_align_extent=args.yaw_align_extent,
                              yaw_align_rot_frac=args.yaw_align_rot_frac,
+                             yaw_align_fast=args.yaw_align_fast,
                              intercept=args.intercept,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,

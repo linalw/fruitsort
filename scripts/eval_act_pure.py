@@ -96,6 +96,8 @@ def main() -> None:
     ap.add_argument("--yaw-align-off", type=float, default=0.0)
     ap.add_argument("--yaw-align-extent", type=float, default=0.0,
                     help="只对世界长度 ≥ 该值的目标做腕部对准（0=全部；香蕉建议 0.12）")
+    ap.add_argument("--yaw-align-fast", action="store_true",
+                    help="预转用满增益/每步修正（快 3 倍，但抓取瞬间带角速度，易甩掉薄果）")
     ap.add_argument("--yaw-align-rot-frac", type=float, default=0.0,
                     help="预转腕时同时靠近的比例（0=原地只转；0.35=边转边靠近，省单件时间）")
     ap.add_argument("--stall-guard", type=float, default=0.0,
@@ -204,6 +206,7 @@ def main() -> None:
             yaw_align=args.yaw_align, yaw_align_off=args.yaw_align_off,
             yaw_align_extent=args.yaw_align_extent,
             yaw_align_rot_frac=args.yaw_align_rot_frac,
+            yaw_align_fast=args.yaw_align_fast,
             grasp_verify=args.grasp_verify, grasp_proxy=args.grasp_proxy, close_z_gate=args.close_z_gate,
             close_commit=args.close_commit, close_commit_xy=args.close_commit_xy,
             close_commit_map=parse_map(args.close_commit_map),

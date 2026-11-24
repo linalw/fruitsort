@@ -59,7 +59,7 @@ class ActPureRunner:
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
                  yaw_align_ready: float = 0.17, yaw_align_pre_max: int = 70,
-                 yaw_align_rot_frac: float = 0.0,
+                 yaw_align_rot_frac: float = 0.0, yaw_align_fast: bool = False,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
@@ -254,6 +254,9 @@ class ActPureRunner:
         # 预转时是否允许**同时**靠近：0=原地只转（v1.66 行为），>0=按该比例下发放平移
         # （0.35 表示靠近速度降到 35%，避免"先停 2 s 转腕"吃掉单件时间）
         self.yaw_align_rot_frac = float(yaw_align_rot_frac)
+        # 快速预转（残差大时 period=1/gain=0.9）：收敛快 3 倍，但抓取瞬间仍带角速度，
+        # 薄弯果身会被甩掉（v1.67 实测 rho 14→40、单发 2/6→1/6）→ 默认关闭
+        self.yaw_align_fast = bool(yaw_align_fast)
         self._pre_steps = 0
         self._yaw_cmd = 0.0
         self._yaw_target = None
@@ -773,7 +776,8 @@ class ActPureRunner:
             # 实际增益只有 ~0.3，残差 20–30°；闭环后收敛到 <10°）
             # 预转阶段（残差还大、且位置基本不动）可以每步都修正、满增益：
             # 此时不存在"平移导致测量滞后"的问题，能把手腕转到物理最快
-            _fast = self.yaw_err_deg > float(np.degrees(self.yaw_align_ready))
+            _fast = (self.yaw_align_fast
+                     and self.yaw_err_deg > float(np.degrees(self.yaw_align_ready)))
             _period = 1 if _fast else self.yaw_align_period
             _gain = 0.9 if _fast else self.yaw_align_gain
             self._yaw_t += 1
