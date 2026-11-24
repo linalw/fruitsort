@@ -57,6 +57,8 @@ class ActPureRunner:
                  close_z_gate: float = 0.0, intercept: float = 0.0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
+                 yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
+                 yaw_align_ready: float = 0.17, yaw_align_pre_max: int = 70,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
@@ -241,10 +243,19 @@ class ActPureRunner:
         self.yaw_align_tol = float(yaw_align_tol)
         self._yaw_t = 0
         self.yaw_err_deg = 0.0
+        self._pre_steps = 0
+        # 两段式：离目标还远（> hold_dist）且姿态残差 > ready 时，**只转不走**
+        # （v1.65 证据：pd_ee_pose 在平移阶段 170 步不执行姿态指令 → 对准永远来不及）
+        self.yaw_align_prerotate = bool(yaw_align_prerotate)
+        self.yaw_align_hold_dist = float(yaw_align_hold_dist)
+        self.yaw_align_ready = float(yaw_align_ready)
+        self.yaw_align_pre_max = int(yaw_align_pre_max)
+        self._pre_steps = 0
         self._yaw_cmd = 0.0
         self._yaw_target = None
         self._yaw_t = 0
         self.yaw_err_deg = 0.0
+        self._pre_steps = 0
         self._descend_target = None
         self._descend_steps = 0
         self._stall_tcp = np.zeros(3)
@@ -299,6 +310,7 @@ class ActPureRunner:
         self._yaw_target = None
         self._yaw_t = 0
         self.yaw_err_deg = 0.0
+        self._pre_steps = 0
         self._descend_target = None
         self._descend_steps = 0
         self._stall_run = 0
@@ -792,6 +804,15 @@ class ActPureRunner:
             self._yaw_cmd = self._yaw_target
             yaw += self._yaw_cmd
             self.stats["yaw_align_deg"] = float(np.degrees(self._yaw_cmd))
+            # ---- 两段式：先原地对准，再进场 ----
+            if (self.yaw_align_prerotate and not grasping and self.phase_state == 0
+                    and self._pre_steps < self.yaw_align_pre_max):
+                dist = float(np.hypot(tcp[0] - actor.pose.p[0, 0], tcp[1] - actor.pose.p[0, 1]))
+                if dist > self.yaw_align_hold_dist and self.yaw_err_deg > np.degrees(self.yaw_align_ready):
+                    tgt = np.array(tcp, dtype=np.float64)     # 只下发姿态：位置保持
+                    grip = 1.0                                # 对准期间保持张开
+                    self._pre_steps += 1
+                    self.stats["pre_rot"] = self.stats.get("pre_rot", 0) + 1
         return np.array([tgt[1] + 0.5, -tgt[0], tgt[2],
                          HOME_EULER[0], HOME_EULER[1], HOME_EULER[2] + yaw, grip],
                         dtype=np.float32)

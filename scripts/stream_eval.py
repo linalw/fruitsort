@@ -53,7 +53,8 @@ class StreamController:
                  in_dist: bool = False, noise: float = 0.0, runners: dict | None = None,
                  single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45,
                  scripted_kinds=(), scripted_yaw: float = 0.0, objs: dict | None = None,
-                 decline_yaw: float = 0.0, long_extent: float = 0.11):
+                 decline_yaw: float = 0.0, long_extent: float = 0.11,
+                 kind_priority: dict | None = None):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -83,6 +84,8 @@ class StreamController:
         # 现场语义：不接这些件，让给旁边朝向更合适的臂（记账里算 declined）。
         self.decline_yaw = float(decline_yaw)
         self.long_extent = float(long_extent)
+        # 按类优先（数字越小越先接）：短周期/高可靠的类先做，长条留到空档
+        self.kind_priority = dict(kind_priority or {})
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -187,6 +190,9 @@ class StreamController:
             elif -0.05 < p[0] <= 0.15:           # 已经比较靠后：兜底
                 late.append((p[0], it))
         if urg:
+            if self.kind_priority:
+                return min(urg, key=lambda t: (self.kind_priority.get(t[1]["kind"], 9.0),
+                                               -t[0]))[1]
             return max(urg, key=lambda t: t[0])[1]
         if late:
             return max(late, key=lambda t: t[0])[1]
@@ -359,6 +365,8 @@ def main() -> None:
     ap.add_argument("--scripted-kinds", default="",
                     help="混合系统：这些类（逗号分隔）交给规则专家，其余由模型驱动，"
                          "如 'banana,pear'")
+    ap.add_argument("--kind-priority", default="",
+                    help="按类优先接件，如 'apple=0,strawberry=1,pear=2,banana=3'（空=只按 x）")
     ap.add_argument("--decline-yaw", type=float, default=0.64,
                     help="长条目标：|sin(长轴)| 超过该值就不接管（长轴贴住闭合方向夹不住；0=关）")
     ap.add_argument("--long-extent", type=float, default=0.11)
@@ -463,7 +471,8 @@ def main() -> None:
                             single_runner=single_runner, queue_thr=args.queue_thr,
                             engage_x=args.engage_x,
                             scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
-                            decline_yaw=args.decline_yaw, long_extent=args.long_extent)
+                            decline_yaw=args.decline_yaw, long_extent=args.long_extent,
+                            kind_priority=parse_map(args.kind_priority))
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -486,7 +495,8 @@ def main() -> None:
                                 engage_x=args.engage_x,
                                 scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
                                 scripted_yaw=ep_yaw,
-                                decline_yaw=args.decline_yaw, long_extent=args.long_extent)
+                                decline_yaw=args.decline_yaw, long_extent=args.long_extent,
+                            kind_priority=parse_map(args.kind_priority))
         writer = None
         if args.video:
             _v = Path(args.video)
