@@ -105,7 +105,7 @@ def main() -> None:
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--carry-max-step", type=float, default=0.0,
                     help="搬运段专用步长上限（0=与 max-step 相同）；抑制在料框处过冲")
-    ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd"],
+    ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
                     help="oracle=仿真真值（默认）；vision=只用 overhead RGB 感知")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
@@ -128,6 +128,9 @@ def main() -> None:
         elif args.perception == "rgbd":
             from fruitsort.perception.adapter import RGBDSource
             src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq)
+        elif args.perception == "fused":
+            from fruitsort.perception.adapter import FusedSource
+            src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq)
         u = env.unwrapped
         kind = args.instruction
         # 按队列状态切换的双策略（单发场景 queue≈0.25 → 单件模式）

@@ -54,7 +54,7 @@ class RGBDPerception:
 
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
                  min_area: int = 40, max_lost: int = 20,
-                 vel_alpha: float = 0.4):
+                 vel_alpha: float = 0.4, extra_detectors=()):
         self.u = u
         self.kinds = tuple(kinds)
         self.specs = load_specs()
@@ -72,6 +72,8 @@ class RGBDPerception:
         self.cx = float(cam.get_intrinsic_matrix()[0, 0, 2].cpu().numpy())
         self.cy = float(cam.get_intrinsic_matrix()[0, 1, 2].cpu().numpy())
 
+        # 额外视角（如 side 相机）的检测器：只补俯视看不到的远端
+        self.extra_detectors = list(extra_detectors)
         self.t = 0
         self.tracks: list[Instance] = []
         self._next_id = 0
@@ -180,6 +182,18 @@ class RGBDPerception:
         rgb = obs["sensor_data"]["overhead"]["rgb"][0].cpu().numpy()
         depth = obs["sensor_data"]["overhead"]["depth"][0].cpu().numpy()[..., 0] / 1000.0
         dets = self._detect(rgb, depth)
+        for det_src in self.extra_detectors:
+            try:
+                for d in det_src.detect(obs):
+                    # 与俯视检测去重（同一件在重叠区只保留一次）
+                    if any(np.linalg.norm(d["pos"][:2] - o.pos[:2]) < 0.08 for o in dets):
+                        continue
+                    dets.append(Instance(kind=d["kind"], pos=np.asarray(d["pos"], float),
+                                         vel=np.zeros(3), area=int(d.get("area", 0)),
+                                         hue=float(d.get("hue", 0.0)),
+                                         extent=float(d.get("extent", 0.0))))
+            except Exception:  # noqa: BLE001
+                pass
         inst = self._associate(dets)
         out: dict[str, list[Instance]] = {k: [] for k in self.kinds}
         for it in inst:

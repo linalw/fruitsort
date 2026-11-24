@@ -143,3 +143,24 @@ class RGBDSource(VisionSource):
             self.last[k] = (p, v)
             out[k] = _Stub(p, v)
         return out
+
+
+class FusedSource(RGBDSource):
+    """俯视（精确）+ 侧视（补远端 x<−1.0）融合。"""
+
+    def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
+                 clip_x: float = -1.10):
+        from .side import SideCamera
+        specs = load_specs()
+        self.u = u
+        self.kinds = tuple(kinds)
+        self.specs = specs
+        self.clip_x = float(clip_x)
+        self.plane_z = float(getattr(u, "belt_top_z", 0.45))
+        self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds,
+                                 extra_detectors=[SideCamera(u)])
+        self.last = {k: (np.array([self.clip_x, 0.0,
+                                   self.plane_z + specs[k].half_height], dtype=np.float64),
+                         np.zeros(3, dtype=np.float64))
+                     for k in self.kinds}
+        self.miss = {k: 99 for k in self.kinds}

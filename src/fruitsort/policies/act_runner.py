@@ -288,6 +288,8 @@ class ActPureRunner:
             # 与"物体状态来自感知还是真值"无关；感知模式下 actor 是替身，
             # 因此这里显式对真实物体做接触查询（物体身份由跟踪提供）。
             _real = u.fruit_actors.get(kind)
+            if _real is not None and not hasattr(_real, "_bodies"):
+                _real = None            # 该槽位被替身占用（感知模式）：跳过接触查询
             grabbing = bool(u.agent.is_grasping(_real)[0]) if _real is not None else False
             if self.grasp_retry:
                 grasping = grabbing or (fd < 0.045 and self.prev_grip < 0)

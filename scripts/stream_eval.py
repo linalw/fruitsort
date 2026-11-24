@@ -52,7 +52,7 @@ class StreamController:
                  only_kind: str | None = None, scripted: bool = False,
                  in_dist: bool = False, noise: float = 0.0, runners: dict | None = None,
                  single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45,
-                 scripted_kinds=(), scripted_yaw: float = 0.0):
+                 scripted_kinds=(), scripted_yaw: float = 0.0, objs: dict | None = None):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -75,6 +75,8 @@ class StreamController:
         # 队列上下文录制时的手腕偏航（每集随机一个，与 record_demos 的 --grasp-yaw-range 同义）：
         # 让"腕部朝向"成为训练分布内的变量，执行期才可能按水果长轴对准。
         self.scripted_yaw = float(scripted_yaw)
+        # 感知模式：目标选择/队列标志都读这个字典（而不是仿真真值）
+        self.objs = objs
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -89,7 +91,7 @@ class StreamController:
         """队列标志：场上 |x|<0.6 且在带面的水果数 /4（与训练/推理的特征同源）。"""
         n = 0
         for k in self.kinds:
-            a = self.u.fruit_actors.get(k)
+            a = (self.objs or self.u.fruit_actors).get(k)
             if a is None:
                 continue
             arr = a.pose.p[0].cpu().numpy() if hasattr(a, "pose") else np.zeros(3)
@@ -138,11 +140,15 @@ class StreamController:
                     [self.belt, 0.0, 0.0])
                 continue
             if self.target is not None and self.target["kind"] == k:
-                self.u.fruit_actors[k] = self.target["actor"]
+                if self.objs is not None:
+                    continue
+                if self.objs is None:
+                    self.u.fruit_actors[k] = self.target["actor"]
             else:
                 nearest = min(live, key=lambda it: np.linalg.norm(
                     it["actor"].pose.p[0].cpu().numpy() - tcp))
-                self.u.fruit_actors[k] = nearest["actor"]
+                if self.objs is None:
+                    self.u.fruit_actors[k] = nearest["actor"]
 
     def _pick_target(self):
         """选**最接近理想拦截点**的一件（不是最紧急的）。
@@ -189,7 +195,8 @@ class StreamController:
                 self.runner.kind = self.target["kind"]
                 self.runner.reset()
                 self.switches += 1
-                self.u.fruit_actors[self.target["kind"]] = self.target["actor"]
+                if self.objs is None:
+                    self.u.fruit_actors[self.target["kind"]] = self.target["actor"]
                 self.use_scripted = (self.scripted
                                      or self.target["kind"] in self.scripted_kinds)
                 if self.use_scripted:
@@ -313,6 +320,8 @@ def main() -> None:
     ap.add_argument("--scripted-kinds", default="",
                     help="混合系统：这些类（逗号分隔）交给规则专家，其余由模型驱动，"
                          "如 'banana,pear'")
+    ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
+                    help="oracle=仿真真值；fused=俯视+侧视 RGB-D 感知（无真值）")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
                     help="act=部署策略；scripted=规则专家（测场景上限）")
     ap.add_argument("--only-kind", default=None,
@@ -342,6 +351,17 @@ def main() -> None:
         render_mode=("rgb_array" if args.video else None),
         sim_config=dict(control_freq=args.control_freq,
                         sim_freq=120 if args.control_freq == 30 else 100))
+    src = None
+    if args.perception == "fused":
+        from fruitsort.perception.adapter import FusedSource
+        src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq)
+    elif args.perception == "rgbd":
+        from fruitsort.perception.adapter import RGBDSource
+        src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq)
+    elif args.perception == "vision":
+        from fruitsort.perception.adapter import VisionSource
+        src = VisionSource(env.unwrapped, dt=1.0 / args.control_freq)
+
     def _mk(ckpt, kind):
         return ActPureRunner(env, ckpt, kind, fb=args.fb, grip_ema=args.grip_ema,
                              max_step=args.max_step,
@@ -376,6 +396,7 @@ def main() -> None:
     yaw_rng = np.random.default_rng(args.seed + 7)
     ep_yaw = 0.0
     ctrl = StreamController(env, runner, env.unwrapped, grasp_x=args.grasp_x,
+                            objs=(None if src is None else {}),
                             only_kind=args.only_kind, scripted=(args.policy == "scripted"),
                             in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
                             single_runner=single_runner, queue_thr=args.queue_thr,
@@ -396,6 +417,7 @@ def main() -> None:
         if args.grasp_yaw_range is not None:
             ep_yaw = float(yaw_rng.uniform(*args.grasp_yaw_range))
         ctrl = StreamController(env, runner, u, grasp_x=args.grasp_x,
+                                objs=(None if src is None else {}),
                                 only_kind=args.only_kind, scripted=(args.policy == "scripted"),
                                 in_dist=args.in_dist_obs, noise=args.noise, runners=runners,
                                 single_runner=single_runner, queue_thr=args.queue_thr,
@@ -424,6 +446,10 @@ def main() -> None:
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
 
         for t in range(max_steps):
+            if src is not None:
+                objs = src.update(obs, held_kind=(ctrl.runner.kind if ctrl.runner.grasping else None))
+                ctrl.objs = objs
+                ctrl.runner.set_actors(objs)
             act = ctrl.act(obs)
             it = ctrl.target
             if it is None or it["id"] != buf["id"]:

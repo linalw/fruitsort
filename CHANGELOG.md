@@ -15,6 +15,26 @@
 
 ---
 
+## [1.57.0] - 2026-11-28
+
+### Added — 侧视相机（`side`）补俯视盲区
+- `perception/side.py::SideCamera`：深度逐像素反投影到 3D（不用单应，斜视也准）；
+  分类用 3D 包围盒对角线（实测香蕉 0.107–0.128 m vs 梨 0.068 m → 阈值 0.09）。
+- `RGBDPerception(extra_detectors=[SideCamera])` + `FusedSource`：俯视（精确）与侧视（远端）融合、
+  8 cm 去重；`eval_act_pure --perception fused`、`stream_eval --perception fused`。
+- 修复：感知模式下 `u.fruit_actors` 被替身占用时跳过接触查询（原来会 `_Stub has no attribute _bodies`）。
+
+### Results
+- 远端（x∈[−1.85,−1.05]）检出：banana 62%（3.6 cm）、pear 73%（2.7 cm）；
+- **单发 apple 纯视觉闭环：75%（俯视单应）→ 87.5%（俯视+侧视，8 局 7 成功）**，真值 100%；
+- 连续作业 + 纯感知可端到端运行，但 120 s 仅 0/6（接管 4 件，时序待调）。
+
+### Known issues
+- banana/pear 单发仍 0/4（抓取几何），与感知无关；
+- 侧视被机械臂遮挡时丢检（草莓远端 0/77）。
+
+---
+
 ## [1.56.0] - 2026-11-28
 
 ### Added — 多实例跟踪 + RGB-D 定位（审计待办 2、3）
