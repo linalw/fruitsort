@@ -30,10 +30,13 @@ class HandCamera(SideCamera):
     z_center_frac = 1.0        # 正上方看：中心 = 顶面 − 半高
 
     def __init__(self, u, cam_name: str = "hand_camera", min_area: int = 25,
-                 max_dist: float = 0.35):
+                 max_dist: float = 0.35, z_from_belt: bool = True):
         super().__init__(u, cam_name=cam_name, min_area=min_area)
         self.u = u
         self.max_dist = float(max_dist)
+        # 单目深度在最后 5 cm 的 z 误差 1–2 cm，而"果实在带上"这件事是确定的：
+        # 贴带面时 z 直接用 带面 + 半高（±0.5 cm），比测出来的深度更稳
+        self.z_from_belt = bool(z_from_belt)
 
     def _refresh(self) -> None:
         """腕部相机随手臂动：每帧都必须重新取位姿/内参。"""
@@ -60,6 +63,9 @@ class HandCamera(SideCamera):
                 continue
             if float(np.linalg.norm(p[:2] - tcp[:2])) > self.max_dist:
                 continue
+            if self.z_from_belt and float(p[2]) < self.belt_z + 0.10:
+                d = dict(d)
+                d["pos"] = np.array([p[0], p[1], self.belt_z + self.half[d["kind"]]])
             keep.append(d)
         return keep
 

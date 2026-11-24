@@ -189,7 +189,8 @@ class FusedSource(RGBDSource):
     """俯视（精确）+ 侧视（补远端 x<−1.0）融合。"""
 
     def __init__(self, u, dt: float = 1 / 30, cam_h: float = 2.0, kinds=KINDS,
-                 clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30):
+                 clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
+                 use_hand: bool = False):
         from .side import SideCamera
         specs = load_specs()
         self.u = u
@@ -203,8 +204,12 @@ class FusedSource(RGBDSource):
         # 腕部相机（hand.py）已评估：最终下探段确实能看见被手臂挡住的目标，
         # 但精度只有 1–3 cm（俯视 0.2 cm），混进来反而让单发 apple 4/6 → 3/6、
         # 掉落 2 → 3（`grasp_verify` 被 2–3 cm 的 z 误差否掉）。默认不启用。
+        extra = [SideCamera(u)]
+        if use_hand:
+            from .hand import HandCamera
+            extra.append(HandCamera(u))
         self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds,
-                                 extra_detectors=[SideCamera(u)])
+                                 extra_detectors=extra)
         self.last = {k: (np.array([self.clip_x, 0.0,
                                    self.plane_z + specs[k].half_height], dtype=np.float64),
                          np.zeros(3, dtype=np.float64))

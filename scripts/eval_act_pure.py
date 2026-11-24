@@ -109,6 +109,8 @@ def main() -> None:
                     help="闭爪高度门：离果心高于该值时禁止闭爪、继续下探（0=关闭）")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="接触但指面未到果身高度/未抬起时不算抓住（避免'带空气搬运'）")
+    ap.add_argument("--hand-cam", action="store_true",
+                    help="fused 时再用腕部相机补最后 5 cm 的盲区（实验项，实测精度 1-3 cm）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
                     help="oracle=仿真真值（默认）；vision=只用 overhead RGB 感知")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -134,7 +136,8 @@ def main() -> None:
             src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq)
         elif args.perception == "fused":
             from fruitsort.perception.adapter import FusedSource
-            src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq)
+            src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq,
+                              use_hand=args.hand_cam)
         u = env.unwrapped
         kind = args.instruction
         # 按队列状态切换的双策略（单发场景 queue≈0.25 → 单件模式）
