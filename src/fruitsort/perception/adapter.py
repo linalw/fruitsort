@@ -200,6 +200,9 @@ class FusedSource(RGBDSource):
         self.hold_max = int(hold_max)
         self.hold_x_max = float(hold_x_max)
         self.plane_z = float(getattr(u, "belt_top_z", 0.45))
+        # 腕部相机（hand.py）已评估：最终下探段确实能看见被手臂挡住的目标，
+        # 但精度只有 1–3 cm（俯视 0.2 cm），混进来反而让单发 apple 4/6 → 3/6、
+        # 掉落 2 → 3（`grasp_verify` 被 2–3 cm 的 z 误差否掉）。默认不启用。
         self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds,
                                  extra_detectors=[SideCamera(u)])
         self.last = {k: (np.array([self.clip_x, 0.0,

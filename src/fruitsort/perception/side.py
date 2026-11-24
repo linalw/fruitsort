@@ -27,6 +27,10 @@ KINDS = ("apple", "strawberry", "banana", "pear")
 class SideCamera:
     """`side` 相机 → 3D 实例列表（不含跟踪，由上层统一分配）。"""
 
+    # 可见表面 → 中心的 z 修正比例：斜视只看到上表面，实测 0.4 最接近真值；
+    # 正上方看（腕部相机）应取 1.0（中心 = 顶面 − 半高）
+    z_center_frac: float = 0.4
+
     def __init__(self, u, cam_name: str = "side", min_area: int = 18):
         cam = u._sensors[cam_name].camera
         K = cam.get_intrinsic_matrix()[0].cpu().numpy()
@@ -87,7 +91,8 @@ class SideCamera:
             e1 = vec[:, int(np.argmax(wv))]
             yaw = float(np.arctan2(e1[1], e1[0]))
             pos = np.median(pts, axis=0)
-            z_c = max(self.belt_z + self.half[kind] * 0.6, float(pos[2]) - self.half[kind] * 0.4)
+            z_c = max(self.belt_z + self.half[kind] * 0.6,
+                      float(pos[2]) - self.half[kind] * self.z_center_frac)
             out.append(dict(kind=kind, pos=np.array([pos[0], pos[1], z_c]),
                             extent=extent, area=area, hue=hue, yaw=yaw))
         return out
