@@ -56,6 +56,8 @@ class ActPureRunner:
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
                  close_z_gate: float = 0.0, close_z_gate_map: dict | None = None,
                  close_z_off_map: dict | None = None,
+                 side_grasp_kinds: tuple = (), side_offset: float = 0.09,
+                 side_carry: str = "scripted",
                  intercept: float = 0.0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
@@ -220,6 +222,14 @@ class ActPureRunner:
         self.close_z_gate_map = dict(close_z_gate_map or {})
         # 闭爪高度门触发时"下探到哪"：果心 + 该类偏移（默认 +2cm；小果可给 0/−5mm）
         self.close_z_off_map = dict(close_z_off_map or {})
+        # ---- 小果的"侧向进入"抓取（结构改动，不依赖模型的垂直下探）----
+        # 平行夹爪从正上方抓小果只能压到果顶（实测草莓 0/24）。改成：先到果子
+        # **下游 +x 侧** 9 cm、与果心同高，张爪；再沿 -x 滑入两指之间；就位后闭爪。
+        # 全程只用感知几何（无真值）。
+        self.side_grasp_kinds = tuple(side_grasp_kinds or ())
+        self.side_offset = float(side_offset)
+        # 侧抓之后的搬运也交给 FSM（模型没在"果心高度侧抓"这个状态上训练过，搬运会甩掉）
+        self.side_carry = str(side_carry)
         # ---- 闭爪承诺：到果身高度且水平对齐 → 强制闭爪 + 冻结水平目标 ----
         # 动机（v1.62 诊断）：手臂悬到果子上方时俯视被自己挡住，估计值按带速外推，
         # 而果实在指间已经不再跟带面同速 → 估计**系统性超前 ~2 cm**。策略于是每步
@@ -884,6 +894,41 @@ class ActPureRunner:
                 self.stats["stall_fix"] = self.stats.get("stall_fix", 0) + 1
                 self._stall_run = 0
         self._stall_tcp = np.array(tcp, dtype=np.float64, copy=True)
+
+        # ---- 侧向进入（只对 side_grasp_kinds）----
+        if (self.side_grasp_kinds and kind in self.side_grasp_kinds
+                and not grasping and self.phase_state in (0, 1) and actor is not None):
+            fp_s = actor.pose.p[0].cpu().numpy().astype(np.float64)
+            wp_x = fp_s[0] + self.side_offset
+            if float(tcp[0]) > wp_x + 0.02:
+                # 1) 先到"下游 + 果心高度"的预备位（张爪）
+                tgt = np.array([wp_x, fp_s[1], fp_s[2] + 0.010], dtype=np.float64)
+                grip = 1.0
+                self.stats["side_grasp"] = self.stats.get("side_grasp", 0) + 1
+            elif float(np.hypot(tcp[0] - fp_s[0], tcp[1] - fp_s[1])) > 0.022:
+                # 2) 沿 -x 滑入两指之间（张爪，保持果心高度）
+                tgt = np.array([fp_s[0], fp_s[1], fp_s[2] + 0.005], dtype=np.float64)
+                grip = 1.0
+                self.stats["side_grasp"] = self.stats.get("side_grasp", 0) + 1
+            else:
+                # 3) 就位 → 闭爪
+                grip = -1.0
+                self.stats["side_close"] = self.stats.get("side_close", 0) + 1
+
+        if (self.side_carry == "scripted" and kind in self.side_grasp_kinds and grasping):
+            try:
+                from fruitsort.sim.conveyor import BIN_LAYOUT as _BL2
+                _bx2, _by2 = _BL2[kind]
+            except Exception:  # noqa: BLE001
+                _bx2, _by2 = 0.0, -0.3
+            _over = (abs(float(tcp[0]) - _bx2) < 0.06 and abs(float(tcp[1]) - _by2) < 0.06)
+            if _over and float(tcp[2]) < 0.58:
+                grip = 1.0                    # 到框上方 → 开爪放下
+                tgt = np.array([float(_bx2), float(_by2), 0.50], dtype=np.float64)
+            else:
+                grip = -1.0
+                tgt = np.array([float(_bx2), float(_by2), 0.60], dtype=np.float64)
+            self.stats["side_carry"] = self.stats.get("side_carry", 0) + 1
 
         if self.suction and self.suction_carry == "scripted" and self.attached:
             # 吸住之后用最简单的"送到框正上方"：不再依赖策略的搬运段

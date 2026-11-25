@@ -55,6 +55,7 @@ class StreamController:
                  scripted_kinds=(), scripted_yaw: float = 0.0, objs: dict | None = None,
                  decline_yaw: float = 0.0, long_extent: float = 0.11,
                  kind_priority: dict | None = None, perception_targets: bool = False,
+                 decline_kinds: tuple = (),
                  give_up_s: float = 12.0, src=None):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
@@ -90,6 +91,7 @@ class StreamController:
         # ---- 真·纯感知目标选择（不读仿真槽位）----
         # 只用感知跟踪到的实例（每类"最靠前"那件）当候选；存活判据也来自感知
         # （丢检成幽灵/已离开工作区/接管超时 → 放弃），不再看 u._slots。
+        self.decline_kinds = tuple(decline_kinds or ())
         self.perception_targets = bool(perception_targets)
         self.give_up_s = float(give_up_s)
         self.src = src
@@ -225,6 +227,17 @@ class StreamController:
             return any(it is s["item"] for s in self.u._slots[it["kind"]] if s["live"])
         if self.runner is not None and getattr(self.runner, "grasping", False):
             return True                     # 正夹着：即使离开视野也继续
+        # 刚把件放进框（TCP 在目标框附近）→ 这一件已结束，立刻换目标。
+        # 否则"已送达"的件在感知里会消失，替身要 300 帧(10s)才变幽灵，白等 10 秒，
+        # 后面的草莓/梨就全被漏过（v1.82 trace: 送达后 4 件全 engage=None）。
+        try:
+            from fruitsort.sim.conveyor import BIN_LAYOUT as _BL
+            _bx, _by = _BL[it["kind"]]
+            _tcp = self.u.agent.tcp_pose.p[0].cpu().numpy()
+            if float(np.hypot(_tcp[0] - _bx, _tcp[1] - _by)) < 0.14:
+                return False
+        except Exception:  # noqa: BLE001
+            pass
         t0 = it.get("t_engage")
         if t0 is not None and (float(self.u._t) - float(t0)) > self.give_up_s:
             return False                    # 接管超时（现实中就该放弃了）
@@ -243,6 +256,8 @@ class StreamController:
         tcp = self.u.agent.tcp_pose.p[0].cpu().numpy()
         urg, late = [], []
         for it in self._live():
+            if it["kind"] in self.decline_kinds:
+                continue
             p = self._actor_pos(it["actor"])
             if np.linalg.norm(p - tcp) < 0.05:   # 就在指尖上（可能正抓着）
                 continue
@@ -527,6 +542,11 @@ def main() -> None:
                          "如 'banana,pear'")
     ap.add_argument("--kind-priority", default="",
                     help="按类优先接件，如 'apple=0,strawberry=1,pear=2,banana=3'（空=只按 x）")
+    ap.add_argument("--side-grasp", default="",
+                    help="这些类改成'侧向进入'抓取（如 strawberry）")
+    ap.add_argument("--side-offset", type=float, default=0.09)
+    ap.add_argument("--decline-kinds", default="",
+                    help="这些类一律不接管（明确让给同伴），如 banana")
     ap.add_argument("--decline-yaw", type=float, default=0.64,
                     help="长条目标：|sin(长轴)| 超过该值就不接管（长轴贴住闭合方向夹不住；0=关）")
     ap.add_argument("--long-extent", type=float, default=0.11)
@@ -623,6 +643,8 @@ def main() -> None:
                              suction=args.suction,
                              suction_radius=args.suction_radius,
                              suction_carry=args.suction_carry,
+                             side_grasp_kinds=tuple(k.strip() for k in args.side_grasp.split(",") if k.strip()),
+                             side_offset=args.side_offset,
                              yaw_align=args.yaw_align,
                              yaw_align_off=args.yaw_align_off,
                              yaw_align_extent=args.yaw_align_extent,
@@ -660,6 +682,7 @@ def main() -> None:
                             scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
                             decline_yaw=args.decline_yaw, long_extent=args.long_extent,
                             kind_priority=parse_map(args.kind_priority),
+                            decline_kinds=tuple(k.strip() for k in args.decline_kinds.split(",") if k.strip()),
                             perception_targets=args.perception_targets,
                             give_up_s=args.give_up_s, src=src)
 
@@ -686,6 +709,7 @@ def main() -> None:
                                 scripted_yaw=ep_yaw,
                                 decline_yaw=args.decline_yaw, long_extent=args.long_extent,
                             kind_priority=parse_map(args.kind_priority),
+                            decline_kinds=tuple(k.strip() for k in args.decline_kinds.split(",") if k.strip()),
                             perception_targets=args.perception_targets,
                             give_up_s=args.give_up_s, src=src)
         writer = None

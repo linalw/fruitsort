@@ -151,6 +151,9 @@ def main() -> None:
     ap.add_argument("--suction", action="store_true",
                     help="吸盘/软末端：模型说吸且贴近果心即附着，搬运跟 TCP，到框上方释放")
     ap.add_argument("--suction-radius", type=float, default=0.10)
+    ap.add_argument("--side-grasp", default="",
+                    help="这些类改成'侧向进入'抓取（如 strawberry）")
+    ap.add_argument("--side-offset", type=float, default=0.09)
     ap.add_argument("--suction-carry", default="scripted", choices=["scripted", "policy"],
                     help="吸住后怎么搬到框：scripted=直接奔框（推荐）/policy=用策略搬运段")
     ap.add_argument("--grasp-verify", action="store_true",
@@ -226,7 +229,9 @@ def main() -> None:
             yaw_hold_fade=args.yaw_hold_fade,
             grasp_verify=args.grasp_verify, grasp_proxy=args.grasp_proxy,
             suction=args.suction, suction_radius=args.suction_radius,
-            suction_carry=args.suction_carry, close_z_gate=args.close_z_gate,
+            suction_carry=args.suction_carry,
+            side_grasp_kinds=tuple(k.strip() for k in args.side_grasp.split(",") if k.strip()),
+            side_offset=args.side_offset, close_z_gate=args.close_z_gate,
             close_commit=args.close_commit, close_commit_xy=args.close_commit_xy,
             close_z_gate_map=parse_map(args.close_z_gate_map),
             close_z_off_map=parse_map(args.close_z_off_map),
