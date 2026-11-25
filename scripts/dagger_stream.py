@@ -78,7 +78,14 @@ def expert_label(actor, kind, u) -> np.ndarray:
     x = float(np.clip(fp[0] + fv[0] * 0.10, u.pick_zone[0] - 0.02, u.pick_zone[1]))
     aligned = abs(tcp[0] - x) < 0.025 and abs(tcp[1] - fp[1]) < 0.025
     if aligned and u.pick_zone[0] <= fp[0] <= u.pick_zone[1]:
-        return np.array([x, fp[1], fp[2], -1.0], dtype=np.float32)
+        # 闭爪高度：草莓按"果心 − 半高 + 0.5 cm"（小果必须更低才夹到果身），与训练侧
+        # `--close-z-loss`（果心 − 0.3×半高）方向一致；其余类仍按果心
+        try:
+            _half = float(u.specs[kind].half_height)
+        except Exception:  # noqa: BLE001
+            _half = 0.02
+        z_close = float(fp[2] - (_half - 0.005)) if kind == "strawberry" else float(fp[2])
+        return np.array([x, fp[1], z_close, -1.0], dtype=np.float32)
     return np.array([x, fp[1], fp[2] + 0.10, 1.0], dtype=np.float32)
 
 

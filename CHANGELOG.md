@@ -15,6 +15,30 @@
 
 ---
 
+## [1.80.0] - 2026-11-25
+
+### Changed — 草莓专家闭爪高度对齐训练约束
+`dagger_stream.py` 的专家规则：草莓按"**果心 − 半高 + 0.5 cm**"闭爪（与 `--close-z-loss` 同向），
+其余类仍按果心。
+
+### Tried — DAgger 第 2 轮（3 类 × 3 局，累积 17 局/6,371 帧）
+微调：`--init act-dagger --reuse-norm`，lr 1e-4，6 epoch，best val 0.1392（第 1 轮 0.1406）。
+
+### Results（同种子 3×60 s）
+| 轮次 | apple | strawberry | banana | pear | 总 |
+| --- | --- | --- | --- | --- | --- |
+| 第 1 轮 act-dagger | **3/4 = 75%** | 0/3 | 0/4 | 0/4 | **3/15** |
+| 第 2 轮 act-dagger2 | **0/4** | 0/3 | 0/4 | 0/4 | **0/15** |
+
+### Verdict — DAgger 循环不稳定（回退）
+val 持平但闭环 3/15 → 0/15：连续微调导致灾难性遗忘（+草莓规则改低后其它类被稀释、
+`--decline-yaw` 改变让香蕉更多进入）。验收仍只达成 apple（第 1 轮）。
+
+### Next
+每轮**从同一基线重训**（数据只增、lr 3e-4）或**按类路由**；评测固定 `--decline-yaw`。
+
+---
+
 ## [1.79.0] - 2026-11-25
 
 ### Added — `scripts/dagger_stream.py`（连续流 DAgger）
