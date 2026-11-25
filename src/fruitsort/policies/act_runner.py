@@ -55,6 +55,7 @@ class ActPureRunner:
                  grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
                  close_z_gate: float = 0.0, close_z_gate_map: dict | None = None,
+                 close_z_off_map: dict | None = None,
                  intercept: float = 0.0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
@@ -217,6 +218,8 @@ class ActPureRunner:
         self.close_z_gate = float(close_z_gate)
         # 按类闭爪高度门：果心以上 gate 米内才允许闭爪（小果不能在高处闭）
         self.close_z_gate_map = dict(close_z_gate_map or {})
+        # 闭爪高度门触发时"下探到哪"：果心 + 该类偏移（默认 +2cm；小果可给 0/−5mm）
+        self.close_z_off_map = dict(close_z_off_map or {})
         # ---- 闭爪承诺：到果身高度且水平对齐 → 强制闭爪 + 冻结水平目标 ----
         # 动机（v1.62 诊断）：手臂悬到果子上方时俯视被自己挡住，估计值按带速外推，
         # 而果实在指间已经不再跟带面同速 → 估计**系统性超前 ~2 cm**。策略于是每步
@@ -828,7 +831,8 @@ class ActPureRunner:
             fpos_g = actor.pose.p[0].cpu().numpy().astype(np.float64)
             if float(tcp[2] - fpos_g[2]) > _czg:
                 grip = 1.0
-                tgt = np.array([fpos_g[0], fpos_g[1], fpos_g[2] + 0.02])
+                _off = float(self.close_z_off_map.get(kind, 0.02))
+                tgt = np.array([fpos_g[0], fpos_g[1], fpos_g[2] + _off])
                 self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 8
                 self.stats["zgate"] = self.stats.get("zgate", 0) + 1
         # 抓空复位（对应专家 close_steps=12）

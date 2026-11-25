@@ -500,6 +500,8 @@ def main() -> None:
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
     ap.add_argument("--close-win-z", type=float, default=0.06)
+    ap.add_argument("--close-z-off-map", default="",
+                    help="闭爪门触发时的下探高度偏移（果心+该值），如 'strawberry=-0.005'")
     ap.add_argument("--close-z-gate-map", default="",
                     help="按类闭爪高度门，如 'apple=0.009,strawberry=0.006,pear=0.011'")
     ap.add_argument("--close-z-gate", type=float, default=0.0,
@@ -614,6 +616,7 @@ def main() -> None:
                              close_commit=args.close_commit,
                              close_commit_xy=args.close_commit_xy,
                              close_z_gate_map=parse_map(args.close_z_gate_map),
+                             close_z_off_map=parse_map(args.close_z_off_map),
                              close_commit_map=parse_map(args.close_commit_map),
                              grasp_verify=args.grasp_verify,
                              grasp_proxy=args.grasp_proxy,
