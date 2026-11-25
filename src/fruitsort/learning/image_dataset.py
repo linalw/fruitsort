@@ -96,10 +96,21 @@ class ImageDemoDataset(Dataset):
                 "act": d["action"].astype(np.float32),
                 "oh": np.stack([_decode(b) for b in d["overhead_jpg"]]),
                 "wr": np.stack([_decode(b) for b in d["wrist_jpg"]]) if "wrist_jpg" in d else None,
+                "roi": (np.stack([_decode(b) for b in d["roi_jpg"]])
+                        if ("roi_jpg" in d and len(d["roi_jpg"]) > 0) else None),
                 "aux_only": bool(aux_only),
             }
             if use_phase:
                 ep["phase"] = episode_phase(obs, ep["act"], instr)
+            _roi = ep.get("roi")
+            if _roi is not None and len(_roi) != len(obs):
+                _n = len(obs)
+                if len(_roi) > _n:
+                    _roi = _roi[: _n]
+                else:
+                    _roi = np.concatenate(
+                        [_roi, np.repeat(_roi[-1:], _n - len(_roi), axis=0)], axis=0)
+                ep["roi"] = _roi
             if obs.shape[1] >= 58:
                 # 触觉布局：[49 base][9 tactile]；index 54=v_slip, 55/56=左右指接触
                 # ---------------- 掉落起始标签（替代滑移标签）----------------
@@ -272,6 +283,9 @@ class ImageDemoDataset(Dataset):
         }
         if tactile is not None:
             out["tactile"] = torch.from_numpy(tactile.astype(np.float32))
+        if ep.get("roi") is not None:
+            roi = ep["roi"][idx].astype(np.float32) / 255.0
+            out["roi"] = torch.from_numpy(roi.transpose(0, 3, 1, 2))
         out["aux_only"] = torch.tensor(float(ep.get("aux_only", False)))
         if "slip_onset" in ep:
             out["slip"] = torch.tensor(float(ep["slip_onset"][t]))

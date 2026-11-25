@@ -88,6 +88,8 @@ def main() -> None:
     ap.add_argument("--aux-data", nargs="*", default=[],
                     help="失败/滑脱片段目录：只参与滑移辅助损失，不参与动作 BC 损失")
     ap.add_argument("--aux-boost", type=int, default=1, help="失败片段过采样倍数")
+    ap.add_argument("--roi-view", action="store_true",
+                    help="启用第三路图像（目标 ROI）：需数据里有 roi_jpg（record_demos --images 默认会存）")
     ap.add_argument("--close-z-loss", type=float, default=0.0,
                     help="闭爪高度约束的权重：闭爪步的目标 z 必须 ≤ 果心 − frac×半高（0=关闭）")
     ap.add_argument("--close-z-frac", type=float, default=0.3)
@@ -218,7 +220,8 @@ def main() -> None:
                     n_phase=3 if args.phase else 0, use_flow=bool(args.flow),
                     n_slip=1 if args.slip_head else 0,
                     tactile_dim=9 if args.tactile_token else 0,
-                    use_force_head=bool(args.force_head))
+                    use_force_head=bool(args.force_head),
+                    use_roi=bool(args.roi_view))
     model = ActPolicy(cfg).to(args.device)
     if args.init:
         _ck = torch.load(args.init, map_location="cpu", weights_only=False)
@@ -286,6 +289,7 @@ def main() -> None:
             with torch.autocast("cuda", dtype=torch.bfloat16,
                                 enabled=args.device.startswith("cuda")):
                 tac = b["tactile"].to(args.device) if "tactile" in b else None
+                roi = b["roi"].to(args.device, non_blocking=True) if "roi" in b else None
                 if args.flow:
                     mem = model.encode(oh, wr, st, kind, tactile=tac)
                     l_flow, grip_logit, logits = model.flow_loss(mem, st, act)
@@ -300,9 +304,11 @@ def main() -> None:
                 else:
                     if args.phase:
                         pred, mu, logvar, logits = model(oh, wr, st, kind, act_target=act,
-                                                         phase_out=True, tactile=tac)
+                                                         phase_out=True, tactile=tac,
+                                                         imgs_roi=roi)
                     else:
-                        pred, mu, logvar = model(oh, wr, st, kind, act_target=act, tactile=tac)
+                        pred, mu, logvar = model(oh, wr, st, kind, act_target=act, tactile=tac,
+                                                 imgs_roi=roi)
                         logits = None
                     w_bc = (1.0 - b["aux_only"].to(args.device).float()) if "aux_only" in b else None
                     loss, l_xyz, l_grip, l_kl = compute_loss(pred.float(), mu, logvar, act, w_bc)
@@ -369,11 +375,14 @@ def main() -> None:
                 with torch.autocast("cuda", dtype=torch.bfloat16,
                                     enabled=args.device.startswith("cuda")):
                     vtac = b["tactile"].to(args.device) if "tactile" in b else None
+                    vroi = b["roi"].to(args.device) if "roi" in b else None
                     if args.phase:
                         pred, _, _, vlogits = model(oh, wr, st, kind, use_prior=True,
-                                                    phase_out=True, tactile=vtac)
+                                                    phase_out=True, tactile=vtac,
+                                                    imgs_roi=vroi)
                     else:
-                        pred, _, _ = model(oh, wr, st, kind, use_prior=True, tactile=vtac)
+                        pred, _, _ = model(oh, wr, st, kind, use_prior=True, tactile=vtac,
+                                           imgs_roi=vroi)
                         vlogits = None
                     vl, v_xyz, v_grip, _ = compute_loss(pred.float(), None, None, act)
                     if vlogits is not None:

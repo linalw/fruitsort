@@ -92,10 +92,11 @@ class ActPureRunner:
         self.use_geom = _extra in (4, 5)
 
         self.env, self.u, self.device = env, env.unwrapped, device
-        # 头部图像：以目标为中心的 ROI 裁剪（与录制端同一变换；宽视场下必须）
+        # 头部图像：全局（相位/上下文）+ 目标 ROI（精细定位）双路；ROI 变换与录制端一致
+        self.use_roi = bool(getattr(self.cfg, "use_roi", False))
         try:
             from ..perception.roi import RoiCrop
-            self.roi = RoiCrop(width_m=0.50, out_size=128)
+            self.roi = RoiCrop(width_m=0.50, out_size=128) if self.use_roi else None
         except Exception:  # noqa: BLE001
             self.roi = None
         # 观测/判据用的"物体源"：默认仿真真值；--perception vision 时换成感知替身
@@ -343,6 +344,7 @@ class ActPureRunner:
     # ------------------------------------------------------------------ #
     def reset(self):
         self.oh, self.wr, self.st, self.tac = [], [], [], []
+        self.roi_buf = []
         self.phase_state = 0
         self.phase_cand = 0
         self.same = 0
@@ -522,10 +524,12 @@ class ActPureRunner:
 
         sd = obs["sensor_data"]
         _oh_rgb = sd["overhead"]["rgb"][0].cpu().numpy()
+        self.oh.append(prep(_oh_rgb, cfg.img_size))          # 全局（相位/上下文）
         if self.roi is not None and actor is not None:
             _xy = actor.pose.p[0].cpu().numpy()[:2]
-            _oh_rgb = self.roi.crop(_oh_rgb, _xy)
-        self.oh.append(prep(_oh_rgb, cfg.img_size))
+            self.roi_buf.append(prep(self.roi.crop(_oh_rgb, _xy), cfg.img_size))
+        else:
+            self.roi_buf.append(self.oh[-1])
         self.wr.append(prep(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
         sb = build_obs(u, kind, tactile=bool(self.tactile_dim), actors=self.actors)
         if self.use_phase:
@@ -547,12 +551,13 @@ class ActPureRunner:
         self.st.append(sb)
         if self.tactile_token:
             self.tac.append(build_tactile(u, kind))
-        for h in (self.oh, self.wr, self.st, self.tac) if self.tactile_token else (self.oh, self.wr, self.st):
+        for h in (self.oh, self.wr, self.roi_buf, self.st, self.tac) if self.tactile_token else (self.oh, self.wr, self.roi_buf, self.st):
             if len(h) > cfg.hist:
                 h.pop(0)
         while len(self.oh) < cfg.hist:
             self.oh.insert(0, self.oh[0])
             self.wr.insert(0, self.wr[0])
+            self.roi_buf.insert(0, self.roi_buf[0])
             self.st.insert(0, self.st[0])
             if self.tactile_token:
                 self.tac.insert(0, self.tac[0] if self.tac else np.zeros(self.tactile_token, np.float32))
@@ -570,14 +575,18 @@ class ActPureRunner:
                         torch.from_numpy(np.stack(self.wr)[None]).float().to(self.device),
                         torch.from_numpy(self.ns.obs(np.stack(self.st).astype(np.float32))[None]).float().to(self.device),
                         torch.tensor([INSTR_ID[kind]], device=self.device),
-                        use_prior=True, phase_out=True, tactile=tac_t)
+                        use_prior=True, phase_out=True, tactile=tac_t,
+                        imgs_roi=(torch.from_numpy(np.stack(self.roi_buf)[None]).float().to(self.device)
+                                  if self.use_roi else None))
                 else:
                     act, _, _ = self.model(
                         torch.from_numpy(np.stack(self.oh)[None]).float().to(self.device),
                         torch.from_numpy(np.stack(self.wr)[None]).float().to(self.device),
                         torch.from_numpy(self.ns.obs(np.stack(self.st).astype(np.float32))[None]).float().to(self.device),
                         torch.tensor([INSTR_ID[kind]], device=self.device),
-                        use_prior=True, tactile=tac_t)
+                        use_prior=True, tactile=tac_t,
+                        imgs_roi=(torch.from_numpy(np.stack(self.roi_buf)[None]).float().to(self.device)
+                                  if self.use_roi else None))
                     logits = None
             acts_np = act[0].cpu().numpy()
             if self.chunk_exec > 1 and self.delta_actions:

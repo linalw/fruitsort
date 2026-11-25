@@ -15,6 +15,34 @@
 
 ---
 
+## [1.78.0] - 2026-11-25
+
+### Added — 双路图像（全局 + ROI）三处一致
+- `ActConfig.use_roi`：第三路图像 token（共享 CNN，独立 `view_type`）；`--roi-view`；
+- `record_demos` 同时存全局 128 与 ROI 128；`stream_eval --record --roi-m` 也存 ROI；
+- `image_dataset` 读 `roi_jpg`（流录制缺帧自动对齐）；`ActPureRunner` 传 `imgs_roi`。
+
+### Data / Training
+| 数据 | 规模 | 训练 |
+| --- | --- | --- |
+| dual-*（双路单发） | 163 段 | `runs/act-dual` 40,782 窗口，val 0.1552 |
+| + 连续流脚本片段（60 段） | 223 段 | **`runs/act-dual2` 84,903 窗口，val 0.0360（历史最低）** |
+
+### Results（新相机 + 头部 RGB-D + 纯感知选目标）
+| 配置 | 单发 banana | 同种子 3×60 s 流 |
+| --- | --- | --- |
+| act-dual | 0/6 | 1/15（apple 1/4） |
+| act-dual2 | 0/6 | 0/15（4 掉落） |
+| act-dual2 + `--close-commit-map` | — | 0/15 |
+
+### Verdict
+双路图像工作正常（val 0.036、ROI 让果实像素 0.0%→3.3%），但**闭环仍 0**：
+val 与闭环脱节（val 含评测同分布流片段），模型自身误差累积后不下探/不闭爪，
+几何 `close-commit` 也救不回来。约束内最好仍是 **4/15（apple 4/4）**。
+下一步建议 **DAgger 纠偏**（`dagger_act.py`）或把"下探/闭爪"拆成分类头主导。
+
+---
+
 ## [1.77.0] - 2026-11-25
 
 ### Added — 284 段重录（Gemini 相机）+ ROI 裁剪训练/部署一致

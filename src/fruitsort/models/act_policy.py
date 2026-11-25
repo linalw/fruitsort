@@ -49,6 +49,7 @@ class ActConfig:
     use_force_head: bool = False   # 动作第 5 维 = 目标夹持力
     conv_norm: str = "gn"   # "gn": 把复用来的 ConvEncoder 的 BN 换成 GroupNorm
     use_flow: bool = False  # True：xyz 用 flow matching 采样（多峰动作分布），夹爪仍 logit
+    use_roi: bool = False   # True：再加一路"目标 ROI"图像 token（全局+腕部+ROI 三路共享 CNN）
 
 
 def bn_to_groupnorm(module: nn.Module, groups: int = 16) -> nn.Module:
@@ -95,7 +96,8 @@ class ActPolicy(nn.Module):
                                          nn.Linear(d, d))
         self.kind_emb = nn.Embedding(cfg.n_kinds, d)
         # 槽位：oh / wrist / state [/ tactile]。有触觉 token 时才多一槽（否则旧 ckpt 加载会 shape 不匹配）
-        self.view_type = nn.Parameter(torch.zeros(n_views + (2 if cfg.tactile_dim else 1), d))
+        _n_slots = n_views + (1 if cfg.use_roi else 0) + (1 if cfg.tactile_dim else 0)
+        self.view_type = nn.Parameter(torch.zeros(_n_slots, d))
         self.time_pos = nn.Parameter(torch.zeros(cfg.hist, d))
         self.cls = nn.Parameter(torch.zeros(1, 1, d))
         self.in_norm = nn.LayerNorm(d)
@@ -167,7 +169,7 @@ class ActPolicy(nn.Module):
         diff = (x - p).abs().mean(dim=1, keepdim=True)
         return self.view_enc(torch.cat([x, diff], dim=1)).reshape(B, T, -1)
 
-    def encode(self, imgs_oh, imgs_wr, states, kind_ids, tactile=None):
+    def encode(self, imgs_oh, imgs_wr, states, kind_ids, tactile=None, imgs_roi=None):
         """历史观测 → (B, 1+T*(V+1), D) memory 与 CLS 特征。"""
         B, T = states.shape[:2]
         prev_oh = torch.cat([imgs_oh[:, :1], imgs_oh[:, :-1]], dim=1)
@@ -175,8 +177,12 @@ class ActPolicy(nn.Module):
         if imgs_wr is not None and self.cfg.use_wrist:
             prev_wr = torch.cat([imgs_wr[:, :1], imgs_wr[:, :-1]], dim=1)
             tok.append(self._img_tokens(imgs_wr, prev_wr) + self.view_type[1] + self.time_pos)
-        tok.append(self.state_enc(states)
-                   + self.view_type[-2 if self.tactile_enc is not None else -1] + self.time_pos)
+        if imgs_roi is not None and self.cfg.use_roi:
+            prev_roi = torch.cat([imgs_roi[:, :1], imgs_roi[:, :-1]], dim=1)
+            tok.append(self._img_tokens(imgs_roi, prev_roi)
+                       + self.view_type[2] + self.time_pos)
+        _st_idx = -(2 if self.tactile_enc is not None else 1)
+        tok.append(self.state_enc(states) + self.view_type[_st_idx] + self.time_pos)
         if self.tactile_enc is not None and tactile is not None:
             tok.append(self.tactile_enc(tactile) + self.view_type[-1] + self.time_pos)
 
@@ -244,7 +250,8 @@ class ActPolicy(nn.Module):
         return self.act_head(base), self.phase_head(h)
 
     def forward(self, imgs_oh, imgs_wr, states, kind_ids, act_target=None,
-                use_prior: bool = False, phase_out: bool = False, tactile=None):
+                use_prior: bool = False, phase_out: bool = False, tactile=None,
+                imgs_roi=None):
         """
         imgs_oh: (B,T,3,H,W) float[0,1]；imgs_wr 同上或 None
         states:  (B,T,obs_dim)；kind_ids: (B,)
@@ -254,7 +261,8 @@ class ActPolicy(nn.Module):
 
         返回 (act (B,K,4), mu, logvar[, phase_logits])。
         """
-        memory = self.encode(imgs_oh, imgs_wr, states, kind_ids, tactile=tactile)
+        memory = self.encode(imgs_oh, imgs_wr, states, kind_ids, tactile=tactile,
+                             imgs_roi=imgs_roi)
         mu = logvar = None
         z = None
         if self.use_cvae:

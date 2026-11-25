@@ -399,18 +399,22 @@ def parse_map(spec: str) -> dict:
 WIDTH_MAP = {"apple": 0.062, "strawberry": 0.034, "banana": 0.044, "pear": 0.068}
 
 
-def _pack_images(obs):
-    """与 record_demos.py 一致：128×128 JPEG（BGR）两路相机。"""
+def _pack_images(obs, roi=None, xy=None):
+    """与 record_demos.py 一致：128×128 JPEG；给了 roi 时额外返回 ROI 裁剪。"""
     sd = obs["sensor_data"]
-    oh = sd["overhead"]["rgb"][0].cpu().numpy()
-    oh = cv2.resize(oh, (128, 128), interpolation=cv2.INTER_AREA)
+    oh_full = sd["overhead"]["rgb"][0].cpu().numpy()
+    roi_b = b""
+    if roi is not None and xy is not None:
+        _r = roi.crop(oh_full, xy)
+        roi_b = cv2.imencode(".jpg", _r[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
+    oh = cv2.resize(oh_full, (128, 128), interpolation=cv2.INTER_AREA)
     wr = None
     if "hand_camera" in sd:
         wr = sd["hand_camera"]["rgb"][0].cpu().numpy()
         wr = cv2.resize(wr, (128, 128), interpolation=cv2.INTER_AREA)
     return (cv2.imencode(".jpg", oh[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes(),
             cv2.imencode(".jpg", wr[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
-            if wr is not None else b"")
+            if wr is not None else b"", roi_b)
 
 
 def _save_demo(out_dir: Path, idx: int, buf: dict, seed: int) -> None:
@@ -420,6 +424,8 @@ def _save_demo(out_dir: Path, idx: int, buf: dict, seed: int) -> None:
                    seed=seed, kinds=np.array(KINDS), instruction=np.array(buf["kind"]),
                    overhead_jpg=np.array(buf["oh"], dtype=object),
                    wrist_jpg=np.array(buf["wr"], dtype=object))
+    if buf.get("roi"):
+        payload["roi_jpg"] = np.array(buf["roi"], dtype=object)
     np.savez_compressed(out_dir / f"ep_{idx:04d}.npz", **payload)
 
 
@@ -549,6 +555,8 @@ def main() -> None:
     ap.add_argument("--video-fps", type=int, default=0,
                     help="视频帧率，0 = 跟随 control-freq（与实时一致）")
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
+    ap.add_argument("--roi-m", type=float, default=0.0,
+                    help="录制时额外保存目标 ROI 裁剪（米；0=不存）")
     ap.add_argument("--trace-items", action="store_true",
                     help="逐件记账：每 20 步打印 (相位, 到框距离, 是否附着)，并在每局末打印每件结果")
     ap.add_argument("--seed", type=int, default=40000)
@@ -675,7 +683,7 @@ def main() -> None:
             _v = Path(args.video)
             _v.parent.mkdir(parents=True, exist_ok=True)
             _v = _v.with_suffix(".mp4")
-        buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
+        buf = {"obs": [], "act": [], "oh": [], "wr": [], "roi": [], "kind": None, "id": None}
 
         def flush():
             nonlocal n_saved, buf
@@ -689,7 +697,7 @@ def main() -> None:
             _v = Path(args.video)
             _v.parent.mkdir(parents=True, exist_ok=True)
             _v = _v.with_suffix(".mp4")
-        buf = {"obs": [], "act": [], "oh": [], "wr": [], "kind": None, "id": None}
+        buf = {"obs": [], "act": [], "oh": [], "wr": [], "roi": [], "kind": None, "id": None}
 
         for t in range(max_steps):
             if src is not None:
@@ -725,8 +733,17 @@ def main() -> None:
                 buf["obs"].append(build_obs(u, buf["kind"]))
                 # 专家的 last_target 是 4 维绝对目标（与 record_demos 一致）
                 buf["act"].append(np.asarray(ctrl.sorter.last_target, dtype=np.float32))
-                oh, wr = _pack_images(obs)
+                _xy = None
+                if args.roi_m > 0 and buf["kind"] is not None and ctrl.target is not None:
+                    _xy = ctrl.target["actor"].pose.p[0].cpu().numpy()[:2]
+                if args.roi_m > 0 and not hasattr(ctrl, "_roi_helper"):
+                    from fruitsort.perception.roi import RoiCrop
+                    ctrl._roi_helper = RoiCrop(width_m=args.roi_m, out_size=128)
+                oh, wr, roi_b = _pack_images(
+                    obs, getattr(ctrl, "_roi_helper", None), _xy)
                 buf["oh"].append(oh); buf["wr"].append(wr)
+                if roi_b:
+                    buf["roi"].append(roi_b)
             obs, _, term, trunc, info = env.step(act)
             if args.video:
                 frame = env.render()

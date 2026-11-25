@@ -121,7 +121,7 @@ def main() -> None:
                                 only_kind=None if args.instruction == 'all' else args.instruction)
         u = env.unwrapped
         obs_list, act_list = [], []
-        over_list, wrist_list = [], []
+        over_list, wrist_list, roi_list = [], [], []
         info = {}
         for t in range(args.max_steps):
             o = obs_vector(u, kind=args.instruction if args.instruction != "all" else None,
@@ -129,14 +129,14 @@ def main() -> None:
             if args.images:
                 sd = obs["sensor_data"]
                 oh = sd["overhead"]["rgb"][0].cpu().numpy()
+                # 双路：全局（相位/上下文）+ ROI（目标局部，给精细定位）
+                _g = cv2.resize(oh, (128, 128), interpolation=cv2.INTER_AREA)
+                over_list.append(cv2.imencode(".jpg", _g[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes())
                 if roi is not None:
-                    # 以**目标类**为中心裁剪（录制用真值位置；部署时用感知位置，同一变换）
                     _a = u.fruit_actors.get(args.instruction if args.instruction != "all" else "apple")
                     _xy = _a.pose.p[0].cpu().numpy()[:2] if _a is not None else (0.0, 0.0)
-                    oh = roi.crop(oh, _xy)
-                else:
-                    oh = cv2.resize(oh, (128, 128), interpolation=cv2.INTER_AREA)
-                over_list.append(cv2.imencode(".jpg", oh[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes())
+                    _r = roi.crop(oh, _xy)
+                    roi_list.append(cv2.imencode(".jpg", _r[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes())
                 if "hand_camera" in sd:
                     wr = sd["hand_camera"]["rgb"][0].cpu().numpy()
                     wr = cv2.resize(wr, (128, 128), interpolation=cv2.INTER_AREA)
@@ -161,6 +161,8 @@ def main() -> None:
                            instruction=np.array(args.instruction))
             if args.images:
                 payload["overhead_jpg"] = np.array(over_list, dtype=object)
+                if roi_list:
+                    payload["roi_jpg"] = np.array(roi_list, dtype=object)
                 payload["wrist_jpg"] = np.array(wrist_list, dtype=object)
             np.savez_compressed(ep_file, **payload)
             records.append({"file": ep_file.name, "steps": len(obs_list),
