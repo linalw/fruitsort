@@ -230,6 +230,7 @@ class ActPureRunner:
         self.side_offset = float(side_offset)
         # 侧抓之后的搬运也交给 FSM（模型没在"果心高度侧抓"这个状态上训练过，搬运会甩掉）
         self.side_carry = str(side_carry)
+        self._side_grip = 1.0
         # ---- 闭爪承诺：到果身高度且水平对齐 → 强制闭爪 + 冻结水平目标 ----
         # 动机（v1.62 诊断）：手臂悬到果子上方时俯视被自己挡住，估计值按带速外推，
         # 而果实在指间已经不再跟带面同速 → 估计**系统性超前 ~2 cm**。策略于是每步
@@ -304,6 +305,7 @@ class ActPureRunner:
         self.suction_carry = str(suction_carry)
         self.attached = False
         self.attach_off = np.zeros(3)
+        self._side_grip = 1.0
         self._hold_steps = 0
         self._hold_tcp = np.zeros(3)
         self._release_to = None
@@ -709,7 +711,10 @@ class ActPureRunner:
         self.slip_prob = None
         self.cur_grip = 1.0
         # ---- 渐进闭爪（闭合速度限幅）----
-        if self.close_ramp > 0:
+        # 注意：给了 side_grasp_kinds 时，ramp 只作用于这些类（否则会把苹果的闭爪也拖慢，
+        # 实测全局 ramp 会把 apple 从 50% 打到 0%）
+        if self.close_ramp > 0 and (not self.side_grasp_kinds
+                                    or kind in self.side_grasp_kinds):
             if glogit > 0:                                  # 想闭爪：单向渐进，不回头
                 self.cur_grip = max(-1.0, self.cur_grip - self.close_ramp)
             elif self.phase_state == 0:                     # 回到接近段才重置为张开
@@ -911,8 +916,21 @@ class ActPureRunner:
                 grip = 1.0
                 self.stats["side_grasp"] = self.stats.get("side_grasp", 0) + 1
             else:
-                # 3) 就位 → 闭爪
-                grip = -1.0
+                # 3) 就位 → 闭爪。小果不能合到底（开口 3 cm < 草莓 4 cm，会挤出去）：
+                #    用"位置等价力控"——闭到按类的宽度设定点，再按 close_ramp 渐进
+                _w = self.width_map.get(kind) if self.width_map else None
+                if _w is not None:
+                    _wt = float(_w) - self.width_delta
+                    _g = float(np.clip((_wt - 0.030) / 0.050, -1.0, 0.7))
+                elif self.width_g is not None:
+                    _g = float(np.clip(self.width_g, -1.0, 0.7))
+                else:
+                    _g = -1.0
+                if self.close_ramp > 0:
+                    self._side_grip = max(_g, self._side_grip - self.close_ramp)
+                else:
+                    self._side_grip = _g
+                grip = self._side_grip
                 self.stats["side_close"] = self.stats.get("side_close", 0) + 1
 
         if (self.side_carry == "scripted" and kind in self.side_grasp_kinds and grasping):

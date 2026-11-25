@@ -527,6 +527,10 @@ def main() -> None:
                     help="按类抓取高度偏置，如 'pear=0.015,banana=-0.01'")
     ap.add_argument("--yaw-map", default="",
                     help="按类手腕偏航（rad），如 'banana=0.6'（让夹爪闭合方向对齐长轴）")
+    ap.add_argument("--width-g", type=float, default=None,
+                    help="固定的夹爪闭合指令值（位置等价力控；gap≈0.030+0.050g）")
+    ap.add_argument("--close-ramp", type=float, default=0.0,
+                    help="渐进闭爪：每步 -close_ramp（0=一步到位）")
     ap.add_argument("--width-setpoint", action="store_true",
                     help="闭爪到按类的宽度设定点(LeTac 式)，而不是合到底")
     ap.add_argument("--stall-guard", type=float, default=0.0,
@@ -658,7 +662,8 @@ def main() -> None:
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
                              yaw_map=parse_map(args.yaw_map),
-                             width_map=(dict(WIDTH_MAP) if args.width_setpoint else None))
+                             width_map=(dict(WIDTH_MAP) if args.width_setpoint else None),
+                             width_g=args.width_g, close_ramp=args.close_ramp)
 
     runner = _mk(args.ckpt, "apple")
     runners = {}
