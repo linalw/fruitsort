@@ -292,6 +292,11 @@ class StreamController:
                         break
             return np.array([0.5, 0.0, 0.55, HOME_EULER[0], HOME_EULER[1],
                              HOME_EULER[2] + iy, 1.0], dtype=np.float32)
+        if self.objs is not None and getattr(self.runner, "suction", False):
+            # 吸盘：把"已吸附"同步给场景（停带 + 不被回收判据误判）
+            it = self.target
+            if it is not None:
+                it["held"] = bool(getattr(self.runner, "attached", False))
         if self.use_scripted:
             act = self.sorter.act()
             if self.noise > 0:
@@ -395,6 +400,9 @@ def main() -> None:
                     help="按类闭爪承诺阈值，如 'apple=0.025,strawberry=0.025'")
     ap.add_argument("--grasp-proxy", default="auto", choices=["auto", "always", "never"],
                     help="抓取近似判据（离得近+闭爪）：auto=仅当查不到真实接触时用")
+    ap.add_argument("--suction", action="store_true",
+                    help="吸盘/软末端：模型说吸且贴近果心即附着，搬运跟 TCP，到框上方释放")
+    ap.add_argument("--suction-radius", type=float, default=0.10)
     ap.add_argument("--grasp-verify", action="store_true",
                     help="只碰到水果顶端不算抓住（要求指面到达果身高度或已被抬起）")
     ap.add_argument("--lead-long", type=float, default=0.0,
@@ -503,6 +511,8 @@ def main() -> None:
                              close_commit_map=parse_map(args.close_commit_map),
                              grasp_verify=args.grasp_verify,
                              grasp_proxy=args.grasp_proxy,
+                             suction=args.suction,
+                             suction_radius=args.suction_radius,
                              yaw_align=args.yaw_align,
                              yaw_align_off=args.yaw_align_off,
                              yaw_align_extent=args.yaw_align_extent,

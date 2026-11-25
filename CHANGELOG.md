@@ -15,6 +15,32 @@
 
 ---
 
+## [1.71.0] - 2026-11-25
+
+### Added — 吸盘/软末端通路（复用仓库已验证的 suction 语义）
+- `ActPureRunner(suction=True)`：**接触即吸**（TCP 距果心 <5 cm 直接附着）、附着后跟 TCP、
+  到框上方自动释放；`--suction/--suction-radius`（`stream_eval`、`eval_act_pure`）；
+- `FruitSortStream-v1`：`item["held"]` 停带（否则带面驱动每步 `set_pose` 覆盖附着）。
+
+### Fixed — 两个真 bug
+1. 吸盘状态被 contact/proxy 判据覆盖（`att=True` 但 `phase` 不进 2）→ 赋值后重新断言；
+2. 流场景带面驱动覆盖 `set_pose`（附着后水果不跟 TCP）→ 控制器同步 `item["held"]`。
+
+### Results
+| 场景 | 平口夹爪 | **吸盘** |
+| --- | --- | --- |
+| 单发 banana（4 局） | 2/6（掉 3–4） | **4/4 = 100%，0 掉落** |
+| 单件时间 | 7.0–8.0 s | **4.62 s** |
+| 摩擦利用 rho | 14–40 | **≈0** |
+| 连续流 3×60 s（同种子） | 0–1/4 | 0/15（附着了但搬运不往框里走） |
+
+### Verdict — 抓取问题解决，流内搬运仍不成立
+流内 trace：`att=True, ph=2` 后手臂在 `x≈−0.15` 来回，而框在 `x=−0.46` → 永远不释放。
+原因是流内搬运用的是"为平口夹爪训练"的策略。下一步需**吸盘语义重录+重训**
+（`record_suction_demos.py` 40–60 段 + `train_act.py` ~40 min），属多小时投入，待确认。
+
+---
+
 ## [1.70.0] - 2026-11-25
 
 ### Implemented — 非长条目标"保持量"可调（frac / cap / fade）

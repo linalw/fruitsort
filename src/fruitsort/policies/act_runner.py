@@ -61,6 +61,7 @@ class ActPureRunner:
                  yaw_align_ready: float = 0.17, yaw_align_pre_max: int = 70,
                  yaw_align_rot_frac: float = 0.0, yaw_align_fast: bool = False,
                  yaw_align_hold: bool = True, yaw_hold_fade: float = 0.12,
+                 suction: bool = False, suction_radius: float = 0.10,
                  yaw_hold_frac: float = 1.0, yaw_hold_cap: float = 0.0,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
@@ -266,6 +267,13 @@ class ActPureRunner:
         # hold 的"淡出距离"：非长条件在距果心 fade 米内把保持的偏航线性收到 0，
         # 让苹果/草莓的**最后一段闭合**仍用训练里最常见的 HOME 朝向
         self.yaw_hold_fade = float(yaw_hold_fade)
+        # ---- 吸盘（软）末端：不靠夹爪包住，靠"贴近即吸" ----
+        # 复用 eval_policy_suction.py 的语义：模型说"吸"(grip<0) 且 TCP 距果心 <r → 附着，
+        # 之后水果跟着 TCP；模型说"放"且在目标框上方 → 落到框底（env 判 in_bin=delivered）。
+        self.suction = bool(suction)
+        self.suction_radius = float(suction_radius)
+        self.attached = False
+        self.attach_off = np.zeros(3)
         # 非长条件"保持"的量：可整体缩放（frac）并限幅（cap，rad）。
         # 目的：让空档期预转**部分**活到香蕉那一拍，同时苹果/草莓尽量留在训练主分布（yaw≈0）
         self.yaw_hold_frac = float(yaw_hold_frac)
@@ -276,6 +284,8 @@ class ActPureRunner:
         self._yaw_t = 0
         self.yaw_err_deg = 0.0
         self._pre_steps = 0
+        self.attached = False
+        self.attach_off = np.zeros(3)
         self._descend_target = None
         self._descend_steps = 0
         self._stall_tcp = np.zeros(3)
@@ -331,6 +341,8 @@ class ActPureRunner:
         self._yaw_t = 0
         self.yaw_err_deg = 0.0
         self._pre_steps = 0
+        self.attached = False
+        self.attach_off = np.zeros(3)
         self._descend_target = None
         self._descend_steps = 0
         self._stall_run = 0
@@ -355,6 +367,50 @@ class ActPureRunner:
         if actor is not None:
             fpos_now = actor.pose.p[0].cpu().numpy().astype(np.float64)
             fd = float(np.linalg.norm(fpos_now - tcp))
+            if self.suction:
+                # ---- 吸盘状态机（无接触力、无朝向要求）----
+                if self.attached:
+                    # 已吸附：水果跟着 TCP（用上一步的 TCP，1 步滞后可忽略）
+                    p = np.clip(tcp + self.attach_off, -2.5, 2.5)
+                    try:
+                        from mani_skill.utils.structs.pose import Pose
+                        _a = u.fruit_actors.get(kind)
+                        if _a is not None:
+                            _a.set_pose(Pose.create_from_pq(
+                                torch.tensor([p], dtype=torch.float32)))
+                            _a.set_linear_velocity(torch.zeros(1, 3))
+                            _a.set_angular_velocity(torch.zeros(1, 3))
+                    except Exception:  # noqa: BLE001
+                        pass
+                # 吸盘物理上"接触即吸"：贴到 5 cm 内直接吸上（不再依赖模型的闭爪时机，
+                # 那正是平口夹爪失败的地方）；模型只负责"什么时候放"
+                if (not self.attached and float(fpos_now[2]) > 0.30
+                        and (fd < 0.05 or (self.prev_grip < 0 and fd < self.suction_radius))):
+                    self.attached = True
+                    self.attach_off = fpos_now - tcp
+                    self.stats["suction_on"] = self.stats.get("suction_on", 0) + 1
+                # 到框上方就"吹气释放"（吸盘典型行为）：不再等模型给"放"的信号——
+                # 实测模型在吸盘语义下常忘了开，导致抱着果子跑满 900 步
+                if self.attached:
+                    try:
+                        from fruitsort.sim.conveyor import BIN_LAYOUT
+                        bx, by = BIN_LAYOUT[kind]
+                    except Exception:  # noqa: BLE001
+                        bx, by = 0.0, -0.3
+                    if abs(float(tcp[0]) - bx) < 0.07 and abs(float(tcp[1]) - by) < 0.07 \
+                            and float(tcp[2]) < 0.62:
+                        try:
+                            from mani_skill.utils.structs.pose import Pose
+                            _a = u.fruit_actors.get(kind)
+                            if _a is not None:
+                                _a.set_pose(Pose.create_from_pq(torch.tensor(
+                                    [[bx, by, 0.08]], dtype=torch.float32)))
+                                _a.set_linear_velocity(torch.zeros(1, 3))
+                        except Exception:  # noqa: BLE001
+                            pass
+                        self.attached = False
+                        self.stats["suction_off"] = self.stats.get("suction_off", 0) + 1
+                grasping = bool(self.attached)
             # 手指接触，或「贴得很近且上一步确实闭爪」
             # 抓取判定用**指端接触力**（现实中对应指端 F/T / 触觉），
             # 与"物体状态来自感知还是真值"无关；感知模式下 actor 是替身，
@@ -368,12 +424,17 @@ class ActPureRunner:
             # 之后一路搬运空气、果实从指间滑走（连续流 banana 0/4 的直接原因）。
             use_proxy = {"always": True, "never": False}.get(
                 self.grasp_proxy, not (self.actors is not None and _real is not None))
+            if self.suction:
+                use_proxy = False
             if self.grasp_retry and use_proxy:
                 grasping = grabbing or (fd < 0.045 and self.prev_grip < 0)
             else:
                 grasping = grabbing
+            if self.suction:
+                # 吸盘没有指端接触：以"是否吸附"为准（上面的接触/近似判据会把它覆盖掉）
+                grasping = bool(self.attached)
             fz = float(actor.pose.p[0, 2])
-            if grasping and self.grasp_verify:
+            if grasping and self.grasp_verify and not self.suction:
                 # "碰到上表面"不算抓住：要求指面到达果身高度（|dz|<3 cm）或已被抬起。
                 # 注意：感知模式下 object 的位姿可能已被"跟随夹爪"平滑，确认要用 raw_p，
                 # 否则判据会自证（snap 之后永远满足）。

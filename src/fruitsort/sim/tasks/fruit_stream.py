@@ -166,7 +166,14 @@ class FruitStreamEnv(FruitSortEnv):
                 grasped = self.agent.is_grasping(actor)
                 if bool(grasped[0]):
                     slot["item"]["picked"] = True
+                # 吸盘/软末端：不产生指端接触，由上层标记 item["held"] 来"停带"
+                # （否则带面驱动每步覆盖 set_pose，附着等于没发生）
+                held = bool(slot["item"].get("held", False))
+                if held:
+                    slot["item"]["picked"] = True
                 drive = on_belt & ~grasped
+                if held:
+                    drive = drive & False
                 if bool(drive.any()):
                     target = torch.zeros_like(vel)
                     target[:, 0] = belt + 0.03
