@@ -93,8 +93,11 @@ def build_fruit(
     `scale` 用于连续作业评测里模拟"大小在正常范围内变化"（0.85–1.15 即 ±15%）。
     """
     spec = spec or load_specs()[kind]
-    # FRICTION_SCALE：接触摩擦倍率，用来模拟"软指/胶垫"（1.0 = 原始材质）
-    fs = float(globals().get("FRICTION_SCALE", 1.0))
+    # 软指/胶垫：接触摩擦倍率（`FRUITSORT_FRICTION_SCALE`，默认 1.0 = 原始材质）。
+    # 现实里换软垫会同时提高"摩擦"和"贴合面积"，这里用摩擦倍率近似前者。
+    import os as _os
+    fs = float(globals().get("FRICTION_SCALE",
+                             _os.environ.get("FRUITSORT_FRICTION_SCALE", 1.0)))
     mat = sapien.physx.PhysxMaterial(
         spec.static_friction * fs, spec.dynamic_friction * fs, spec.restitution
     )
