@@ -1,0 +1,227 @@
+{
+  "args": {
+    "ckpt": "runs/act-suction/ckpt.pt",
+    "belt": 0.08,
+    "seconds": 80.0,
+    "episodes": 3,
+    "slots": 1,
+    "spawn_x": -0.85,
+    "gap_min": 3.0,
+    "gap_max": 4.0,
+    "scale_min": 0.85,
+    "scale_max": 1.15,
+    "control_freq": 30,
+    "max_step_map": "apple=0.14,strawberry=0.14,pear=0.12,banana=0.10",
+    "carry_step_map": "apple=0.05,strawberry=0.05,pear=0.04,banana=0.04",
+    "max_step": 0.06,
+    "fb": 0.7,
+    "grip_ema": 0.7,
+    "carry_latch": true,
+    "carry_max_step": 0.02,
+    "engage_x": -0.45,
+    "grasp_x": -0.1,
+    "in_dist_obs": false,
+    "grasp_yaw_range": null,
+    "yaw_align": false,
+    "yaw_align_off": 0.0,
+    "yaw_align_extent": 0.0,
+    "yaw_hold_frac": 1.0,
+    "yaw_hold_cap": 0.0,
+    "yaw_hold_fade": 0.12,
+    "yaw_align_fast": false,
+    "yaw_align_rot_frac": 0.0,
+    "close_commit": 0.0,
+    "close_commit_xy": 0.03,
+    "close_commit_map": "",
+    "grasp_proxy": "auto",
+    "suction": true,
+    "suction_radius": 0.1,
+    "suction_carry": "scripted",
+    "grasp_verify": false,
+    "lead_long": 0.0,
+    "lead_long_extent": 0.11,
+    "lead_long_taper": 0.15,
+    "intercept": 0.0,
+    "close_win_xy": 0.03,
+    "close_win_z": 0.06,
+    "close_z_gate": 0.0,
+    "descend_commit": 0,
+    "z_bias_map": "",
+    "yaw_map": "",
+    "width_setpoint": false,
+    "stall_guard": 0.0,
+    "single_ckpt": "",
+    "queue_thr": 0.3,
+    "ckpt_map": "",
+    "scripted_kinds": "",
+    "kind_priority": "",
+    "decline_yaw": 0.0,
+    "long_extent": 0.11,
+    "grasp_axis_offset": 0.0,
+    "grasp_axis_extent": 0.12,
+    "near_hold": true,
+    "perception": "fused",
+    "policy": "act",
+    "only_kind": null,
+    "allow_ghost_frames": false,
+    "noise": 0.0,
+    "video": "",
+    "video_fps": 0,
+    "record": "",
+    "seed": 60001,
+    "out": "runs/2026-11-25-fused-sparse-binretry80"
+  },
+  "runs": [
+    {
+      "ep": 0,
+      "belt": 0.08,
+      "seconds": 80.0,
+      "spawned": 6,
+      "delivered": 4,
+      "dropped": 0,
+      "missed": 0,
+      "picked": 4,
+      "switches": 5,
+      "success_rate": 1.0,
+      "engaged": 5,
+      "engaged_delivered": 4,
+      "engaged_success": 1.0,
+      "declined": 0,
+      "handle_s": 4.158333333333333,
+      "throughput_per_min": 3.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "strawberry": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "banana": {
+          "spawned": 2,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "pear": {
+          "spawned": 2,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        }
+      }
+    },
+    {
+      "ep": 1,
+      "belt": 0.08,
+      "seconds": 80.0,
+      "spawned": 5,
+      "delivered": 4,
+      "dropped": 0,
+      "missed": 1,
+      "picked": 5,
+      "switches": 5,
+      "success_rate": 0.8,
+      "engaged": 5,
+      "engaged_delivered": 4,
+      "engaged_success": 0.8,
+      "declined": 0,
+      "handle_s": 4.224999999999999,
+      "throughput_per_min": 3.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "strawberry": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "banana": {
+          "spawned": 2,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 1,
+          "picked": 2
+        },
+        "pear": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        }
+      }
+    },
+    {
+      "ep": 2,
+      "belt": 0.08,
+      "seconds": 80.0,
+      "spawned": 5,
+      "delivered": 4,
+      "dropped": 0,
+      "missed": 0,
+      "picked": 4,
+      "switches": 5,
+      "success_rate": 1.0,
+      "engaged": 5,
+      "engaged_delivered": 4,
+      "engaged_success": 1.0,
+      "declined": 0,
+      "handle_s": 4.191666666666667,
+      "throughput_per_min": 3.0,
+      "per_kind": {
+        "apple": {
+          "spawned": 2,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "strawberry": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "banana": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        },
+        "pear": {
+          "spawned": 1,
+          "delivered": 1,
+          "dropped": 0,
+          "missed": 0,
+          "picked": 1
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "spawned": 16,
+    "delivered": 12,
+    "dropped": 0,
+    "missed": 1,
+    "picked": 13
+  }
+}

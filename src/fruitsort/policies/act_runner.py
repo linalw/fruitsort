@@ -384,25 +384,38 @@ class ActPureRunner:
             if self.suction:
                 # ---- 吸盘状态机（无接触力、无朝向要求）----
                 if self.attached:
-                    # 卡死守卫：吸住后 TCP 15 步几乎不动（被顶住/IK 卡死）→ 放回带面重试
-                    moved = float(np.linalg.norm(tcp[:2] - self._hold_tcp[:2]))
-                    self._hold_steps = self._hold_steps + 1 if moved < 0.004 else 0
-                    self._hold_tcp = np.array(tcp, dtype=np.float64, copy=True)
-                    if self._hold_steps >= 15:
+                    # 卡死守卫（v1.73）："**到目标框的距离** 连续 30 步没有变短" → 放回带面重试。
+                    # 旧版判据是"TCP 15 步几乎不动"，但实测卡死是**缓慢移动**（手臂在框外
+                    # 来回蹭），静止判据永远不触发 → 每局丢 1 件。
+                    try:
+                        from fruitsort.sim.conveyor import BIN_LAYOUT
+                        _bx, _by = BIN_LAYOUT[kind]
+                    except Exception:  # noqa: BLE001
+                        _bx, _by = 0.0, -0.3
+                    _bd = float(np.hypot(tcp[0] - _bx, tcp[1] - _by))
+                    if _bd < getattr(self, "_bin_best", 9.9) - 0.005:
+                        self._bin_best = _bd
+                        self._hold_steps = 0
+                    else:
+                        self._hold_steps += 1
+                    if self._hold_steps >= 30:
                         try:
                             from mani_skill.utils.structs.pose import Pose
                             _a = u.fruit_actors.get(kind)
                             if _a is not None:
+                                # 放回**带面中线**（y=0）：若放回框附近，会掉到带外
                                 belt_z = float(getattr(u, "belt_top_z", 0.45)) + 0.03
+                                _px = float(np.clip(tcp[0], -0.70, 0.30))
                                 _a.set_pose(Pose.create_from_pq(torch.tensor(
-                                    [[float(tcp[0]), float(tcp[1]), belt_z]],
-                                    dtype=torch.float32)))
+                                    [[_px, 0.0, belt_z]], dtype=torch.float32)))
                                 _a.set_linear_velocity(torch.zeros(1, 3))
+                                _a.set_angular_velocity(torch.zeros(1, 3))
                         except Exception:  # noqa: BLE001
                             pass
                         self.attached = False
                         self._hold_steps = 0
-                        self.stats["suction_stuck"] = self.stats.get("suction_stuck", 0) + 1
+                        self._bin_best = 9.9
+                        self.stats["suction_retry"] = self.stats.get("suction_retry", 0) + 1
                 if self.attached:
                     # 已吸附：水果跟着 TCP（用上一步的 TCP，1 步滞后可忽略）
                     p = np.clip(tcp + self.attach_off, -2.5, 2.5)
