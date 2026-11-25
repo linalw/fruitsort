@@ -91,11 +91,19 @@ class FruitSortEnv(BaseEnv):
     # ------------------------------------------------------------------ #
     @property
     def _default_sensor_configs(self):
+        # 头部相机：默认 = 旧的窄视场（1.02 rad / 2.45 m，带面只覆盖 x ≳ −1.1）。
+        # 真机用 Gemini 335（~90°×65°），这里允许用环境变量换成"真机量级"：
+        #   FRUITSORT_HEAD_FOV=1.62 FRUITSORT_HEAD_Z=3.2
+        import os as _os
+        _fov = float(_os.environ.get("FRUITSORT_HEAD_FOV", 1.02))
+        _z = float(_os.environ.get("FRUITSORT_HEAD_Z", 2.45))
+        _res = str(_os.environ.get("FRUITSORT_HEAD_RES", "640"))
+        _rw, _rh = (int(_res.split("x")[0]), int(_res.split("x")[1])) if "x" in _res else (int(_res), int(int(_res) * 480 // 640))
         return [
             CameraConfig(
                 "overhead",
-                sapien_utils.look_at([0.0, -0.05, 2.45], [0.0, -0.05, self.belt_top_z]),
-                640, 480, 1.02, 0.01, 12,
+                sapien_utils.look_at([0.0, -0.05, _z], [0.0, -0.05, self.belt_top_z]),
+                _rw, _rh, _fov, 0.01, 12,
             ),
             CameraConfig(
                 "side",

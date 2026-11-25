@@ -124,7 +124,8 @@ class RGBDSource(VisionSource):
                  clip_x: float = -1.10, hold_max: int = 300, hold_x_max: float = 0.30,
                  near_hold: bool = True, near_dist: float = 0.10,
                  near_extent: float = 0.11, near_extent_min: float = 0.05,
-                 grasp_axis_offset: float = 0.0, grasp_axis_extent: float = 0.12):
+                 grasp_axis_offset: float = 0.0, grasp_axis_extent: float = 0.12,
+                 use_hand: bool = False):
         specs = load_specs()
         self.u = u
         self.kinds = tuple(kinds)
@@ -149,7 +150,12 @@ class RGBDSource(VisionSource):
         self.grasp_axis_offset = float(grasp_axis_offset)
         self.grasp_axis_extent = float(grasp_axis_extent)
         self.plane_z = float(getattr(u, "belt_top_z", 0.45))
-        self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds)
+        _extra = []
+        if use_hand:
+            from .hand import HandCamera
+            _extra.append(HandCamera(u))
+        self.vs = RGBDPerception(u, dt=dt, cam_h=cam_h, kinds=self.kinds,
+                                 extra_detectors=_extra)
         self.last = {k: (np.array([self.clip_x, 0.0,
                                    self.plane_z + specs[k].half_height], dtype=np.float64),
                          np.zeros(3, dtype=np.float64))

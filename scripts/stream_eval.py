@@ -54,7 +54,8 @@ class StreamController:
                  single_runner=None, queue_thr: float = 0.30, engage_x: float = -0.45,
                  scripted_kinds=(), scripted_yaw: float = 0.0, objs: dict | None = None,
                  decline_yaw: float = 0.0, long_extent: float = 0.11,
-                 kind_priority: dict | None = None):
+                 kind_priority: dict | None = None, perception_targets: bool = False,
+                 give_up_s: float = 12.0, src=None):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -86,6 +87,12 @@ class StreamController:
         self.long_extent = float(long_extent)
         # 按类优先（数字越小越先接）：短周期/高可靠的类先做，长条留到空档
         self.kind_priority = dict(kind_priority or {})
+        # ---- 真·纯感知目标选择（不读仿真槽位）----
+        # 只用感知跟踪到的实例（每类"最靠前"那件）当候选；存活判据也来自感知
+        # （丢检成幽灵/已离开工作区/接管超时 → 放弃），不再看 u._slots。
+        self.perception_targets = bool(perception_targets)
+        self.give_up_s = float(give_up_s)
+        self.src = src
         self.sorter = None
         self.kinds = tuple(kinds)
         self.only_kind = only_kind
@@ -113,9 +120,28 @@ class StreamController:
                 n += 1
         return n / 4.0
 
+    @staticmethod
+    def _actor_pos(a) -> np.ndarray:
+        """兼容两种"物体"：仿真 actor(.pose.p) / 感知实例(.pos)。"""
+        if hasattr(a, "pose"):
+            return a.pose.p[0].cpu().numpy()
+        return np.asarray(getattr(a, "pos", np.zeros(3)), dtype=np.float64)
+
     def _live(self):
-        items = []
         ks = (self.only_kind,) if self.only_kind else self.kinds
+        if self.perception_targets and self.src is not None:
+            tracks = getattr(self.src, "last_tracks", None) or {}
+            out = []
+            for k in ks:
+                cands = [t for t in (tracks.get(k) or [])
+                         if float(np.asarray(t.pos)[0]) >= -1.10]
+                if not cands:
+                    continue
+                t = max(cands, key=lambda i: float(np.asarray(i.pos)[0]))
+                out.append(dict(id=int(getattr(t, "track_id", -1)), kind=k,
+                                actor=t, perception=True))
+            return out
+        items = []
         for k in ks:
             for slot in self.u._slots[k]:
                 if slot["live"]:
@@ -193,6 +219,21 @@ class StreamController:
             self._idle_yaw = float(np.clip(self._idle_yaw + 0.9 * d, -1.2, 1.2))
         return self._idle_yaw
 
+    def _target_live(self) -> bool:
+        it = self.target
+        if not (self.perception_targets and self.objs is not None):
+            return any(it is s["item"] for s in self.u._slots[it["kind"]] if s["live"])
+        if self.runner is not None and getattr(self.runner, "grasping", False):
+            return True                     # 正夹着：即使离开视野也继续
+        t0 = it.get("t_engage")
+        if t0 is not None and (float(self.u._t) - float(t0)) > self.give_up_s:
+            return False                    # 接管超时（现实中就该放弃了）
+        a = self.objs.get(it["kind"])
+        if a is None:
+            return False
+        x = float(a.pose.p[0, 0])
+        return bool(x > -1.05 and x <= 0.45)
+
     def _pick_target(self):
         """选**最接近理想拦截点**的一件（不是最紧急的）。
 
@@ -202,7 +243,7 @@ class StreamController:
         tcp = self.u.agent.tcp_pose.p[0].cpu().numpy()
         urg, late = [], []
         for it in self._live():
-            p = it["actor"].pose.p[0].cpu().numpy()
+            p = self._actor_pos(it["actor"])
             if np.linalg.norm(p - tcp) < 0.05:   # 就在指尖上（可能正抓着）
                 continue
             if self.objs is not None:
@@ -236,15 +277,31 @@ class StreamController:
     def act(self, obs):
         self._repoint()
         # 目标失效（已被回收/送达/漏过）→ 换目标
-        if self.target is not None and not any(
-                self.target is s["item"] for s in self.u._slots[self.target["kind"]] if s["live"]):
+        if self.target is not None and not self._target_live():
             self.target = None
             # 目标结束（送达/掉落/漏过）：清掉执行器状态，否则 phase 会停在"搬运"
             self.runner.reset()
         if self.target is None:
             self.target = self._pick_target()
             if self.target is not None:
-                self.engaged_ids.add(self.target["id"])
+                # 纯感知目标没有真值 id：用"估计位置最近的场上件"做**诊断**映射，
+                # 仅用于机会内记账（模型输入不含真值）
+                if self.target.get("perception") and self.objs is not None:
+                    est = self.objs.get(self.target["kind"])
+                    if est is not None:
+                        p_est = est.pose.p[0].cpu().numpy()
+                        best = None
+                        for k2 in self.kinds:
+                            for s2 in self.u._slots[k2]:
+                                if not s2["live"]:
+                                    continue
+                                q = s2["item"]["actor"].pose.p[0].cpu().numpy()
+                                dd = float(np.linalg.norm(q[:2] - p_est[:2]))
+                                if best is None or dd < best[0]:
+                                    best = (dd, s2["item"]["id"])
+                        if best is not None and best[0] < 0.25:
+                            self.target["diag_id"] = best[1]
+                self.engaged_ids.add(self.target.get("diag_id", self.target["id"]))
                 if "t_engage" not in self.target:
                     self.target["t_engage"] = float(self.u._t)
                 q = self._queue_level()
@@ -287,7 +344,7 @@ class StreamController:
                 for it in self._live():
                     if it["kind"] != "banana":
                         continue
-                    if -1.15 < float(it["actor"].pose.p[0, 0]) < -0.30:
+                    if -1.15 < float(self._actor_pos(it["actor"])[0]) < -0.30:
                         self._yaw_cache[it["id"]] = iy
                         break
             return np.array([0.5, 0.0, 0.55, HOME_EULER[0], HOME_EULER[1],
@@ -466,6 +523,11 @@ def main() -> None:
     ap.add_argument("--grasp-axis-offset", type=float, default=0.0,
                     help="抓取点沿长轴偏移（米，只作用于长条目标；感知 yaw 给方向）")
     ap.add_argument("--grasp-axis-extent", type=float, default=0.12)
+    ap.add_argument("--hand-cam", action="store_true",
+                    help="感知里再加腕部相机（头部被手臂挡住时补最后 5 cm；现实中可得）")
+    ap.add_argument("--perception-targets", action="store_true",
+                    help="目标选择/存活判据全部来自感知跟踪（不读仿真槽位）；接管 12 s 未完成即放弃")
+    ap.add_argument("--give-up-s", type=float, default=12.0)
     ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
                     help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效；默认开）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
@@ -505,7 +567,7 @@ def main() -> None:
     if args.perception == "fused":
         from fruitsort.perception.adapter import FusedSource
         src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq,
-                          near_hold=args.near_hold,
+                          use_hand=args.hand_cam, near_hold=args.near_hold,
                           grasp_axis_offset=args.grasp_axis_offset,
                           grasp_axis_extent=args.grasp_axis_extent)
     elif args.perception == "rgbd":
@@ -513,7 +575,8 @@ def main() -> None:
         src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq,
                          near_hold=args.near_hold,
                          grasp_axis_offset=args.grasp_axis_offset,
-                         grasp_axis_extent=args.grasp_axis_extent)
+                         grasp_axis_extent=args.grasp_axis_extent,
+                         use_hand=args.hand_cam)
     elif args.perception == "vision":
         from fruitsort.perception.adapter import VisionSource
         src = VisionSource(env.unwrapped, dt=1.0 / args.control_freq)
@@ -575,7 +638,9 @@ def main() -> None:
                             engage_x=args.engage_x,
                             scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
                             decline_yaw=args.decline_yaw, long_extent=args.long_extent,
-                            kind_priority=parse_map(args.kind_priority))
+                            kind_priority=parse_map(args.kind_priority),
+                            perception_targets=args.perception_targets,
+                            give_up_s=args.give_up_s, src=src)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -599,7 +664,9 @@ def main() -> None:
                                 scripted_kinds=[k.strip() for k in args.scripted_kinds.split(",") if k.strip()],
                                 scripted_yaw=ep_yaw,
                                 decline_yaw=args.decline_yaw, long_extent=args.long_extent,
-                            kind_priority=parse_map(args.kind_priority))
+                            kind_priority=parse_map(args.kind_priority),
+                            perception_targets=args.perception_targets,
+                            give_up_s=args.give_up_s, src=src)
         writer = None
         if args.video:
             _v = Path(args.video)

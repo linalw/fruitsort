@@ -492,7 +492,13 @@ class ActPureRunner:
                 belt_z = float(getattr(u, "belt_top_z", 0.45))
                 lifted = fz_chk > belt_z + 0.05
                 at_pad = abs(float(tcp[2]) - fz_chk) < 0.030
-                if not (lifted or at_pad):
+                # 还要"水平也对上"：感知估计差 3–6 cm 时，仅凭高度会把
+                # "在果子旁边闭爪"当成抓住 → 之后一路搬运空气（v1.75 流内 trace）
+                near_xy = True
+                if raw is not None:
+                    near_xy = float(np.hypot(float(tcp[0]) - float(raw[0]),
+                                             float(tcp[1]) - float(raw[1]))) < 0.060
+                if not (lifted or (at_pad and near_xy)):
                     grasping = False
             if grasping:
                 self.phase_state, self.grasp_lost = 2, 0
