@@ -92,6 +92,12 @@ class ActPureRunner:
         self.use_geom = _extra in (4, 5)
 
         self.env, self.u, self.device = env, env.unwrapped, device
+        # 头部图像：以目标为中心的 ROI 裁剪（与录制端同一变换；宽视场下必须）
+        try:
+            from ..perception.roi import RoiCrop
+            self.roi = RoiCrop(width_m=0.50, out_size=128)
+        except Exception:  # noqa: BLE001
+            self.roi = None
         # 观测/判据用的"物体源"：默认仿真真值；--perception vision 时换成感知替身
         self.actors = None
         self.kind = kind
@@ -515,7 +521,11 @@ class ActPureRunner:
         self.grasping = grasping
 
         sd = obs["sensor_data"]
-        self.oh.append(prep(sd["overhead"]["rgb"][0].cpu().numpy(), cfg.img_size))
+        _oh_rgb = sd["overhead"]["rgb"][0].cpu().numpy()
+        if self.roi is not None and actor is not None:
+            _xy = actor.pose.p[0].cpu().numpy()[:2]
+            _oh_rgb = self.roi.crop(_oh_rgb, _xy)
+        self.oh.append(prep(_oh_rgb, cfg.img_size))
         self.wr.append(prep(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
         sb = build_obs(u, kind, tactile=bool(self.tactile_dim), actors=self.actors)
         if self.use_phase:

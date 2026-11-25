@@ -88,6 +88,9 @@ def main() -> None:
     ap.add_argument("--aux-data", nargs="*", default=[],
                     help="失败/滑脱片段目录：只参与滑移辅助损失，不参与动作 BC 损失")
     ap.add_argument("--aux-boost", type=int, default=1, help="失败片段过采样倍数")
+    ap.add_argument("--close-z-loss", type=float, default=0.0,
+                    help="闭爪高度约束的权重：闭爪步的目标 z 必须 ≤ 果心 − frac×半高（0=关闭）")
+    ap.add_argument("--close-z-frac", type=float, default=0.3)
     ap.add_argument("--slip-weight", type=float, default=0.3)
     ap.add_argument("--force-weight", type=float, default=1.0)
     ap.add_argument("--boost-kind", default="", help="弱类过采样：类名，如 pear")
@@ -321,6 +324,30 @@ def main() -> None:
                     ce = ce.view(len(ce) // logits.shape[1], logits.shape[1]).mean(dim=1)
                     l_ph = (ce * w_bc).sum() / w_bc.sum().clamp(min=1.0) if w_bc is not None else ce.mean()
                     loss = loss + args.phase_weight * l_ph
+                l_cz = torch.zeros((), device=args.device)
+                if args.close_z_loss > 0:
+                    # 闭爪高度约束（用户要求）：闭爪那几步的目标 TCP z 不应高于
+                    # "果心 − frac×半高"（小果不能在高处闭合）。用 hinge 直接压预测。
+                    from fruitsort.sim.assets.fruits import load_specs as _ls
+                    _sp = _ls()
+                    _half = torch.tensor([_sp[k].half_height for k in
+                                          ("apple", "strawberry", "banana", "pear")],
+                                         device=args.device)
+                    with torch.no_grad():
+                        st_raw = (st.detach().float()
+                                  * torch.tensor(norm_state.obs_std, device=st.device)
+                                  + torch.tensor(norm_state.obs_mean, device=st.device))
+                    _dz = (pred[:, :, 2].float() * float(norm_act.act_std[2])
+                           + float(norm_act.act_mean[2]))
+                    z_tgt = st_raw[:, -1, 2].unsqueeze(1) + _dz          # 绝对目标 z
+                    j = (kind.long() - 1).clamp(min=0)
+                    # 用 gather 取"目标类果心 z"（混用切片+张量索引会变成 (B,B)）
+                    z_c = st_raw[:, -1, :].gather(
+                        1, (19 + 8 * j).view(-1, 1)).squeeze(1)           # (B,)
+                    lim = (z_c - args.close_z_frac * _half[j]).unsqueeze(1) + 0.005
+                    close = (act[:, :, 3] < 0).float()                    # (B,K)
+                    l_cz = (torch.relu(z_tgt - lim) * close).sum() / close.sum().clamp(min=1.0)
+                    loss = loss + args.close_z_loss * l_cz
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -328,7 +355,7 @@ def main() -> None:
             tot += float(loss.detach()) * len(oh)
             na += len(oh)
             for k, v in (("xyz", l_xyz), ("grip", l_grip), ("kl", l_kl), ("phase", l_ph),
-                         ("slip", l_slip)):
+                         ("slip", l_slip), ("close_z", l_cz)):
                 acc[k] = acc.get(k, 0.0) + float(v.detach()) * len(oh)
         sched.step()
 
@@ -376,7 +403,7 @@ def main() -> None:
             print(f"epoch {ep:3d} train {tot/max(na,1):.4f} "
                   f"(xyz {acc.get('xyz',0)/max(na,1):.4f} grip {acc.get('grip',0)/max(na,1):.4f} "
                   f"kl {acc.get('kl',0)/max(na,1):.4f} ph {acc.get('phase',0)/max(na,1):.4f}) "
-                  f"slip {acc.get('slip',0)/max(na,1):.3f}) val {val:.4f} "
+                  f"slip {acc.get('slip',0)/max(na,1):.3f} cz {acc.get('close_z',0)/max(na,1):.4f}) val {val:.4f} "
                   f"(ph {vacc.get('phase',0)/max(vn,1):.4f}) {dt:.1f}s", flush=True)
 
     (out / "metrics.json").write_text(json.dumps({

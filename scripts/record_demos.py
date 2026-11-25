@@ -69,6 +69,8 @@ def main() -> None:
     ap.add_argument("--spawn-spacing", type=float, default=0.45)
     ap.add_argument("--control-freq", type=int, default=20)
     ap.add_argument("--images", action="store_true", help="同时保存 overhead + 腕部图像（JPEG 字节）")
+    ap.add_argument("--roi-m", type=float, default=0.50,
+                    help="头部图像以目标为中心的裁剪窗口（米；0=不裁剪，保留整幅）")
     ap.add_argument("--tactile", action="store_true",
                     help="观测追加 9 维触觉（左右指接触力/摩擦利用率/开口/滑移）")
     ap.add_argument("--instruction", default="all", choices=["all", "apple", "strawberry", "banana", "pear"],
@@ -101,6 +103,10 @@ def main() -> None:
                         sim_freq=SIM_FREQ[args.control_freq]),
     )
 
+    roi = None
+    if args.images and args.roi_m > 0:
+        from fruitsort.perception.roi import RoiCrop
+        roi = RoiCrop(width_m=args.roi_m, out_size=128)
     rng = np.random.default_rng(args.seed + 999)
     records = []
     n_ok = 0
@@ -123,7 +129,13 @@ def main() -> None:
             if args.images:
                 sd = obs["sensor_data"]
                 oh = sd["overhead"]["rgb"][0].cpu().numpy()
-                oh = cv2.resize(oh, (128, 128), interpolation=cv2.INTER_AREA)
+                if roi is not None:
+                    # 以**目标类**为中心裁剪（录制用真值位置；部署时用感知位置，同一变换）
+                    _a = u.fruit_actors.get(args.instruction if args.instruction != "all" else "apple")
+                    _xy = _a.pose.p[0].cpu().numpy()[:2] if _a is not None else (0.0, 0.0)
+                    oh = roi.crop(oh, _xy)
+                else:
+                    oh = cv2.resize(oh, (128, 128), interpolation=cv2.INTER_AREA)
                 over_list.append(cv2.imencode(".jpg", oh[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes())
                 if "hand_camera" in sd:
                     wr = sd["hand_camera"]["rgb"][0].cpu().numpy()
