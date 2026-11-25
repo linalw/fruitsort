@@ -403,6 +403,8 @@ def main() -> None:
     ap.add_argument("--suction", action="store_true",
                     help="吸盘/软末端：模型说吸且贴近果心即附着，搬运跟 TCP，到框上方释放")
     ap.add_argument("--suction-radius", type=float, default=0.10)
+    ap.add_argument("--suction-carry", default="scripted", choices=["scripted", "policy"],
+                    help="吸住后怎么搬到框：scripted=直接奔框（推荐）/policy=用策略搬运段")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="只碰到水果顶端不算抓住（要求指面到达果身高度或已被抬起）")
     ap.add_argument("--lead-long", type=float, default=0.0,
@@ -513,6 +515,7 @@ def main() -> None:
                              grasp_proxy=args.grasp_proxy,
                              suction=args.suction,
                              suction_radius=args.suction_radius,
+                             suction_carry=args.suction_carry,
                              yaw_align=args.yaw_align,
                              yaw_align_off=args.yaw_align_off,
                              yaw_align_extent=args.yaw_align_extent,

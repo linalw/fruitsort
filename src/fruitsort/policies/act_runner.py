@@ -62,6 +62,7 @@ class ActPureRunner:
                  yaw_align_rot_frac: float = 0.0, yaw_align_fast: bool = False,
                  yaw_align_hold: bool = True, yaw_hold_fade: float = 0.12,
                  suction: bool = False, suction_radius: float = 0.10,
+                 suction_carry: str = "scripted",
                  yaw_hold_frac: float = 1.0, yaw_hold_cap: float = 0.0,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
@@ -272,8 +273,13 @@ class ActPureRunner:
         # 之后水果跟着 TCP；模型说"放"且在目标框上方 → 落到框底（env 判 in_bin=delivered）。
         self.suction = bool(suction)
         self.suction_radius = float(suction_radius)
+        # 吸附后的搬运：scripted=直接奔向目标框再释放（task 级 FSM，吸盘常见做法）；
+        # policy=沿用策略输出的搬运段（实测流内会少走 10–16 cm，进不了框）
+        self.suction_carry = str(suction_carry)
         self.attached = False
         self.attach_off = np.zeros(3)
+        self._hold_steps = 0
+        self._hold_tcp = np.zeros(3)
         # 非长条件"保持"的量：可整体缩放（frac）并限幅（cap，rad）。
         # 目的：让空档期预转**部分**活到香蕉那一拍，同时苹果/草莓尽量留在训练主分布（yaw≈0）
         self.yaw_hold_frac = float(yaw_hold_frac)
@@ -286,6 +292,10 @@ class ActPureRunner:
         self._pre_steps = 0
         self.attached = False
         self.attach_off = np.zeros(3)
+        self._hold_steps = 0
+        self._hold_tcp = np.zeros(3)
+        self._hold_steps = 0
+        self._hold_tcp = np.zeros(3)
         self._descend_target = None
         self._descend_steps = 0
         self._stall_tcp = np.zeros(3)
@@ -343,6 +353,10 @@ class ActPureRunner:
         self._pre_steps = 0
         self.attached = False
         self.attach_off = np.zeros(3)
+        self._hold_steps = 0
+        self._hold_tcp = np.zeros(3)
+        self._hold_steps = 0
+        self._hold_tcp = np.zeros(3)
         self._descend_target = None
         self._descend_steps = 0
         self._stall_run = 0
@@ -370,6 +384,26 @@ class ActPureRunner:
             if self.suction:
                 # ---- 吸盘状态机（无接触力、无朝向要求）----
                 if self.attached:
+                    # 卡死守卫：吸住后 TCP 15 步几乎不动（被顶住/IK 卡死）→ 放回带面重试
+                    moved = float(np.linalg.norm(tcp[:2] - self._hold_tcp[:2]))
+                    self._hold_steps = self._hold_steps + 1 if moved < 0.004 else 0
+                    self._hold_tcp = np.array(tcp, dtype=np.float64, copy=True)
+                    if self._hold_steps >= 15:
+                        try:
+                            from mani_skill.utils.structs.pose import Pose
+                            _a = u.fruit_actors.get(kind)
+                            if _a is not None:
+                                belt_z = float(getattr(u, "belt_top_z", 0.45)) + 0.03
+                                _a.set_pose(Pose.create_from_pq(torch.tensor(
+                                    [[float(tcp[0]), float(tcp[1]), belt_z]],
+                                    dtype=torch.float32)))
+                                _a.set_linear_velocity(torch.zeros(1, 3))
+                        except Exception:  # noqa: BLE001
+                            pass
+                        self.attached = False
+                        self._hold_steps = 0
+                        self.stats["suction_stuck"] = self.stats.get("suction_stuck", 0) + 1
+                if self.attached:
                     # 已吸附：水果跟着 TCP（用上一步的 TCP，1 步滞后可忽略）
                     p = np.clip(tcp + self.attach_off, -2.5, 2.5)
                     try:
@@ -387,7 +421,12 @@ class ActPureRunner:
                 if (not self.attached and float(fpos_now[2]) > 0.30
                         and (fd < 0.05 or (self.prev_grip < 0 and fd < self.suction_radius))):
                     self.attached = True
-                    self.attach_off = fpos_now - tcp
+                    # 附着偏移取"果心相对 TCP"，但**至少往下一段**，避免吸住的果身与
+                    # 指面/机身在物理上重叠（重叠会把手臂顶起来，实测 z 从 0.82 被顶到 0.92）
+                    off = fpos_now - tcp
+                    if off[2] > -0.09:
+                        off = np.array([off[0], off[1], -0.09], dtype=np.float64)
+                    self.attach_off = off
                     self.stats["suction_on"] = self.stats.get("suction_on", 0) + 1
                 # 到框上方就"吹气释放"（吸盘典型行为）：不再等模型给"放"的信号——
                 # 实测模型在吸盘语义下常忘了开，导致抱着果子跑满 900 步
@@ -799,6 +838,17 @@ class ActPureRunner:
                 self.stats["stall_fix"] = self.stats.get("stall_fix", 0) + 1
                 self._stall_run = 0
         self._stall_tcp = np.array(tcp, dtype=np.float64, copy=True)
+
+        if self.suction and self.suction_carry == "scripted" and self.attached:
+            # 吸住之后用最简单的"送到框正上方"：不再依赖策略的搬运段
+            try:
+                from fruitsort.sim.conveyor import BIN_LAYOUT
+                bx, by = BIN_LAYOUT[kind]
+            except Exception:  # noqa: BLE001
+                bx, by = 0.0, -0.3
+            tgt = np.array([float(bx), float(by), 0.55], dtype=np.float64)
+            grip = -1.0
+            self.stats["suction_carry"] = self.stats.get("suction_carry", 0) + 1
 
         err = tgt - tcp
         d = float(np.linalg.norm(err))

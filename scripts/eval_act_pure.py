@@ -147,6 +147,8 @@ def main() -> None:
     ap.add_argument("--suction", action="store_true",
                     help="吸盘/软末端：模型说吸且贴近果心即附着，搬运跟 TCP，到框上方释放")
     ap.add_argument("--suction-radius", type=float, default=0.10)
+    ap.add_argument("--suction-carry", default="scripted", choices=["scripted", "policy"],
+                    help="吸住后怎么搬到框：scripted=直接奔框（推荐）/policy=用策略搬运段")
     ap.add_argument("--grasp-verify", action="store_true",
                     help="接触但指面未到果身高度/未抬起时不算抓住（避免'带空气搬运'）")
     ap.add_argument("--grasp-axis-offset", type=float, default=0.0,
@@ -219,7 +221,8 @@ def main() -> None:
             yaw_hold_frac=args.yaw_hold_frac, yaw_hold_cap=args.yaw_hold_cap,
             yaw_hold_fade=args.yaw_hold_fade,
             grasp_verify=args.grasp_verify, grasp_proxy=args.grasp_proxy,
-            suction=args.suction, suction_radius=args.suction_radius, close_z_gate=args.close_z_gate,
+            suction=args.suction, suction_radius=args.suction_radius,
+            suction_carry=args.suction_carry, close_z_gate=args.close_z_gate,
             close_commit=args.close_commit, close_commit_xy=args.close_commit_xy,
             close_commit_map=parse_map(args.close_commit_map),
             close_commit_steps=args.close_commit_steps,
