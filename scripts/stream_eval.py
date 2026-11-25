@@ -536,6 +536,9 @@ def main() -> None:
     ap.add_argument("--perception-targets", action="store_true",
                     help="目标选择/存活判据全部来自感知跟踪（不读仿真槽位）；接管 12 s 未完成即放弃")
     ap.add_argument("--give-up-s", type=float, default=12.0)
+    ap.add_argument("--near-extent-min", type=float, default=0.05,
+                    help="near-hold 允许的最小世界长度（默认 0.05：草莓 0.043 被排除）")
+    ap.add_argument("--near-extent-max", type=float, default=0.11)
     ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
                     help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效；默认开）")
     ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
@@ -578,12 +581,16 @@ def main() -> None:
         from fruitsort.perception.adapter import FusedSource
         src = FusedSource(env.unwrapped, dt=1.0 / args.control_freq,
                           use_hand=args.hand_cam, near_hold=args.near_hold,
+                          near_extent_min=args.near_extent_min,
+                          near_extent=args.near_extent_max,
                           grasp_axis_offset=args.grasp_axis_offset,
                           grasp_axis_extent=args.grasp_axis_extent)
     elif args.perception == "rgbd":
         from fruitsort.perception.adapter import RGBDSource
         src = RGBDSource(env.unwrapped, dt=1.0 / args.control_freq,
                          near_hold=args.near_hold,
+                         near_extent_min=args.near_extent_min,
+                         near_extent=args.near_extent_max,
                          grasp_axis_offset=args.grasp_axis_offset,
                          grasp_axis_extent=args.grasp_axis_extent,
                          use_hand=args.hand_cam)
