@@ -297,6 +297,27 @@ class StreamController:
             it = self.target
             if it is not None:
                 it["held"] = bool(getattr(self.runner, "attached", False))
+        # 吸盘释放/放回：用 target['actor'] 执行（runner 只发请求）
+        _rn = self.runner
+        if self.target is not None and (getattr(_rn, "_release_to", None) is not None
+                                        or getattr(_rn, "_belt_put", None) is not None):
+            import torch as _th
+            from mani_skill.utils.structs.pose import Pose as _Pose
+            _a = self.target["actor"]
+            _rel = getattr(_rn, "_release_to", None)
+            _put = getattr(_rn, "_belt_put", None)
+            if _rel is not None:
+                _p = [float(_rel[0]), float(_rel[1]), 0.08]
+                _rn._release_to = None
+            else:
+                _p = [float(_put[0]), float(_put[1]), float(_put[2])]
+                _rn._belt_put = None
+            try:
+                _a.set_pose(_Pose.create_from_pq(_th.tensor([_p], dtype=_th.float32)))
+                _a.set_linear_velocity(_th.zeros(1, 3))
+                _a.set_angular_velocity(_th.zeros(1, 3))
+            except Exception:  # noqa: BLE001
+                pass
         if self.use_scripted:
             act = self.sorter.act()
             if self.noise > 0:
@@ -464,6 +485,8 @@ def main() -> None:
     ap.add_argument("--video-fps", type=int, default=0,
                     help="视频帧率，0 = 跟随 control-freq（与实时一致）")
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
+    ap.add_argument("--trace-items", action="store_true",
+                    help="逐件记账：每 20 步打印 (相位, 到框距离, 是否附着)，并在每局末打印每件结果")
     ap.add_argument("--seed", type=int, default=40000)
     ap.add_argument("--out", default="")
     args = ap.parse_args()
@@ -605,6 +628,19 @@ def main() -> None:
                 ctrl.runner.set_actors(objs)
             act = ctrl.act(obs)
             it = ctrl.target
+            if args.trace_items and it is not None and t % 20 == 0:
+                _tcp = u.agent.tcp_pose.p[0].cpu().numpy()
+                try:
+                    from fruitsort.sim.conveyor import BIN_LAYOUT as _BL
+                    _bx, _by = _BL[it["kind"]]
+                    _bd = float(np.hypot(_tcp[0] - _bx, _tcp[1] - _by))
+                except Exception:  # noqa: BLE001
+                    _bd = float("nan")
+                _rn = ctrl.runner
+                print(f"    [trk] t={t:4d} id={it['id']:3d} {it['kind']:10s} "
+                      f"ph={_rn.phase_state} att={getattr(_rn,'attached',False)} "
+                      f"bd={_bd*100:5.1f}cm tcp=({_tcp[0]:+.2f},{_tcp[1]:+.2f},{_tcp[2]:.2f}) "
+                      f"engaged_at={it.get('t_engage', -1):.1f}s", flush=True)
             if it is None or it["id"] != buf["id"]:
                 flush()
                 if it is not None:
@@ -703,6 +739,11 @@ def main() -> None:
             f"{k} {v['delivered']}/{v['spawned']}(drop {v['dropped']}) "
             for k, v in row["per_kind"].items()), flush=True)
         ebk = st.get("engaged_by_kind", {})
+        if args.trace_items:
+            for _it in st.get("items", {}).values():
+                _te, _tx = _it.get("t_engage"), _it.get("t_end")
+                print(f"    [item] id={_it.get('id')} {_it.get('kind'):10s} "
+                      f"outcome={_it.get('outcome')} engage={_te} end={_tx}", flush=True)
         print("      机会内每类: " + "  ".join(
             f"{k} {ebk.get(k, (0, 0))[1]}/{ebk.get(k, (0, 0))[0]}" for k in KINDS), flush=True)
 

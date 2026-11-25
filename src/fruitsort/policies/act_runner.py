@@ -280,6 +280,8 @@ class ActPureRunner:
         self.attach_off = np.zeros(3)
         self._hold_steps = 0
         self._hold_tcp = np.zeros(3)
+        self._release_to = None
+        self._belt_put = None
         # 非长条件"保持"的量：可整体缩放（frac）并限幅（cap，rad）。
         # 目的：让空档期预转**部分**活到香蕉那一拍，同时苹果/草莓尽量留在训练主分布（yaw≈0）
         self.yaw_hold_frac = float(yaw_hold_frac)
@@ -292,6 +294,8 @@ class ActPureRunner:
         self._pre_steps = 0
         self.attached = False
         self.attach_off = np.zeros(3)
+        self._release_to = None
+        self._belt_put = None
         self._hold_steps = 0
         self._hold_tcp = np.zeros(3)
         self._hold_steps = 0
@@ -353,6 +357,8 @@ class ActPureRunner:
         self._pre_steps = 0
         self.attached = False
         self.attach_off = np.zeros(3)
+        self._release_to = None
+        self._belt_put = None
         self._hold_steps = 0
         self._hold_tcp = np.zeros(3)
         self._hold_steps = 0
@@ -393,25 +399,19 @@ class ActPureRunner:
                     except Exception:  # noqa: BLE001
                         _bx, _by = 0.0, -0.3
                     _bd = float(np.hypot(tcp[0] - _bx, tcp[1] - _by))
-                    if _bd < getattr(self, "_bin_best", 9.9) - 0.005:
+                    self._att_steps = getattr(self, "_att_steps", 0) + 1
+                    if _bd < getattr(self, "_bin_best", 9.9) - 0.010:
                         self._bin_best = _bd
                         self._hold_steps = 0
                     else:
                         self._hold_steps += 1
-                    if self._hold_steps >= 30:
-                        try:
-                            from mani_skill.utils.structs.pose import Pose
-                            _a = u.fruit_actors.get(kind)
-                            if _a is not None:
-                                # 放回**带面中线**（y=0）：若放回框附近，会掉到带外
-                                belt_z = float(getattr(u, "belt_top_z", 0.45)) + 0.03
-                                _px = float(np.clip(tcp[0], -0.70, 0.30))
-                                _a.set_pose(Pose.create_from_pq(torch.tensor(
-                                    [[_px, 0.0, belt_z]], dtype=torch.float32)))
-                                _a.set_linear_velocity(torch.zeros(1, 3))
-                                _a.set_angular_velocity(torch.zeros(1, 3))
-                        except Exception:  # noqa: BLE001
-                            pass
+                    # 30 步(1 s)没有缩短，或附着总时长超过 4 s → 放回并把位置挪回**好抓区**
+                    if self._hold_steps >= 30 or self._att_steps >= 120:
+                        # 放回"好抓区"（x<=-0.30，带面中线 y=0）：放到 x≈0 会进手臂折叠死区。
+                        # 实际 teleport 交给控制器（它持有 target['actor']，避免拿错同类件）
+                        belt_z = float(getattr(u, "belt_top_z", 0.45)) + 0.03
+                        _px = min(float(np.clip(tcp[0], -0.70, 0.30)), -0.30)
+                        self._belt_put = (float(_px), 0.0, float(belt_z))
                         self.attached = False
                         self._hold_steps = 0
                         self._bin_best = 9.9
@@ -449,17 +449,14 @@ class ActPureRunner:
                         bx, by = BIN_LAYOUT[kind]
                     except Exception:  # noqa: BLE001
                         bx, by = 0.0, -0.3
-                    if abs(float(tcp[0]) - bx) < 0.07 and abs(float(tcp[1]) - by) < 0.07 \
+                    # 释放判据改成"到框心的半径"（v1.74）：右侧框（banana/pear, x=+0.46）
+                    # 在 Panda 的伸展极限上，实测手臂只能到 11–13 cm，用 ±7 cm 的方框
+                    # 永远不触发（trace: bd 11.0/19.9cm 反复被守卫放回）。
+                    if float(np.hypot(float(tcp[0]) - bx, float(tcp[1]) - by)) < 0.13 \
                             and float(tcp[2]) < 0.62:
-                        try:
-                            from mani_skill.utils.structs.pose import Pose
-                            _a = u.fruit_actors.get(kind)
-                            if _a is not None:
-                                _a.set_pose(Pose.create_from_pq(torch.tensor(
-                                    [[bx, by, 0.08]], dtype=torch.float32)))
-                                _a.set_linear_velocity(torch.zeros(1, 3))
-                        except Exception:  # noqa: BLE001
-                            pass
+                        # 由控制器用 **target['actor']** 落到框底（runner 里用
+                        # u.fruit_actors 可能拿到别的同类件）
+                        self._release_to = (float(bx), float(by))
                         self.attached = False
                         self.stats["suction_off"] = self.stats.get("suction_off", 0) + 1
                 grasping = bool(self.attached)
