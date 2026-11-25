@@ -257,8 +257,12 @@ class StreamController:
                 self.runner.kind = self.target["kind"]
                 self.runner.reset()
                 _yc = self._yaw_cache.get(self.target["id"])
+                if _yc is None and abs(getattr(self, "_idle_yaw", 0.0)) > 1e-3:
+                    # 非长条件：也用空档期的偏航，让腕部保持（不回 HOME）
+                    _yc = float(self._idle_yaw)
                 if _yc is not None and getattr(self.runner, "yaw_align", False):
                     self.runner._yaw_target = float(_yc)   # 空档期已转到位：窗口内不用再转
+                    self.runner._yaw_cmd = float(_yc)      # 不在对准范围时由 hold 分支保持
                 # 切模型后必须重新注入感知替身（否则新 runner 这一步读到仿真真值）
                 if self.objs is not None:
                     self.runner.set_actors(self.objs)

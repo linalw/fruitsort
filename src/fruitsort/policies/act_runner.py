@@ -60,6 +60,7 @@ class ActPureRunner:
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
                  yaw_align_ready: float = 0.17, yaw_align_pre_max: int = 70,
                  yaw_align_rot_frac: float = 0.0, yaw_align_fast: bool = False,
+                 yaw_align_hold: bool = True, yaw_hold_fade: float = 0.12,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
@@ -257,6 +258,13 @@ class ActPureRunner:
         # 快速预转（残差大时 period=1/gain=0.9）：收敛快 3 倍，但抓取瞬间仍带角速度，
         # 薄弯果身会被甩掉（v1.67 实测 rho 14→40、单发 2/6→1/6）→ 默认关闭
         self.yaw_align_fast = bool(yaw_align_fast)
+        # 目标不在"对准范围"（苹果/草莓）时**保持**当前腕部偏航，不要回 HOME：
+        # 否则空档期预先转好的朝向会在接它们时被清零，香蕉轮到时就白攒了。
+        # yw-* 数据本来就把 ±0.9 rad 的腕部偏航覆盖到所有类，属于分布内动作。
+        self.yaw_align_hold = bool(yaw_align_hold)
+        # hold 的"淡出距离"：非长条件在距果心 fade 米内把保持的偏航线性收到 0，
+        # 让苹果/草莓的**最后一段闭合**仍用训练里最常见的 HOME 朝向
+        self.yaw_hold_fade = float(yaw_hold_fade)
         self._pre_steps = 0
         self._yaw_cmd = 0.0
         self._yaw_target = None
@@ -772,20 +780,15 @@ class ActPureRunner:
         _ya_ext = float(getattr(actor, "extent", 0.0) or 0.0) if actor is not None else 0.0
         if (self.yaw_align and actor is not None
                 and _ya_ext >= self.yaw_align_extent):
-            # 闭环：phase 0/1 期间每 period 步重算一次（v1.64 的一次性修正在大力矩下
-            # 实际增益只有 ~0.3，残差 20–30°；闭环后收敛到 <10°）
-            # 预转阶段（残差还大、且位置基本不动）可以每步都修正、满增益：
-            # 此时不存在"平移导致测量滞后"的问题，能把手腕转到物理最快
+            # ---- 闭环对准（每 period 步重算 mod-π 指面轴误差）----
             _fast = (self.yaw_align_fast
                      and self.yaw_err_deg > float(np.degrees(self.yaw_align_ready)))
             _period = 1 if _fast else self.yaw_align_period
             _gain = 0.9 if _fast else self.yaw_align_gain
             self._yaw_t += 1
-            _recalc = (self._yaw_target is None
-                       or (self._yaw_t % _period == 0))
+            _recalc = (self._yaw_target is None or (self._yaw_t % _period == 0))
             if not grasping and self.phase_state in (0, 1) and _recalc:
                 try:
-                    # 优先用感知给出的长轴朝向（`_Stub.yaw`）；没有就退回真值四元数
                     yy = getattr(actor, "yaw", None)
                     if yy is not None:
                         phi = float(yy)
@@ -799,38 +802,46 @@ class ActPureRunner:
                     d = pL - pR
                     psi = float(np.arctan2(d[1], d[0]))
                     want = phi + np.pi / 2.0 + self.yaw_align_off
-                    # **轴向**角度（mod π）：ψ 和 want 都只定义到 π。
-                    # 用 mod 2π 的差值会算出 ±131°，被 ±1.2 rad 限幅后朝相反方向转
-                    # （v1.64 实测：yaw_cmd 一直顶在 -68.8°，ψ 反而从 92° 跑到 156°）。
+                    # 轴向角（mod π）：ψ/want 只定义到 π，用 mod 2π 会朝反方向转（v1.64 实测）
                     d = psi - want
                     d = float(np.arctan2(np.sin(2.0 * d), np.cos(2.0 * d)) / 2.0)
                     self.yaw_err_deg = float(np.degrees(abs(d)))
-                    # 标定关系 ψ ≈ 92° − δ ⇒ Δδ ≈ ψ − want；加阻尼 gain、留容差死区，
-                    # 避免"测滞后 → 过冲 → 再来回"
                     if abs(d) > self.yaw_align_tol:
                         delta = _gain * d
                         self._yaw_target = float(np.clip(self._yaw_cmd + delta, -1.2, 1.2))
                 except Exception:  # noqa: BLE001
                     self._yaw_target = 0.0
-            # 抓住之后**保持**这个腕部朝向：以前这里只在"未抓住"时叠加，
-            # 一进入搬运就瞬间转回 HOME → 把果子甩脱（v1.64 实测 4/6 抓起后全掉）
-            self._yaw_cmd = self._yaw_target
+            # 抓住之后保持这个朝向（v1.64：搬运瞬间回正会把果子甩掉）
+            # 注意：刚切换目标时 _yaw_target 可能是 None（该步在搬运/下探中没重算）
+            self._yaw_cmd = 0.0 if self._yaw_target is None else float(self._yaw_target)
             yaw += self._yaw_cmd
             self.stats["yaw_align_deg"] = float(np.degrees(self._yaw_cmd))
-            # ---- 两段式：先原地对准，再进场 ----
+            # ---- 两段式：先原地对准再进场 ----
             if (self.yaw_align_prerotate and not grasping and self.phase_state == 0
                     and self._pre_steps < self.yaw_align_pre_max):
-                dist = float(np.hypot(tcp[0] - actor.pose.p[0, 0], tcp[1] - actor.pose.p[0, 1]))
-                if dist > self.yaw_align_hold_dist and self.yaw_err_deg > np.degrees(self.yaw_align_ready):
+                dist = float(np.hypot(tcp[0] - actor.pose.p[0, 0],
+                                      tcp[1] - actor.pose.p[0, 1]))
+                if (dist > self.yaw_align_hold_dist
+                        and self.yaw_err_deg > np.degrees(self.yaw_align_ready)):
                     if self.yaw_align_rot_frac > 0:
-                        # 边转边靠近：位置步长按比例压小（不产生 2 s 的停顿）
                         tgt = np.array(tcp + (tgt - tcp) * self.yaw_align_rot_frac,
                                        dtype=np.float64)
                     else:
-                        tgt = np.array(tcp, dtype=np.float64)  # 只下发姿态：位置保持
+                        tgt = np.array(tcp, dtype=np.float64)  # 只下发姿态
                     grip = 1.0                                 # 对准期间保持张开
                     self._pre_steps += 1
                     self.stats["pre_rot"] = self.stats.get("pre_rot", 0) + 1
+        elif (self.yaw_align and self.yaw_align_hold
+              and abs(self._yaw_cmd or 0.0) > 1e-6):
+            # 目标不在对准范围（苹果/草莓/梨）：**保持**已转好的腕部偏航
+            # （否则空档期攒的预转会被清零，香蕉轮到时就白攒了）；
+            # 但临近闭合时线性淡出到 HOME，保证最后一个下探/闭爪仍在训练主分布上。
+            w = 1.0
+            if actor is not None and self.yaw_hold_fade > 0:
+                dist = float(np.hypot(tcp[0] - actor.pose.p[0, 0],
+                                      tcp[1] - actor.pose.p[0, 1]))
+                w = min(1.0, dist / self.yaw_hold_fade)
+            yaw += float(self._yaw_cmd or 0.0) * w
         return np.array([tgt[1] + 0.5, -tgt[0], tgt[2],
                          HOME_EULER[0], HOME_EULER[1], HOME_EULER[2] + yaw, grip],
                         dtype=np.float32)
