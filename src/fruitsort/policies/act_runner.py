@@ -61,6 +61,7 @@ class ActPureRunner:
                  yaw_align_ready: float = 0.17, yaw_align_pre_max: int = 70,
                  yaw_align_rot_frac: float = 0.0, yaw_align_fast: bool = False,
                  yaw_align_hold: bool = True, yaw_hold_fade: float = 0.12,
+                 yaw_hold_frac: float = 1.0, yaw_hold_cap: float = 0.0,
                  close_commit: float = 0.0, close_commit_xy: float = 0.030,
                  close_commit_steps: int = 8, close_commit_map: dict | None = None,
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
@@ -265,6 +266,10 @@ class ActPureRunner:
         # hold 的"淡出距离"：非长条件在距果心 fade 米内把保持的偏航线性收到 0，
         # 让苹果/草莓的**最后一段闭合**仍用训练里最常见的 HOME 朝向
         self.yaw_hold_fade = float(yaw_hold_fade)
+        # 非长条件"保持"的量：可整体缩放（frac）并限幅（cap，rad）。
+        # 目的：让空档期预转**部分**活到香蕉那一拍，同时苹果/草莓尽量留在训练主分布（yaw≈0）
+        self.yaw_hold_frac = float(yaw_hold_frac)
+        self.yaw_hold_cap = float(yaw_hold_cap)
         self._pre_steps = 0
         self._yaw_cmd = 0.0
         self._yaw_target = None
@@ -841,7 +846,11 @@ class ActPureRunner:
                 dist = float(np.hypot(tcp[0] - actor.pose.p[0, 0],
                                       tcp[1] - actor.pose.p[0, 1]))
                 w = min(1.0, dist / self.yaw_hold_fade)
-            yaw += float(self._yaw_cmd or 0.0) * w
+            hold = float(self._yaw_cmd or 0.0) * self.yaw_hold_frac
+            if self.yaw_hold_cap > 0:
+                hold = float(np.clip(hold, -self.yaw_hold_cap, self.yaw_hold_cap))
+            yaw += hold * w
+            self.stats["yaw_hold_deg"] = float(np.degrees(hold * w))
         return np.array([tgt[1] + 0.5, -tgt[0], tgt[2],
                          HOME_EULER[0], HOME_EULER[1], HOME_EULER[2] + yaw, grip],
                         dtype=np.float32)

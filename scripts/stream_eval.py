@@ -378,6 +378,12 @@ def main() -> None:
                     help="长轴假设偏移（0 或 π/2），用于试两种本地轴")
     ap.add_argument("--yaw-align-extent", type=float, default=0.0,
                     help="只对世界长度 ≥ 该值的目标做腕部对准（0=全部；香蕉建议 0.12）")
+    ap.add_argument("--yaw-hold-frac", type=float, default=1.0,
+                    help="非长条目标保持的偏航比例（1=全保持，0.5=半保持）")
+    ap.add_argument("--yaw-hold-cap", type=float, default=0.0,
+                    help="非长条目标保持的偏航上限（rad，0=不限；建议 0.3–0.5）")
+    ap.add_argument("--yaw-hold-fade", type=float, default=0.12,
+                    help="距果心该距离内保持量线性淡出到 0（0=不淡出）")
     ap.add_argument("--yaw-align-fast", action="store_true",
                     help="预转用满增益/每步修正（快 3 倍，但抓取瞬间带角速度，易甩掉薄果）")
     ap.add_argument("--yaw-align-rot-frac", type=float, default=0.0,
@@ -502,6 +508,9 @@ def main() -> None:
                              yaw_align_extent=args.yaw_align_extent,
                              yaw_align_rot_frac=args.yaw_align_rot_frac,
                              yaw_align_fast=args.yaw_align_fast,
+                             yaw_hold_frac=args.yaw_hold_frac,
+                             yaw_hold_cap=args.yaw_hold_cap,
+                             yaw_hold_fade=args.yaw_hold_fade,
                              intercept=args.intercept,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
