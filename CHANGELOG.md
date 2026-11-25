@@ -15,6 +15,37 @@
 
 ---
 
+## [1.79.0] - 2026-11-25
+
+### Added — `scripts/dagger_stream.py`（连续流 DAgger）
+- 学生跑闭环（当前 ckpt + 头部 RGB-D + `--perception-targets`），马尔可夫几何专家在
+  **学生访问到的状态**打标（追拦截点 / 对齐后下探闭爪 / 搬框下放）；
+- 保存**感知状态** + 三路图（全局/ROI/腕部），与部署同源。
+
+### Data
+| 类 | 局 | 帧 |
+| --- | --- | --- |
+| apple / strawberry / banana / pear | 2 / 1 / 3 / 2 | 815 / 511 / 1026 / 632 |
+合计 **8 局 / 2,984 帧**（学生全部失败 → 正是需要的纠正状态）。
+
+### Training
+`dual-* + dual-stream-sel + dagger2-*` = 109,473 窗口；`--init act-dual2 --reuse-norm`，
+lr 1.5e-4、8 epoch、`--descend-boost 5`、`--roi-view`；best val 0.1406。
+
+### Results（同种子 3×60 s，头部 RGB-D + 纯感知选目标）
+| 配置 | apple | strawberry | banana | pear | 总 |
+| --- | --- | --- | --- | --- | --- |
+| act-dual2（无 DAgger） | 0/4 | 0/3 | 0/4 | 0/4 | 0/15 |
+| **act-dagger（+DAgger）** | **3/4 = 75% ✅** | 0/3 ❌ | 0/4 ❌ | 0/4 | **3/15** |
+
+单发 banana 仍 0/6。
+
+### Verdict
+DAgger 方向被验证（苹果 0/4 → 3/4），但草莓/香蕉的纠正帧太少（511/1026 帧）且失败机制不同
+→ 验收只达成 apple。下一步：多轮 DAgger（每轮 4 类 × 4–6 局累积）+ 草莓按"果心−半高"闭爪。
+
+---
+
 ## [1.78.0] - 2026-11-25
 
 ### Added — 双路图像（全局 + ROI）三处一致
