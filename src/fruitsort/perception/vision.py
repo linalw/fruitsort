@@ -106,7 +106,10 @@ class BeltHomography:
 
     @classmethod
     def load(cls, path: Path | None = None, **kw) -> "BeltHomography":
-        path = path or CALIB_DIR / "overhead_homography.npy"
+        if path is None:
+            import os as _os
+            # 允许给不同相机各存一份标定（真机 Gemini 335 vs 旧的 640×480 窄视场）
+            path = CALIB_DIR / _os.environ.get("FRUITSORT_CALIB", "overhead_homography.npy")
         if not path.exists():
             raise FileNotFoundError(
                 f"缺少标定文件 {path}，先运行: python scripts/calibrate_camera.py")

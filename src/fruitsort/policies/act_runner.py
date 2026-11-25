@@ -54,7 +54,8 @@ class ActPureRunner:
                  width_g: float | None = None, close_ramp: float = 0.0,
                  grasp_z_bias: dict | None = None, stall_guard: float = 0.0,
                  stall_eps: float = 0.006, yaw_map: dict | None = None,
-                 close_z_gate: float = 0.0, intercept: float = 0.0,
+                 close_z_gate: float = 0.0, close_z_gate_map: dict | None = None,
+                 intercept: float = 0.0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -69,7 +70,8 @@ class ActPureRunner:
                  lead_long: float = 0.0, lead_long_extent: float = 0.11,
                  lead_long_taper: float = 0.15, grasp_proxy: str = "always",
                  close_win_xy: float = 0.03, close_win_z: float = 0.06,
-                 grasp_verify: bool = False, yaw_align: bool = False,
+                 grasp_verify: bool = False, grasp_verify_xy: float = 0.0,
+                 yaw_align: bool = False,
                  yaw_align_off: float = 0.0,
                  max_step_map: dict | None = None,
                  carry_step_map: dict | None = None):
@@ -206,6 +208,8 @@ class ActPureRunner:
         # 闭爪高度门：离水果还很高就闭爪 = 夹空气（实测队列里发生在 z 高 9 cm 处）。
         # >0 时：若"想闭爪"但 TCP 比果心高超过该值，则改为张开并下探到果心上方 2 cm。
         self.close_z_gate = float(close_z_gate)
+        # 按类闭爪高度门：果心以上 gate 米内才允许闭爪（小果不能在高处闭）
+        self.close_z_gate_map = dict(close_z_gate_map or {})
         # ---- 闭爪承诺：到果身高度且水平对齐 → 强制闭爪 + 冻结水平目标 ----
         # 动机（v1.62 诊断）：手臂悬到果子上方时俯视被自己挡住，估计值按带速外推，
         # 而果实在指间已经不再跟带面同速 → 估计**系统性超前 ~2 cm**。策略于是每步
@@ -235,6 +239,8 @@ class ActPureRunner:
         self.close_win_z = float(close_win_z)
         # 抓取确认：只"碰到顶端"不算抓住（队列里会误判成 phase 2、随后水果滑走）
         self.grasp_verify = bool(grasp_verify)
+        # 附加水平对齐窗口（米；0=关闭）。默认关闭：实测 4–6 cm 的感知误差会把真抓取否掉
+        self.grasp_verify_xy = float(grasp_verify_xy)
         # ---- 手腕对准（验证性实验，用仿真真值 yaw）----
         # 让"两指连线（闭合方向）"垂直于水果长轴：实测 δ 旋转 → 指面轴角度变化 ≈ −δ。
         # yaw_align_off 用来试两种假设（长轴沿本地 x / 沿本地 y，差 π/2）。
@@ -495,9 +501,9 @@ class ActPureRunner:
                 # 还要"水平也对上"：感知估计差 3–6 cm 时，仅凭高度会把
                 # "在果子旁边闭爪"当成抓住 → 之后一路搬运空气（v1.75 流内 trace）
                 near_xy = True
-                if raw is not None:
+                if raw is not None and self.grasp_verify_xy > 0:
                     near_xy = float(np.hypot(float(tcp[0]) - float(raw[0]),
-                                             float(tcp[1]) - float(raw[1]))) < 0.060
+                                             float(tcp[1]) - float(raw[1]))) < self.grasp_verify_xy
                 if not (lifted or (at_pad and near_xy)):
                     grasping = False
             if grasping:
@@ -797,10 +803,11 @@ class ActPureRunner:
                     self._descend_target = None
 
         # ---- 闭爪高度门：禁止在空中闭爪，改为继续下探 ----
-        if (self.close_z_gate > 0 and grip < 0 and not grasping
+        _czg = float(self.close_z_gate_map.get(kind, self.close_z_gate))
+        if (_czg > 0 and grip < 0 and not grasping
                 and self.phase_state != 2 and actor is not None):
             fpos_g = actor.pose.p[0].cpu().numpy().astype(np.float64)
-            if float(tcp[2] - fpos_g[2]) > self.close_z_gate:
+            if float(tcp[2] - fpos_g[2]) > _czg:
                 grip = 1.0
                 tgt = np.array([fpos_g[0], fpos_g[1], fpos_g[2] + 0.02])
                 self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 8

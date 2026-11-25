@@ -134,6 +134,8 @@ def main() -> None:
     ap.add_argument("--max-step", type=float, default=0.06)
     ap.add_argument("--carry-max-step", type=float, default=0.0,
                     help="搬运段专用步长上限（0=与 max-step 相同）；抑制在料框处过冲")
+    ap.add_argument("--close-z-gate-map", default="",
+                    help="按类闭爪高度门，如 'apple=0.009,strawberry=0.006,pear=0.011'")
     ap.add_argument("--close-z-gate", type=float, default=0.0,
                     help="闭爪高度门：离果心高于该值时禁止闭爪、继续下探（0=关闭）")
     ap.add_argument("--close-commit", type=float, default=0.0,
@@ -224,6 +226,7 @@ def main() -> None:
             suction=args.suction, suction_radius=args.suction_radius,
             suction_carry=args.suction_carry, close_z_gate=args.close_z_gate,
             close_commit=args.close_commit, close_commit_xy=args.close_commit_xy,
+            close_z_gate_map=parse_map(args.close_z_gate_map),
             close_commit_map=parse_map(args.close_commit_map),
             close_commit_steps=args.close_commit_steps,
             grasp_z_bias=({args.instruction: args.z_bias} if args.z_bias else {}))

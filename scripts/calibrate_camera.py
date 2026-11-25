@@ -20,7 +20,10 @@ from mani_skill.utils.structs.pose import Pose
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.perception.vision import CALIB_DIR, detect_blobs
 
-POINTS = [(-0.55, -0.09), (-0.55, 0.09), (-0.15, -0.09), (-0.15, 0.09),
+POINTS = [(-1.75, -0.09), (-1.75, 0.09),
+          (-1.30, -0.09), (-1.30, 0.09),
+          (-0.90, -0.09), (-0.90, 0.09),
+          (-0.55, -0.09), (-0.55, 0.09), (-0.15, -0.09), (-0.15, 0.09),
           (0.20, -0.09), (0.20, 0.09), (0.45, -0.09), (0.45, 0.09)]
 FAR = (-3.5, 0.0)
 
@@ -71,9 +74,11 @@ def main() -> None:
     proj = cv2.perspectiveTransform(np.array(world_pts, dtype=np.float64)[None], Hmat)[0]
     err = np.linalg.norm(proj - np.array(pixel_pts), axis=1)
     CALIB_DIR.mkdir(parents=True, exist_ok=True)
-    np.save(CALIB_DIR / "overhead_homography.npy", Hmat)
+    import os
+    _name = os.environ.get("FRUITSORT_CALIB", "overhead_homography.npy")
+    np.save(CALIB_DIR / _name, Hmat)
     print(f"\n✓ {len(world_pts)} 点标定完成，重投影误差 mean={err.mean():.2f}px max={err.max():.2f}px")
-    print(f"  保存到 {CALIB_DIR / 'overhead_homography.npy'}")
+    print(f"  保存到 {CALIB_DIR / _name}")
 
 
 if __name__ == "__main__":
