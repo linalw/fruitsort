@@ -98,11 +98,19 @@ class FruitSortEnv(BaseEnv):
         _fov = float(_os.environ.get("FRUITSORT_HEAD_FOV", 1.02))
         _z = float(_os.environ.get("FRUITSORT_HEAD_Z", 2.45))
         _res = str(_os.environ.get("FRUITSORT_HEAD_RES", "640"))
+        # 相机位置/朝向可覆盖（做机位对比实验用）：
+        #   FRUITSORT_HEAD_POS="x,y,z"  默认 (0,-0.05,Z) 正上方俯视
+        #   FRUITSORT_HEAD_LOOK="x,y"   默认 (0,-0.05) 即垂直看带面；给别的点就是斜视
+        _pos = _os.environ.get("FRUITSORT_HEAD_POS", "").strip()
+        _look = _os.environ.get("FRUITSORT_HEAD_LOOK", "").strip()
+        _eye = ([float(v) for v in _pos.split(",")] if _pos else [0.0, -0.05, _z])
+        _at = ([float(v) for v in _look.split(",")] + [self.belt_top_z] if _look
+               else [0.0, -0.05, self.belt_top_z])
         _rw, _rh = (int(_res.split("x")[0]), int(_res.split("x")[1])) if "x" in _res else (int(_res), int(int(_res) * 480 // 640))
         return [
             CameraConfig(
                 "overhead",
-                sapien_utils.look_at([0.0, -0.05, _z], [0.0, -0.05, self.belt_top_z]),
+                sapien_utils.look_at(_eye, _at),
                 _rw, _rh, _fov, 0.01, 12,
             ),
             CameraConfig(

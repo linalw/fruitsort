@@ -76,6 +76,7 @@ Fruitsort/
 | `python scripts/demo.py` | 跑仿真 + 录制视频（`--kinds` 选水果） |
 | `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
 | `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
+| `python scripts/camera_bench.py [--poses lower]` | 机位对比：px/m、覆盖率、抓取瞬间可见率（结论见 [`docs/camera-placement.md`](docs/camera-placement.md)） |
 | `python scripts/stream_eval.py [--policy scripted]` | **连续作业**评测（`FruitSortStream-v1`：随机间隔/尺寸/多件在飞，按件统计吞吐）；加 `--video out.mp4` 录演示（画面叠加时间/带速/目标/相位/计数） |
 
 `Makefile` 里提供了短命令：`make doctor` / `make digest` / `make run NAME=xxx`。
@@ -90,6 +91,8 @@ python scripts/benchmark.py --scenario pair --episodes 10 --belt-speed 0.06
 - 环境：`FruitSort-v1`（`src/fruitsort/sim/tasks/fruit_sort.py`），控制模式 `pd_ee_pose`（20 Hz）。
 - 资产：`assets/meshes/*.glb` 由 `python -m fruitsort.sim.assets.fruit_meshes` 生成。
 - 结果：`runs/<id>/metrics.json`，协议见 `docs/benchmark.md`。
+- 相机机位可覆盖：`FRUITSORT_HEAD_Z` / `FRUITSORT_HEAD_POS="x,y,z"` / `FRUITSORT_HEAD_LOOK="x,y"`；
+  **换机位必须重标定**（单应与高度绑定，`FRUITSORT_CALIB` 指定输出名）；机位取舍见 `docs/camera-placement.md`。
 - 视觉模式（实验性）：先 `python scripts/calibrate_camera.py`，再 `--perception vision`；
   当前闭环未跑通，默认仍用 oracle 位姿，见 `docs/perception.md`。
 - 修改网格后必须 `build_all(force=True)`；否则沿用旧 GLB。
