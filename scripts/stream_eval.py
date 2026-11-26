@@ -56,7 +56,7 @@ class StreamController:
                  decline_yaw: float = 0.0, long_extent: float = 0.11,
                  kind_priority: dict | None = None, perception_targets: bool = False,
                  decline_kinds: tuple = (),
-                 give_up_s: float = 12.0, src=None):
+                 give_up_s: float = 12.0, src=None, trace_abandon: bool = False):
         self.env, self.runner, self.u = env, runner, u
         self.scripted = scripted
         self.in_dist = in_dist
@@ -94,6 +94,7 @@ class StreamController:
         self.decline_kinds = tuple(decline_kinds or ())
         self.perception_targets = bool(perception_targets)
         self.give_up_s = float(give_up_s)
+        self.trace_abandon = bool(trace_abandon)
         self.src = src
         self.sorter = None
         self.kinds = tuple(kinds)
@@ -227,25 +228,47 @@ class StreamController:
             return any(it is s["item"] for s in self.u._slots[it["kind"]] if s["live"])
         if self.runner is not None and getattr(self.runner, "grasping", False):
             return True                     # 正夹着：即使离开视野也继续
-        # 刚把件放进框（TCP 在目标框附近）→ 这一件已结束，立刻换目标。
-        # 否则"已送达"的件在感知里会消失，替身要 300 帧(10s)才变幽灵，白等 10 秒，
-        # 后面的草莓/梨就全被漏过（v1.82 trace: 送达后 4 件全 engage=None）。
+        # 这一件已经在框里（用**果实**位置判，不是 TCP）→ 已结束，立刻换目标。
+        # 曾用"TCP 在框附近"做判据：手臂为了**别的件**经过料框时会把当前目标误判为"已送达"，
+        # 于是丢弃→立刻重选同一件→runner.reset() 清空 hist 缓冲。实测 0.1 s 内连丢 5 次，
+        # 策略每步都在"从零开始"，这是"四类混跑时苹果 0/4、单跑 6/6"的直接原因。
         try:
             from fruitsort.sim.conveyor import BIN_LAYOUT as _BL
             _bx, _by = _BL[it["kind"]]
-            _tcp = self.u.agent.tcp_pose.p[0].cpu().numpy()
-            if float(np.hypot(_tcp[0] - _bx, _tcp[1] - _by)) < 0.14:
+            _ap = self._actor_pos(it["actor"])
+            if float(np.hypot(_ap[0] - _bx, _ap[1] - _by)) < 0.16:
                 return False
         except Exception:  # noqa: BLE001
             pass
         t0 = it.get("t_engage")
         if t0 is not None and (float(self.u._t) - float(t0)) > self.give_up_s:
             return False                    # 接管超时（现实中就该放弃了）
+        return self._dead_reason(it) == ""
+
+    def _dead_reason(self, it) -> str:
+        """目标为什么该被放弃：空串=还活着；否则返回原因（诊断用）。"""
+        if self.runner is not None and getattr(self.runner, "grasping", False):
+            return ""
+        try:
+            from fruitsort.sim.conveyor import BIN_LAYOUT as _BL
+            _bx, _by = _BL[it["kind"]]
+            _ap = self._actor_pos(it["actor"])
+            if float(np.hypot(_ap[0] - _bx, _ap[1] - _by)) < 0.16:
+                return "at_bin"
+        except Exception:  # noqa: BLE001
+            pass
+        t0 = it.get("t_engage")
+        if t0 is not None and (float(self.u._t) - float(t0)) > self.give_up_s:
+            return "timeout"
         a = self.objs.get(it["kind"])
         if a is None:
-            return False
+            return "lost"
         x = float(a.pose.p[0, 0])
-        return bool(x > -1.05 and x <= 0.45)
+        if x <= -1.05:
+            return "ghost"
+        if x > 0.45:
+            return "passed"
+        return ""
 
     def _pick_target(self):
         """选**最接近理想拦截点**的一件（不是最紧急的）。
@@ -293,6 +316,16 @@ class StreamController:
         self._repoint()
         # 目标失效（已被回收/送达/漏过）→ 换目标
         if self.target is not None and not self._target_live():
+            if getattr(self, "trace_abandon", False):
+                _r = self._dead_reason(self.target)
+                try:
+                    _x = float(self._actor_pos(self.target["actor"])[0])
+                except Exception:  # noqa: BLE001
+                    _x = None
+                print(f"    [abandon] t={float(self.u._t):5.1f} "
+                      f"{str(self.target.get('kind')):10s} why={_r} "
+                      f"x={'-' if _x is None else format(_x, '+.2f')} "
+                      f"t_eng={self.target.get('t_engage')}", flush=True)
             self.target = None
             # 目标结束（送达/掉落/漏过）：清掉执行器状态，否则 phase 会停在"搬运"
             self.runner.reset()
@@ -319,6 +352,18 @@ class StreamController:
                 self.engaged_ids.add(self.target.get("diag_id", self.target["id"]))
                 if "t_engage" not in self.target:
                     self.target["t_engage"] = float(self.u._t)
+                    # 接管时的果实 x（诊断"接得太晚"）：记账到场上件，便于逐件复盘
+                    try:
+                        self.target["x_engage"] = float(
+                            self._actor_pos(self.target["actor"])[0])
+                    except Exception:  # noqa: BLE001
+                        self.target["x_engage"] = None
+                    _d = self.target.get("diag_id", self.target.get("id"))
+                    if _d in self.u.stream_stats.get("items", {}):
+                        # 记账：感知目标不是场上件对象，t_engage 必须显式同步，
+                        # 否则 handle_s（单件耗时）永远是 0、逐件时长无法复盘
+                        self.u.stream_stats["items"][_d]["x_engage"] = self.target["x_engage"]
+                        self.u.stream_stats["items"][_d]["t_engage"] = self.target["t_engage"]
                 q = self._queue_level()
                 if q <= self.queue_thr and self.single_runner is not None:
                     # 单件模式：用"干净单件数据"训练的模型（apple 8/8、banana 7/8）
@@ -678,6 +723,8 @@ def main() -> None:
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
     ap.add_argument("--roi-m", type=float, default=0.0,
                     help="录制时额外保存目标 ROI 裁剪（米；0=不存）")
+    ap.add_argument("--trace-abandon", action="store_true",
+                    help="打印每次放弃目标的原因（at_bin/timeout/lost/ghost/passed）")
     ap.add_argument("--trace-release", action="store_true",
                     help="记录每次开爪（放下）瞬间 TCP 到本类料框中心的距离，用于判断'放偏了'")
     ap.add_argument("--trace-drop", action="store_true",
@@ -790,7 +837,8 @@ def main() -> None:
                             kind_priority=parse_map(args.kind_priority),
                             decline_kinds=tuple(k.strip() for k in args.decline_kinds.split(",") if k.strip()),
                             perception_targets=args.perception_targets,
-                            give_up_s=args.give_up_s, src=src)
+                            give_up_s=args.give_up_s, src=src,
+                            trace_abandon=args.trace_abandon)
 
     rec_dir = Path(args.record) if args.record else None
     if rec_dir is not None:
@@ -818,7 +866,8 @@ def main() -> None:
                             kind_priority=parse_map(args.kind_priority),
                             decline_kinds=tuple(k.strip() for k in args.decline_kinds.split(",") if k.strip()),
                             perception_targets=args.perception_targets,
-                            give_up_s=args.give_up_s, src=src)
+                            give_up_s=args.give_up_s, src=src,
+                            trace_abandon=args.trace_abandon)
         writer = _vw["w"]
         if args.video:
             _v = Path(args.video)
@@ -1059,8 +1108,11 @@ def main() -> None:
         if args.trace_items:
             for _it in st.get("items", {}).values():
                 _te, _tx = _it.get("t_engage"), _it.get("t_end")
+                _xe = _it.get("x_engage")
                 print(f"    [item] id={_it.get('id')} {_it.get('kind'):10s} "
-                      f"outcome={_it.get('outcome')} engage={_te} end={_tx}", flush=True)
+                      f"outcome={_it.get('outcome')} engage={_te} end={_tx} "
+                      f"x_engage={'-' if _xe is None else f'{_xe:+.2f}'} "
+                      f"dur={'-' if (_te is None or _tx is None) else f'{_tx-_te:.1f}s'}", flush=True)
         print("      机会内每类: " + "  ".join(
             f"{k} {ebk.get(k, (0, 0))[1]}/{ebk.get(k, (0, 0))[0]}" for k in KINDS), flush=True)
 

@@ -45,5 +45,7 @@
 | `stream_suction_5of5.mp4` | 纯感知 + 吸盘末端，连续作业 **5/5 送达**、机会内 100%、5 件/min、单件 4.6 s | v1.74.0 / `runs/act-suction/ckpt.pt` |
 | `head_rgbd_apple_only.mp4` | 头部 RGB-D + 纯感知 + 夹爪，交付口径（只做苹果）：apple 1/1；固定口径 42.3%（CI 26–61%）；**画中画=模型唯一图像输入+检测结果** | v1.86.1 / `runs/act-dagger/ckpt.pt` |
 | `head_rgbd_all_kinds.mp4` | 四类都接：apple 1/1、**strawberry 1/3（首次）**、banana/pear 0；加密流 1.5–2.5 m；画中画同上 | v1.86.1 / `runs/act-dagger/ckpt.pt` |
-| `head_rgbd_gates_apple.mp4` | **交付口径（v1.88/1.89 两道门）**：apple 6/6 = 100%，0 掉落；270 s | v1.89.1 / `runs/act-dagger/ckpt.pt` |
-| `head_rgbd_gates_all.mp4` | 四类都接（含失败）：strawberry **3/5**、apple 0/4、3 掉落；180 s | v1.89.1 / `runs/act-dagger/ckpt.pt` |
+| ~~`head_rgbd_gates_apple.mp4`~~（已被 v190 取代） | | **交付口径（v1.88/1.89 两道门）**：apple 6/6 = 100%，0 掉落；270 s | v1.89.1 / `runs/act-dagger/ckpt.pt` |
+| ~~`head_rgbd_gates_all.mp4`~~（已被 v190 取代） | | 四类都接（含失败）：strawberry **3/5**、apple 0/4、3 掉落；180 s | v1.89.1 / `runs/act-dagger/ckpt.pt` |
+| `head_rgbd_v190_apple.mp4` | **交付口径（v1.90）**：apple 5/5 = 100%，0 掉落；180 s | v1.90.0 / `runs/act-dagger/ckpt.pt` |
+| `head_rgbd_v190_all.mp4` | 四类都接（v1.90 修 bug 后）：apple **5/5**、strawberry 1/3、banana/pear 0，0 掉落；180 s | v1.90.0 / `runs/act-dagger/ckpt.pt` |
