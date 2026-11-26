@@ -1,106 +1,128 @@
-# 系统架构（v1.14）
+# FruitSort 端到端架构（v1.86）
 
-两条可部署路线 + 一条研究支线。**当前主推 = 纯策略（A）**；**(B) 混合**是 0.25 m/s 验收档。
+> 图：`docs/architecture.png` / `docs/architecture.svg`（由 `docs/architecture.dot` 生成，`dot -Tpng -Gdpi=180`）
+> 约束前提：**只用平行夹爪**、**头部 RGB-D（Gemini-335 量级）+ 腕部**、**不用斜视**、
+> **模型输入不含仿真真值**（目标选择也走感知跟踪）。
 
+## 1. 一张图（Mermaid 版，可直接改）
+
+```mermaid
+flowchart TB
+  subgraph P["① 感知层（纯 RGB-D，无真值）"]
+    OH["overhead 头部 RGB-D<br/>1280×960 · fov1.62 · 标定56点/0.72px<br/>远端(x<-1.0) 命中85%（草莓）/0.1cm"]
+    WR["hand_camera 腕部 128×128<br/>给策略看（感知定位默认不用）"]
+    SD["side 斜视<br/>✗ 约束禁用"]
+    DET["检测/3D 定位<br/>HSV+高度掩码→连通域<br/>逐像素单应→(x,y)<br/>PCA→有向包围盒中心<br/>extent/yaw · z=顶面−半高"]
+    TRK["多实例跟踪<br/>匈牙利(3D+类别) · 匀速预测 · max_lost20"]
+    ADP["感知适配器 _Stub{p,v,yaw,extent,raw_p}<br/>near-hold(0.03–0.11m) · 带速外推(≤300帧) · 场外幽灵"]
+    OH --> DET
+    WR -.可选.-> DET
+    SD -.禁用.-> DET
+    DET --> TRK --> ADP
+  end
+  subgraph O["② 观测拼装"]
+    ST["状态 57 = 49 + 3(相位) + 1(队列) + 4(抓取几何)<br/>49 = TCP(7)+qpos(9)+带速(1)+4类×(p3,v3,active,held)"]
+    IM["图像 hist=8：全局96²(RGB+帧差4ch) + 腕部96² + ROI96²(0.5m窗口)"]
+  end
+  subgraph M["③ 策略 ACT-lite（6.77M，确定性）"]
+    TOK["每帧4 token[全局,腕部,ROI,状态]+view_type+time_pos+CLS"] --> ENC["编码器 4×TransformerEncoder<br/>d256/8头/ffn3×/因果mask"]
+    ENC --> DEC["解码器 4× × 16 query<br/>→16×4: Δxyz + 夹爪logit；相位头3类"]
+  end
+  subgraph E["④ 执行层 ActPureRunner（只用感知）"]
+    TGT["tgt = tcp + Δ(按类限速) + 0.7·(感知果位−tcp)"] --> GRP["夹爪: EMA0.7/锁爪/闭爪门<br/>抓取确认=指端接触+指面到果身"]
+    GRP --> FSM["相位机 0/1/2 + 停滞守卫/近端吸附<br/>动作=[基座xyz,HOME_EULER,grip]"]
+  end
+  subgraph T["⑤ 连续作业"]
+    ENV["FruitSortStream-v1<br/>单流·间隔3–4m·尺寸±15%·带速0.08"]
+    CTL["StreamController<br/>可达窗−0.45…+0.15 · 按类优先 · 按类让出<br/>纯感知选目标 · 12s放弃 · 送达即换"]
+  end
+  subgraph D["⑥ 离线"]
+    REC["示教 163段双路+59段流片段<br/>DAgger 17局（策略跑流、专家打标）"] --> TRN["train_act.py<br/>hist8/chunk16/stride2/lr3e-4 · 12–14ep"]
+  end
+  ADP --> ST & IM
+  ST --> TOK
+  IM --> TOK
+  DEC --> TGT
+  FSM --> ENV
+  ENV -.obs/事件.-> CTL
+  CTL -.选目标/让出.-> FSM
+  TRN -.ckpt.-> TOK
 ```
-                        ┌──────────────── FruitSort-v1（ManiSkill3 仿真） ────────────────┐
-                        │ Franka Panda + 平行夹爪 + 传送带 + 4 个料框                     │
-                        │ 四类水果：apple / strawberry / banana / pear                    │
-                        │ 控制：pd_ee_pose @30Hz（sim 120Hz），带速 0.06–0.18 m/s         │
-                        └───────────────┬──────────────────────────────┬─────────────────┘
-                                        │ 观测                          │ 7 维动作
-        ┌───────────────────────────────▼──────────────┐                │ [x,y,z, euler(3), gripper]
-        │ 感知 / 状态（每步）                          │                │
-        │  overhead 96² × 8 帧 ┐                       │                │
-        │  wrist    96² × 8 帧 ┤（+帧差通道，共享 CNN）│                │
-        │  向量 49 维：tcp(7)+qpos(9)+belt(1)+4×8      │                │
-        │  [+9 触觉]（左右指力/摩擦利用率/开口/滑移）  │                │
-        │  [+3 相位 1-hot]                             │                │
-        └───────────────────────────────┬──────────────┘                │
-                                        │                               │
-                        ┌───────────────▼───────────────┐               │
-                        │ 策略 ACT-lite 6.88M           │               │
-                        │  ConvEncoder(2 视角共享, GN)  │               │
-                        │  → 34 token（1 CLS + 8×3）    │               │
-                        │  → 4 层编码器(d=256,因果 mask)│               │
-                        │  → 16 query 解码器(cross-attn)│               │
-                        │  头：16×4 动作 + 3 类相位 + 滑移│              │
-                        └───────────────┬───────────────┘               │
-                                        │ 16×4：Δxyz + 夹爪 logit       │
-                        ┌───────────────▼───────────────┐               │
-                        │ 部署层 ActPureRunner          │               │
-                        │  增量动作 → 目标 = tcp + Δ    │               │
-                        │  残差反馈 +0.5·(fruit−tcp)_xy │               │
-                        │  相位迟滞/承诺、夹爪去抖      │───────────────┘
-                        │  抓空 12 步重试、搬运限速 2cm │
-                        │  [触觉] 滑移降速 / 闭爪前重抓 │
-                        └───────────────────────────────┘
-```
 
-## A. 纯策略（当前主推）
+## 2. 关键参数
 
-| 项 | 值 | 文件 |
-| --- | --- | --- |
-| 模型 | ACT-lite **6.88M**：d=256、4 层编码 + 4 层解码、K=16 动作块、历史 8 帧、CVAE(32) | `src/fruitsort/models/act_policy.py` |
-| 输入 | overhead+wrist 96²×8 + 状态 49 维（+9 触觉）（+3 相位） | `learning/bc.py: build_obs` |
-| 输出 | 16 步 × (Δx,Δy,Δz, 夹爪 logit) + 3 类相位 + 滑移 logit | 同上 |
-| 执行 | 30 Hz，单步 ≤6cm，搬运 ≤2cm，残差反馈 0.5 | `policies/act_runner.py` |
-| 权重 | `runs/act-wide-4c`（0.06–0.18 DR，无触觉）<br>`runs/act-ta-onslip`（+9 触觉 + 滑移头） | |
-| 成绩 | 0.08 m/s **87.5%(28/32)**、0.15 **96.9%(31/32)**、0.18 苹果5/5草莓4/5 | |
-
-## B. 混合（0.25 m/s 验收档，v1.0）
-
-```
-0.41M 视觉策略（双视角 96²×4 帧 + 2 层 Transformer）
-   └─ 只负责「按指令选哪个水果」（四类 96/96 = 100%）
-        └─ 伺服执行器（近距视觉伺服 + 几何夹爪 + 确定性搬运）
-```
-- 权重 `runs/vpolicy-4c-v3`，执行器 `policies/hybrid_teacher.py`
-- 成绩：**0.25 m/s 四类 22/24 = 91.7%**，单件 3.94 s（`scripts/benchmark_sorting.py --policy hybrid`）
-
-## C. 触觉支线（研究）
-
-| 环节 | 实现 |
+### 2.1 感知
+| 项 | 值 |
 | --- | --- |
-| 特征 | 9 维：Fn、左右不平衡、摩擦利用率 ρ、开口 w、挤压比、v_slip、滑移标志、左右接触（`bc.build_tactile`） |
-| 监督 | 滑移**起始**预测（t+5..t+20，留 5 帧盲区防泄漏）；留出集 AUROC **0.813** |
-| 行为 | `--slip-guard` 搬运滑移降速；`--regrasp` 闭爪前 张开→下沉2cm→再闭 |
-| 数据 | `dta-*`（173 局带触觉）、`sdagger2/3-*`（策略闭环失败片段，3313 滑移帧） |
+| 头部相机 | 1280×960，fov 1.62 rad，h=2.45 m（`FRUITSORT_HEAD_FOV/RES/Z`） |
+| 标定 | 56 点、重投影 0.72 px；`assets/calib/overhead_homography_gemini.npy`（`FRUITSORT_CALIB`） |
+| 检测 | HSV 饱和>70 + “高于带面 8 mm”；连通域 → 逐像素单应 → PCA 有向包围盒（1/99 分位） |
+| 定位精度 | 俯视：苹果 0.6 / 草莓 0.5 / 香蕉 0.5 / 梨 1.0 cm；远端(x<−1.0) 草莓 85%/0.1 cm |
+| 跟踪 | 匈牙利（3D 距离 + 类别惩罚 0.25）、匀速预测、`max_lost=20` |
+| 适配器 | `near-hold`（0.03–0.11 m 且丢检且贴爪 → 取 TCP）、丢检按带速外推 ≤300 帧、场外幽灵占位 |
 
-## 数据/训练管线
+### 2.2 观测与策略
+| 项 | 值 |
+| --- | --- |
+| 状态 | 57 = 49（TCP7+qpos9+带速1+4×8）+ 相位 3 + 队列 1 + 几何 4 |
+| 图像 | hist 8；全局 96²（RGB+帧差）；腕部 96²；ROI 96²（0.5 m 目标窗） |
+| 模型 | ACT-lite：d256、8 头、enc/dec 4+4、ffn 3×、chunk 16、dropout 0.15、**6.77 M** |
+| 输出 | 16×4：**Δxyz（相对 TCP）+ 夹爪 logit**；相位辅助头 3 类；CVAE 关闭 |
+| 训练 | `hist8/chunk16/stride2/lr3e-4`；`--geom --phase --delta-actions --descend-boost 5`；12–14 epoch |
+| 权重 | `runs/act-dagger/ckpt.pt`（部署）；`runs/act-dual2`（baseline，val 0.036） |
 
+### 2.3 执行与调度
+| 项 | 值 |
+| --- | --- |
+| 目标点 | `tgt = tcp + Δ`（按类限速 apple/草莓 0.12、梨 0.10、香蕉 0.06）+ `0.7·(果−tcp)`（仅 xy） |
+| 夹爪 | logit EMA 0.7；搬运锁爪；闭爪门（果心−k×半高）；抓取确认=接触+指面到果身 |
+| 相位 | 0 接近 / 1 下探 / 2 搬运（模型自预测 + 迟滞 + 停滞守卫） |
+| 调度 | 可达窗 −0.45…+0.15；按类优先 apple>草莓>梨>香蕉；`--decline-kinds/--decline-yaw`；12 s 放弃 |
+
+## 3. 复现命令
+
+```bash
+source scripts/env.sh maniskill3
+export FRUITSORT_HEAD_FOV=1.62 FRUITSORT_HEAD_RES=1280x960 \
+       FRUITSORT_CALIB=overhead_homography_gemini.npy
+
+# A) 当前交付口径：只做苹果（其余按类让出）
+python scripts/stream_eval.py --ckpt runs/act-dagger/ckpt.pt --perception rgbd \
+  --perception-targets --grasp-verify --decline-yaw 0.64 \
+  --kind-priority apple=0,strawberry=1,pear=2,banana=3 \
+  --decline-kinds strawberry,banana,pear \
+  --fb 0.7 --grip-ema 0.7 \
+  --max-step-map apple=0.12,strawberry=0.12,pear=0.10,banana=0.06 \
+  --carry-step-map apple=0.04,strawberry=0.04,pear=0.03,banana=0.02 \
+  --belt 0.08 --seconds 60 --episodes 3 --slots 1 --gap-min 3.0 --gap-max 4.0 --seed 60001
+
+# B) 全类都接（看完整链路，含失败）
+python scripts/stream_eval.py --ckpt runs/act-dagger/ckpt.pt --perception rgbd \
+  --perception-targets --grasp-verify --decline-yaw 0.64 \
+  --kind-priority apple=0,strawberry=1,pear=2,banana=3 --fb 0.7 --grip-ema 0.7 \
+  --max-step-map apple=0.12,strawberry=0.12,pear=0.10,banana=0.06 \
+  --carry-step-map apple=0.04,strawberry=0.04,pear=0.03,banana=0.02 \
+  --belt 0.08 --seconds 60 --episodes 3 --slots 1 --gap-min 3.0 --gap-max 4.0 --seed 60001
 ```
-record_demos.py --belt-speed a --belt-max b --tactile   → data/datasets/d*   （示范，只存成功）
-collect_slip.py（跑策略闭环）                            → sdagger*           （失败/滑脱帧，aux_only）
-        ↓
-train_act.py --phase --delta-actions --descend-boost 3 --carry-boost 3 [--slip-head --aux-data …]
-        ↓  runs/<name>/ckpt.pt + metrics.json（train/val 曲线）
-        ↓
-eval_act_pure.py（成功率 + 单件处理时间 + 无损指标）
-eval_disturbance.py --policy act（横向偏移/推力）
-eval_slip_head.py（留出集 AUROC）
-record_video.py --executor act（mp4 + 同名 txt 说明）
-```
 
-关键训练约定：
-- **动作标签 = 实际执行位移**（裁剪 ±6cm，chunk 内每步用各自 TCP），不是绝对目标位姿
-- **相位标签**从示教动作反推（接近/下探/搬运），训练时 3 类 CE
-- 窗口过采样：下探段 ×3、料框附近减速窗 ×3；速度域随机化 0.06–0.18
-- 逐列 z-score 归一化（任何额外仿射缩放都会被抵消）
+## 4. 结果（固定口径，5 seeds × 3 局 = 75 件）
 
-## 数字总览
+| 类 | 送达/上料 | 95% CI | 说明 |
+| --- | --- | --- | --- |
+| **apple** | **11/26 = 42.3%** | 26–61% | 唯一稳定可用类；0 掉落 |
+| strawberry | 0/16 | 0–19% | 稀疏口径 0；加密口径 1/9≈11%（累计≈4%） |
+| banana | 0/16 | 0–19% | 长条机械；按类让出 |
+| pear | 0/17 | 0–18% | 同上 |
 
-| 配置 | 0.08 | 0.15 | 0.18 | 0.20 | 0.25 |
-| --- | --- | --- | --- | --- | --- |
-| A 纯策略（`act-wide-4c`） | 87.5% | 96.9% | 苹果5/5 草莓4/5 | 37.5% | 21.9% |
-| A+触觉（`act-ta-onslip`+regrasp） | 68.8%* | 43.8%* | — | — | — |
-| B 混合（验收档） | 95–97.5% | — | — | — | **91.7%** |
+**结构性结论**：刚性平口夹爪（闭合间距 ~3 cm）在仿真里夹不住 4 cm/18 g 的草莓；
+草莓/香蕉/梨按类让给同伴，本臂定位为“只做能做的件”（`--decline-kinds`）。
 
-\* 触觉重抓与同种子无触觉对照（56.3% / 59.4%）比较：0.08 +12.5pp、0.15 −15.6pp，类间互补。
+## 5. 演示视频
 
-## 已知限制
+| 文件（`data/fruitsort/eval/`） | 口径 | 结果 |
+| --- | --- | --- |
+| `head_rgbd_apple_only.mp4` | 交付口径，`--decline-kinds strawberry,banana,pear` | apple 1/1 |
+| `head_rgbd_all_kinds.mp4` | 四类都接（看完整链路，含失败） | apple 1/1、strawberry 1/3、banana 0/1、pear 0/2 |
 
-1. 纯策略 0.20+ 明显衰减（失败形态：没抓住），已排除 fb/lead/chunk/60Hz 等调参路径
-2. 梨受平行夹爪几何限制（专家自身 ~50–70%），侧抓撞带面
-3. 触觉：观测无收益；重抓缺"该不该干预"的判别（下一步用 Fn 门控或学一个干预头）
-4. 数据集方差大（同配置换种子可差 ±25pp），复现时须固定种子并跑 ≥8 局/类
+两段都用 `--perception rgbd --perception-targets --grasp-verify`，`gap 1.5–2.5 m`（为了 60 s 内
+有足够事件而加密），无真值、无吸盘、无脚本搬运。视频内叠加了带速/时间/目标/相位/计数。

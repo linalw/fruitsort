@@ -1,0 +1,80 @@
+digraph fruitsort {
+  graph [rankdir=TB, splines=spline, nodesep=0.30, ranksep=0.42, fontname="Noto Sans CJK JP",
+         fontsize=20, labelloc=t, label=<<B>FruitSort — 纯感知 + 平行夹爪 端到端架构（v1.86）</B>>,
+         bgcolor="white", pad=0.3];
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans CJK JP", fontsize=12,
+         fillcolor="#F7F9FC", color="#5B6B7C", penwidth=1.2, margin="0.14,0.10"];
+  edge  [color="#4A6572", penwidth=1.4, arrowsize=0.8, fontname="Noto Sans CJK JP", fontsize=11];
+
+  /* ---------------- ① 感知 ---------------- */
+  subgraph cluster_p {
+    label=<<B>① 感知层（纯 RGB-D，不读仿真真值）</B>>; style="rounded,filled"; fillcolor="#EAF3FB";
+    color="#7FA8C9"; fontsize=15;
+
+    cam_oh [label=<<B>overhead（头部，Gemini-335 近似）</B><BR/>1280×960 · fov 1.62 · h=2.45 m<BR/>标定 56 点 / 重投影 0.72 px<BR/>远端(x&lt;−1.0) 命中 85%（草莓）/ 0.1 cm<BR/>每帧 RGB + depth(mm)>];
+    cam_wr [label=<<B>hand_camera（腕部）</B><BR/>128×128 RGB<BR/>给策略看；也实现过感知定位<BR/>（精度 1–3 cm，默认不参与定位）>];
+    cam_sd [label=<<B>side（斜视）</B><BR/>✗ 按真机约束禁用>, fillcolor="#FDECEC", color="#C0504D"];
+
+    det [label=<<B>检测 / 3D 定位</B><BR/>HSV 饱和度 + “高于带面”掩码 → 连通域<BR/>掩码像素逐个单应反投影到带面 (x,y)<BR/>PCA 主轴 → <B>有向包围盒中心</B>（1/99 分位）<BR/>extent = 主轴长度 · yaw = 主轴朝向<BR/>z = 顶面深度 − 半高 ; 剔除细线/过大/过稀疏>, fillcolor="#DCEBFA"];
+    trk [label=<<B>多实例跟踪</B><BR/>匈牙利匹配（3D 距离 + 类别惩罚）<BR/>匀速预测 · max_lost=20<BR/>每类按 x 从大到小（离臂最近优先）>, fillcolor="#DCEBFA"];
+    adp [label=<<B>感知适配器（与真值同接口）</B><BR/>每类一个 <I>_Stub</I>{p(3), v(3), yaw, extent, raw_p}<BR/>· <B>near-hold</B>：丢检 + 贴爪 + 紧凑(0.03–0.11 m) → 位置取 TCP<BR/>· 丢检按<B>带速外推</B>（≤300 帧）· 场外“幽灵”占位<BR/>· 长轴 yaw / 世界长度 extent 一起给下游>, fillcolor="#DCEBFA"];
+
+    cam_oh -> det; cam_wr -> det [style=dashed, label=" 可选"];
+    cam_sd -> det [style=dotted, color="#C0504D"];
+    det -> trk -> adp [label=" 实例列表"];
+  }
+
+  /* ---------------- ② 观测 ---------------- */
+  subgraph cluster_o {
+    label=<<B>② 观测拼装</B>>; style="rounded,filled"; fillcolor="#EFF7EC"; color="#8FBC8F"; fontsize=15;
+    st [label=<<B>状态 57 维</B><BR/>49 = TCP(xyz+quat,7) + qpos(9) + 带速(1)<BR/>　　 + 4 类 ×（p(3), v(3), active, held）<BR/>+3 相位 one-hot（接近/下探/搬运）<BR/>+1 队列标志（|x|&lt;0.6 且在带面的件数 /4）<BR/>+4 <B>抓取几何</B>（TCP−果心：dx,dy,dz,|d|）>, fillcolor="#E3F1DD"];
+    im [label=<<B>图像：hist = 8 帧</B><BR/>全局 96×96（RGB + 帧差 = 4 通道）<BR/>腕部 96×96<BR/>ROI 96×96（以目标为中心 0.5 m 窗口）>, fillcolor="#E3F1DD"];
+  }
+
+  /* ---------------- ③ 策略 ---------------- */
+  subgraph cluster_m {
+    label=<<B>③ 策略：ACT-lite（6.77 M 参数，纯确定性，CVAE 关闭）</B>>; style="rounded,filled"; fillcolor="#FFF6E5"; color="#D9A441"; fontsize=15;
+    tok [label=<<B>Token 序列</B><BR/>每帧 4 个 token：[全局图, 腕部图, ROI 图, 状态]<BR/>+ view_type 嵌入 + time_pos<BR/>+ CLS（拼 instruction embedding）<BR/>因果 mask：t 只能看 ≤t 的历史>, fillcolor="#FFEFD2"];
+    enc [label=<<B>编码器</B><BR/>4 × TransformerEncoder<BR/>d=256 · 8 头 · ffn 3× · GELU · norm_first>, fillcolor="#FFEFD2"];
+    dec [label=<<B>解码器 → 动作块</B><BR/>4 × TransformerDecoder × <B>16 个可学习 query</B><BR/>输出 16×4：<B>Δxyz（相对当前 TCP）+ 夹爪 logit</B><BR/>辅助头：相位 3 类>, fillcolor="#FFEFD2"];
+  }
+
+  /* ---------------- ④ 执行 ---------------- */
+  subgraph cluster_e {
+    label=<<B>④ 执行层 ActPureRunner（部署逻辑，只用感知）</B>>; style="rounded,filled"; fillcolor="#F3EDF9"; color="#9B7FBF"; fontsize=15;
+    tgt [label=<<B>目标点</B><BR/>tgt = tcp + Δ（按类限速 0.10–0.14 m/步）<BR/>+ fb·(感知果位 − tcp)，fb = 0.7（仅 xy）>, fillcolor="#EAE0F5"];
+    grp [label=<<B>夹爪时序</B><BR/>logit EMA 0.7 · 搬运段锁爪<BR/>闭爪高度门（果心 −k×半高，按类）<BR/><B>抓取确认</B>：指端接触 + 指面到果身高度<BR/>（不满足 → 判“没抓住”，继续下探）>, fillcolor="#EAE0F5"];
+    fsm [label=<<B>相位/安全</B><BR/>0 接近 · 1 下探 · 2 搬运（模型自预测 + 迟滞）<BR/>停滞守卫 · 近端吸附 · 侧向进入（实验开关）<BR/>动作 = [基座系 xyz, HOME_EULER, grip]>, fillcolor="#EAE0F5"];
+  }
+
+  /* ---------------- ⑤ 任务与调度 ---------------- */
+  subgraph cluster_t {
+    label=<<B>⑤ 连续作业任务与调度</B>>; style="rounded,filled"; fillcolor="#FDEEF4"; color="#C97B9B"; fontsize=15;
+    env [label=<<B>FruitSortStream-v1</B><BR/>单一来料流 · 随机间隔 3–4 m · 尺寸 ±15%<BR/>每类 1 槽 · 带速 0.08 m/s · 四类料框<BR/>判定 delivered / dropped / missed（评测侧）>, fillcolor="#FBE3EC"];
+    ctl [label=<<B>StreamController</B><BR/>可达窗口 −0.45…+0.15 m；按类优先 apple&gt;草莓&gt;梨&gt;香蕉<BR/><B>按类让出</B>（--decline-kinds）· 长轴朝向闸（--decline-yaw）<BR/><B>纯感知选目标</B>（--perception-targets，跟踪实例）<BR/>接管 12 s 未完成即放弃 · 送达后立即换目标>, fillcolor="#FBE3EC"];
+  }
+
+  /* ---------------- ⑥ 离线数据 ---------------- */
+  subgraph cluster_d {
+    label=<<B>⑥ 离线数据与训练</B>>; style="rounded,filled"; fillcolor="#EEF1F4"; color="#8896A6"; fontsize=15;
+    rec [label=<<B>示教录制</B><BR/>record_demos.py（脚本专家，20 Hz）<BR/>全局 + ROI + 腕部图；163 段双路 + 59 段流片段<BR/>dagger_stream.py：策略跑流、几何专家打标（17 局）>, fillcolor="#E6EAEE"];
+    trn [label=<<B>训练</B><BR/>train_act.py：hist8 / chunk16 / stride2 / lr3e-4<BR/>12–14 epoch；geom+phase+delta；descend-boost 5<BR/>best val 0.036（dual2，含流片段）>, fillcolor="#E6EAEE"];
+  }
+
+  /* ---------------- 结果 ---------------- */
+  res [label=<<B>当前可用范围（v1.86）</B><BR/>固定口径 5 seeds×3 局（gap 3–4 m）：<B>apple 11/26 = 42.3%（95% CI 26–61%），0 掉落</B><BR/>strawberry 0/16 · banana 0/17 · pear 0/17 —— 按类让出给同伴<BR/>加密口径（gap 1.5–2.5 m）：strawberry <B>1/9 ≈ 11%</B>（累计 ≈2/50 ≈ 4%）→ 对拦截时序极敏感<BR/>香蕉/梨 = 长条/机械问题，7 条软件路径已证伪 → 需换末端>, fillcolor="#E8F5E9", color="#2E7D32", penwidth=1.8];
+
+  cam_oh -> st [style=invis];
+  adp -> st [label=" 位置/速度/yaw/extent"];
+  adp -> im [style=dashed, label=" 图像来自相机"];
+  st -> tok; im -> tok;
+  tok -> enc -> dec [label=" memory"];
+  dec -> tgt [label=" 16×4"];
+  tgt -> grp -> fsm;
+  fsm -> env [label=" 逐步动作"];
+  env -> ctl [style=dashed, label=" obs / 事件"];
+  ctl -> fsm [style=dashed, label=" 选目标 / 让出"];
+  rec -> trn [label=" npz"];
+  trn -> tok [style=dashed, label=" 权重 ckpt"];
+  fsm -> res [style=dashed, label=" 评测"];
+}

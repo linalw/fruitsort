@@ -40,3 +40,5 @@
   （对照 `act-gnoisy` 60.0%/53.7%、部署 `act-wide-4c` 33.3%/20.6%）。
 - `.txt` 旁注文件在 `data/fruitsort/eval/`，含代码版本、权重、部署配置、场景参数与复现命令。
 | `stream_suction_5of5.mp4` | 纯感知 + 吸盘末端，连续作业 **5/5 送达**、机会内 100%、5 件/min、单件 4.6 s | v1.74.0 / `runs/act-suction/ckpt.pt` |
+| `head_rgbd_apple_only.mp4` | 头部 RGB-D + 纯感知 + 夹爪，交付口径（只做苹果）：apple 1/1，固定口径 42.3%（CI 26–61%） | v1.86.0 / `runs/act-dagger/ckpt.pt` |
+| `head_rgbd_all_kinds.mp4` | 四类都接：apple 1/1、**strawberry 1/3（首次）**、banana/pear 0；加密流 1.5–2.5 m | v1.86.0 / `runs/act-dagger/ckpt.pt` |
