@@ -109,6 +109,8 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
 
 - 环境 `FruitSortStream-v1`：每类 3 个 slot、单一下料流、间隔 `U(gap)` 米、尺寸 ±15%，
   **只会循环回收**（不回收就永远不再上料）。
+- **放料门**（v1.89）：模型会在离料框 15–27 cm 就开爪（果子掉地上）。
+  加 `--release-gate 0.10` 后开爪全部落在框内，掉落 4/15 → 1/14，见 [`docs/drop-reduction.md`](docs/drop-reduction.md)。
 - **闭爪时机**（v1.88）：模型会在果心上方 3 cm 就闭爪（水平误差只有 1–2 mm），
   加 `--close-z-gate-map apple=0.012 --close-z-off-map apple=0.0` 后 85% 落在果心 ±1.5 cm；
   详见 [`docs/interception-timing.md`](docs/interception-timing.md)。

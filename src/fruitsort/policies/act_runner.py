@@ -41,6 +41,7 @@ class ActPureRunner:
                  max_step: float = 0.06, lead: float = 0.0, z_gate: bool = False,
                  phase_fb: bool = True, hold_latch: bool = False,
                  grip_hyst: float = 0.0,
+                 release_gate: float = 0.0, release_wait: int = 120,
                  grasp_retry: bool = True, chunk_exec: int = 1,
                  carry_max_step: float = 0.0, slip_guard: bool = False,
                  slip_thr: float = 0.05, slip_slow_step: float = 0.012,
@@ -116,6 +117,12 @@ class ActPureRunner:
         # 夹爪指令迟滞：模型在"闭不闭"之间输出抖动（logit 在 0 附近），EMA 之后仍会
         # 每 3–5 步翻一次符号 → 指面刚合上又张开，永远夹不住。>0 时用双阈值锁存。
         self.grip_hyst = float(grip_hyst)
+        # 放料门：模型会在**离料框 15–27 cm** 时就开爪（实测 trace），果子直接掉地上。
+        # 料框位置是环境夹具（事先已知，不是物体真值），所以可以在部署侧硬拦：
+        # 未进入框上方 release_gate 米内 → 不放开 + 直接把目标点设成框心。
+        self.release_gate = float(release_gate)
+        self.release_wait = int(release_wait)
+        self._rel_wait = 0
         self.chunk_exec = chunk_exec
         # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
         self.carry_max_step = carry_max_step
@@ -714,6 +721,22 @@ class ActPureRunner:
                 grip = -1.0
         else:
             self.open_streak = 0
+        # ---- 放料门：只在框上方开爪（超时后放弃守卫，避免抱着果子跑整局）----
+        if self.release_gate > 0 and grasping and grip > 0:
+            try:
+                from fruitsort.sim.conveyor import BIN_LAYOUT as _BLr
+                _bxr, _byr = _BLr[kind]
+            except Exception:  # noqa: BLE001
+                _bxr, _byr = 0.0, -0.3
+            _db = float(np.hypot(float(tcp[0]) - _bxr, float(tcp[1]) - _byr))
+            if _db > self.release_gate and self._rel_wait < self.release_wait:
+                grip = -1.0
+                tgt = np.array([float(_bxr), float(_byr),
+                                max(float(tcp[2]), 0.52)], dtype=np.float64)
+                self._rel_wait += 1
+                self.stats["rel_gate"] = self.stats.get("rel_gate", 0) + 1
+            else:
+                self._rel_wait = 0
         self.slip_slow = False
         self.force_target = None
         self.tac_hist = []

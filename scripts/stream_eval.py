@@ -599,6 +599,10 @@ def main() -> None:
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
     ap.add_argument("--close-win-z", type=float, default=0.06)
+    ap.add_argument("--release-gate", type=float, default=0.0,
+                    help="放料门：只在料框中心该距离内才允许开爪（米；0=关）")
+    ap.add_argument("--release-wait", type=int, default=120,
+                    help="放料门最长拦截步数（超过就放开，避免抱着果子跑整局）")
     ap.add_argument("--grip-hyst", type=float, default=0.0,
                     help="夹爪指令迟滞（logit 双阈值）：>0 时 |logit|<h 维持上一步，抑制闭爪抖动")
     ap.add_argument("--close-z-off-map", default="",
@@ -674,6 +678,10 @@ def main() -> None:
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
     ap.add_argument("--roi-m", type=float, default=0.0,
                     help="录制时额外保存目标 ROI 裁剪（米；0=不存）")
+    ap.add_argument("--trace-release", action="store_true",
+                    help="记录每次开爪（放下）瞬间 TCP 到本类料框中心的距离，用于判断'放偏了'")
+    ap.add_argument("--trace-drop", action="store_true",
+                    help="记录每次掉落瞬间的上下文（相位/夹持/到框距离/高度），用于定位掉落原因")
     ap.add_argument("--trace-close", action="store_true",
                     help="记录每次闭爪瞬间 TCP 与目标的偏差（拦截时序诊断：正=落在果实后面）")
     ap.add_argument("--trace-items", action="store_true",
@@ -725,6 +733,7 @@ def main() -> None:
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
                              grip_hyst=args.grip_hyst,
+                             release_gate=args.release_gate, release_wait=args.release_wait,
                              close_z_gate=args.close_z_gate,
                              lead_long=args.lead_long,
                              lead_long_extent=args.lead_long_extent,
@@ -832,6 +841,8 @@ def main() -> None:
         _prev_grip = 1.0
         _t_phase1 = None
         _t_phase2 = None
+        _n_ev = 0
+        _last_pos = {}
 
         for t in range(max_steps):
             if src is not None:
@@ -933,7 +944,40 @@ def main() -> None:
                             img[y0:y0 + ph_, x0:x0 + pw_] = panel
                 writer.write(img)
             _rn = ctrl.runner
-            if args.trace_close and _rn is not None:
+            if args.trace_drop:
+                try:
+                    _evs = u.stream_stats["events"]
+                except Exception:  # noqa: BLE001
+                    _evs = []
+                while _n_ev < len(_evs):
+                    _te, _ke, _what, _iid = _evs[_n_ev]
+                    _n_ev += 1
+                    if _what != "dropped":
+                        continue
+                    _tcp = u.agent.tcp_pose.p[0].cpu().numpy()
+                    try:
+                        from fruitsort.sim.conveyor import BIN_LAYOUT as _BL
+                        _bx, _by = _BL[_ke]
+                    except Exception:  # noqa: BLE001
+                        _bx, _by = 0.0, -0.3
+                    _lp = _last_pos.get(_iid)
+                    _lp = None if _lp is None else np.asarray(_lp)
+                    _att = getattr(_rn, "attached", False)
+                    _gr = getattr(_rn, "grasping", False)
+                    print(f"    [drop] t={u._t:5.1f} {_ke:10s} id={_iid:3d} "
+                          f"ph={-1 if _rn is None else _rn.phase_state} grasp={int(_gr)} "
+                          f"tcp=({_tcp[0]:+.2f},{_tcp[1]:+.2f},{_tcp[2]:.2f}) "
+                          f"last=({'-' if _lp is None else f'{_lp[0]:+.2f}'.strip()},"
+                          f"{'-' if _lp is None else f'{_lp[1]:+.2f}'.strip()},"
+                          f"{'-' if _lp is None else f'{_lp[2]:.2f}'.strip()}) "
+                          f"bin=({_bx:+.2f},{_by:+.2f}) "
+                          f"d_bin={float(np.hypot(_tcp[0]-_bx, _tcp[1]-_by))*100:4.1f}cm", flush=True)
+            if args.trace_drop:
+                for _k2 in u.active_kinds:
+                    for _s2 in u._slots[_k2]:
+                        if _s2["live"]:
+                            _last_pos[_s2["item"]["id"]] = _s2["item"]["actor"].pose.p[0].cpu().numpy()
+            if (args.trace_close or args.trace_release) and _rn is not None:
                 _kind_t = ctrl.target["kind"] if ctrl.target is not None else None
                 _ph = _rn.phase_state
                 if _ph == 1 and _t_phase1 is None:
@@ -941,6 +985,18 @@ def main() -> None:
                 if _ph == 2 and _t_phase2 is None:
                     _t_phase2 = float(u._t)
                 _g = float(getattr(_rn, "prev_grip", 1.0))
+                if (args.trace_release and _g > 0 >= _prev_grip and _kind_t is not None):
+                    try:
+                        from fruitsort.sim.conveyor import BIN_LAYOUT as _BL3
+                        _bx3, _by3 = _BL3[_kind_t]
+                    except Exception:  # noqa: BLE001
+                        _bx3, _by3 = 0.0, -0.3
+                    _tcp3 = u.agent.tcp_pose.p[0].cpu().numpy()
+                    print(f"    [open] t={u._t:5.1f} {_kind_t:10s} ph={_ph} "
+                          f"grasp={int(getattr(_rn, 'grasping', False))} "
+                          f"tcp=({_tcp3[0]:+.2f},{_tcp3[1]:+.2f},{_tcp3[2]:.2f}) "
+                          f"d_bin={float(np.hypot(_tcp3[0]-_bx3, _tcp3[1]-_by3))*100:4.1f}cm "
+                          f"dy={(_tcp3[1]-_by3)*100:+5.1f}cm", flush=True)
                 if _g < 0 <= _prev_grip and _kind_t is not None and ctrl.objs:
                     _a = ctrl.objs.get(_kind_t)
                     if _a is not None:
