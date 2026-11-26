@@ -505,7 +505,7 @@ _KIND_BGR = {"apple": (60, 60, 220), "strawberry": (90, 60, 235),
 _ROI_HELPER = [None]
 
 
-def _head_panel(obs, tracks, tgt_xy, tgt_kind, hom, panel_w: int = 620):
+def _head_panel(obs, tracks, tgt_xy, tgt_kind, proj, panel_w: int = 620, masks=None):
     """头部相机画面 + 纯感知检测结果 → 画中画面板。
 
     存在的理由：演示视频的第三人称视角无法证明"没读仿真真值"。这里直接贴**模型唯一的
@@ -522,14 +522,34 @@ def _head_panel(obs, tracks, tgt_xy, tgt_kind, hom, panel_w: int = 620):
     ph = int(round(panel_w * h0 / w0))
     img = cv2.resize(rgb, (panel_w, ph), interpolation=cv2.INTER_AREA).copy()
 
-    # 1 m 在世界系 ≈ 多少像素（单应是仿射近似，取 x 方向即可）
+    # 世界 (x,y) → 面板像素。`proj` 由调用方给（v1 用带面单应，v2 用相机模型）
     def _px(xy):
-        p = hom.H @ np.array([float(xy[0]), float(xy[1]), 1.0], dtype=np.float64)
-        return float(p[0] / p[2]) * panel_w / w0, float(p[1] / p[2]) * ph / h0
+        u, v = proj(xy)
+        return float(u) * panel_w / w0, float(v) * ph / h0
 
     ox, oy = _px((-1.10, 0.0))
     ux, uy = _px((-0.10, 0.0))
     ppm = max(1.0, float(np.hypot(ux - ox, uy - oy)) / 1.0)
+
+    # 分割掩码（v2 感知才会给）：画轮廓 + 类别，直接展示"掩码从哪来"
+    if masks:
+        _sx, _sy = panel_w / float(w0), ph / float(h0)
+        for seg, kind, conf in masks:
+            _m = (np.asarray(seg.mask).astype(np.uint8) * 255)
+            cnts, _ = cv2.findContours(_m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not cnts:
+                continue
+            cnts = [np.round(c.reshape(-1, 2) * np.array([_sx, _sy])).astype(np.int32)
+                    for c in cnts]
+            col = _KIND_BGR.get(kind, (200, 200, 200))
+            cv2.drawContours(img, cnts, -1, col, 2, cv2.LINE_AA)
+            x0, y0, x1, y1 = seg.bbox
+            cv2.putText(img, f"{kind[:2]} {conf:.1f}",
+                        (int(x0 * _sx), max(12, int(y0 * _sy) - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 0), 2, cv2.LINE_AA)
+            cv2.putText(img, f"{kind[:2]} {conf:.1f}",
+                        (int(x0 * _sx), max(12, int(y0 * _sy) - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, col, 1, cv2.LINE_AA)
 
     n_tr = 0
     for kind, insts in (tracks or {}).items():
@@ -1031,8 +1051,21 @@ def main() -> None:
                             _txy = _est.pose.p[0].cpu().numpy()[:2]
                         except Exception:  # noqa: BLE001
                             _txy = None
+                    _mk = getattr(getattr(src, "vs", None), "last_masks", None)
+                    _hom = getattr(getattr(src, "vs", None), "homography", None)
+                    if _hom is not None:
+                        def _proj(xy, _H=_hom.H):
+                            p = _H @ np.array([float(xy[0]), float(xy[1]), 1.0])
+                            return float(p[0] / p[2]), float(p[1] / p[2])
+                    else:
+                        _cam = getattr(getattr(src, "vs", None), "camera", None)
+                        _bz = float(getattr(u, "belt_top_z", 0.45))
+
+                        def _proj(xy, _c=_cam, _z=_bz):
+                            uv = _c.project(np.array([[xy[0], xy[1], _z]]))[0]
+                            return float(uv[0]), float(uv[1])
                     panel = _head_panel(obs, getattr(src, "last_tracks", None),
-                                        _txy, _k, src.vs.homography)
+                                        _txy, _k, _proj, masks=_mk)
                     if panel is not None:
                         ph_, pw_ = panel.shape[:2]
                         m = int(round(ww * 0.008))

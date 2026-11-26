@@ -1,0 +1,131 @@
+digraph fruitsort_v2 {
+  graph [rankdir=TB, splines=spline, nodesep=0.28, ranksep=0.40, fontname="Noto Sans CJK JP",
+         fontsize=19, labelloc=t, label=<<B>FruitSort v1.91 — 端到端架构（感知 v2：分割→几何→识别→跟踪，模型侧零真值）</B>>,
+         bgcolor="white", pad=0.30, compound=true];
+
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK JP", fontsize=11.5,
+        fillcolor="#F7F9FC", color="#5B6B7C", penwidth=1.2, margin="0.13,0.09"];
+  edge [color="#4A6572", penwidth=1.3, arrowsize=0.8, fontname="Noto Sans CJK JP", fontsize=10];
+
+  /* ---------------- ① 采集 + 标定 ---------------- */
+  subgraph cluster_cam {
+    label=<<B>① 采集与标定（真机件）</B>>; style="rounded,filled"; fillcolor="#EAF3FB";
+    color="#7FA8C9"; fontsize=14;
+    cam [label=<<B>头戴相机 1280×960 RGB-D</B><BR/>Gemini 335 量级：fov 1.62 · 2.45 m · 30 Hz<BR/>
+             深度单位 m（沿光轴），与 RGB 逐像素对齐>];
+    cal [label=<<B>CameraModel(K, T)</B><BR/>K：fx fy cx cy（棋盘格） · T：world←camera（手眼）<BR/>
+             <I>assets/calib/camera_&lt;name&gt;.json</I><BR/>仿真拟合：36 点 → 重投影 <B>0.1 px</B>>,
+         fillcolor="#DCEBFA"];
+    cam -> cal [style=dashed, label=" 标定一次"];
+  }
+
+  /* ---------------- ② 分割 ---------------- */
+  subgraph cluster_seg {
+    label=<<B>② 分割：掩码（11 ms / 帧 @1280×960 CPU）</B>>; style="rounded,filled";
+    fillcolor="#EFF7EC"; color="#8FBC8F"; fontsize=14;
+    un [label=<<B>反投影</B><BR/>p = R·K⁻¹[u,v,1]·d + t<BR/>→ 世界点云 (H,W,3)>];
+    gate [label=<<B>双门</B><BR/>深度门：z &gt; 带面+8 mm 且 &lt; +35 cm<BR/>颜色门：HSV 饱和度 ≥70 · 亮度 ≥50<BR/>
+              （灰度带面/机械臂/料框被剔除）>, fillcolor="#E3F1DD"];
+    morph [label=<<B>形态学</B><BR/>开 3×3（去椒盐）→ 闭 5×5（补洞）>, fillcolor="#E3F1DD"];
+    cc [label=<<B>连通域</B><BR/>面积 ≥60 px；bbox + 面积 + 中位色相>, fillcolor="#E3F1DD"];
+    split [label=<<B>粘连分离</B><BR/>距离变换 → 峰（≥0.8·max）→ 最近峰归属<BR/>
+              （一颗果一个峰；贴着的有多个）>, fillcolor="#E3F1DD"];
+  }
+
+  /* ---------------- ③ 几何 ---------------- */
+  subgraph cluster_geo {
+    label=<<B>③ 3D 几何（不假设相机竖直）</B>>; style="rounded,filled"; fillcolor="#FFF6E5";
+    color="#D9A441"; fontsize=14;
+    plane [label=<<B>带面高度</B><BR/>先验 z₀ + 直方图峰 + 中位（±2 mm）>, fillcolor="#FFEFD2"];
+    obb [label=<<B>PCA 有向包围盒</B><BR/>中心 = 世界点中位；长/短轴 = 1/99 分位<BR/>
+           高度 = P95(z) − 带面；朝向 yaw（mod π）>, fillcolor="#FFEFD2"];
+    rej [label=<<B>形状闸</B><BR/>0.03 ≤ 长轴 ≤ 0.30 m · 短轴 ≥ 12 mm · 高 ≥ 10 mm>, fillcolor="#FFEFD2"];
+  }
+
+  /* ---------------- ④ 识别 ---------------- */
+  subgraph cluster_rec {
+    label=<<B>④ 识别（8 维特征 → 4 类）</B>>; style="rounded,filled"; fillcolor="#F3EDF9";
+    color="#9B7FBF"; fontsize=14;
+    feat [label=<<B>特征</B><BR/>长轴 · 短轴 · 高 · 长宽比 · 面积 · H · S · V>, fillcolor="#EAE0F5"];
+    rule [label=<<B>规则后端（零样本）</B><BR/>红：长轴&gt;45 mm=苹果，否则草莓<BR/>
+             黄：长轴&gt;115 mm=香蕉，否则梨 · 绿=梨>, fillcolor="#EAE0F5"];
+    mlp [label=<<B>学习后端（可选）</B><BR/>MLP 8→48→48→4（GELU）<BR/>
+             <I>runs/seg-head/recognizer.pt</I>（train_recognizer.py）<BR/>验证 100%（374 样本）>, fillcolor="#EAE0F5"];
+  }
+
+  /* ---------------- ⑤ 跟踪 + ⑥ 适配 ---------------- */
+  subgraph cluster_trk {
+    label=<<B>⑤ 跟踪与适配（输出与仿真真值同接口）</B>>; style="rounded,filled";
+    fillcolor="#FDEEF4"; color="#C97B9B"; fontsize=14;
+    trk [label=<<B>匈牙利匹配</B><BR/>代价 = 3D 距离 + 类别惩罚 0.25<BR/>门限 0.25 m · 匀速预测 · max_lost 20>, fillcolor="#FBE3EC"];
+    adp [label=<<B>适配器</B><BR/>near-hold（贴爪且丢检 → 取 TCP）<BR/>
+             丢检按带速外推 ≤300 帧 · held → 跟随 TCP<BR/>每类只暴露"最靠前的一件">, fillcolor="#FBE3EC"];
+  }
+
+  /* ---------------- ⑦ 观测 ---------------- */
+  subgraph cluster_obs {
+    label=<<B>⑥ 观测拼装</B>>; style="rounded,filled"; fillcolor="#EEF1F4"; color="#8896A6"; fontsize=14;
+    st [label=<<B>状态 57 维</B><BR/>TCP(7)+关节(9)+带速(1)+4类×(p3,v3,active,held)=32<BR/>
+           +相位 one-hot(3)+队列(1)+抓取几何(4)>, fillcolor="#E6EAEE"];
+    im [label=<<B>图像 ×8 帧</B><BR/>全局 96²（RGB+帧差 4ch）· 腕部 96² · ROI 96²（0.5 m 窗口）>, fillcolor="#E6EAEE"];
+  }
+
+  /* ---------------- ⑧ 策略 ---------------- */
+  subgraph cluster_pol {
+    label=<<B>⑦ 策略 ACT-lite（6.77 M，确定性，chunk 16）</B>>; style="rounded,filled";
+    fillcolor="#E8F5E9"; color="#2E7D32"; fontsize=14;
+    tok [label=<<B>Token</B><BR/>每帧 4 个：[全局, 腕部, ROI, 状态] + view_type + time_pos + CLS<BR/>因果 mask>, fillcolor="#DCEDC8"];
+    enc [label=<<B>编码器 4×</B><BR/>d=256 · 8 头 · ffn 3× · norm_first>, fillcolor="#DCEDC8"];
+    dec [label=<<B>解码器 4× × 16 query</B><BR/>→ 16×4：Δxyz + 夹爪 logit · 相位辅助头 3 类>, fillcolor="#DCEDC8"];
+  }
+
+  /* ---------------- ⑨ 执行 ---------------- */
+  subgraph cluster_exec {
+    label=<<B>⑧ 执行层 ActPureRunner（真机可迁移）</B>>; style="rounded,filled";
+    fillcolor="#E3F2FD"; color="#42A5F5"; fontsize=14;
+    fsm [label=<<B>相位/安全</B><BR/>0 接近 · 1 下探 · 2 搬运（模型自预测 + 迟滞）<BR/>
+            按类限速 0.12/0.10/0.06 m/步 · 停滞守卫>, fillcolor="#D6EAF8"];
+    gz [label=<<B>闭爪高度门</B><BR/>|TCP.z − 果心| &gt; 1.2 cm → 禁止闭爪并继续下探<BR/>
+            （v1.88：闭爪落点 ±1.5 cm 命中率 0% → 85%）>, fillcolor="#D6EAF8"];
+    gr [label=<<B>放料门</B><BR/>距框心 &gt; 10 cm 禁止开爪 + 目标设为框心<BR/>
+            （v1.89：掉落 4/15 → 1/14）>, fillcolor="#D6EAF8"];
+    fsen [label=<<B>抓取确认（传感器）</B><BR/>指端法向力 &gt; 0.2 N（真机=F/T）<BR/>
+             <I>唯一读传感器的地方，不读物体真值</I>>, fillcolor="#D6EAF8"];
+  }
+
+  /* ---------------- ⑩ 任务 ---------------- */
+  subgraph cluster_task {
+    label=<<B>⑨ 连续作业任务层</B>>; style="rounded,filled"; fillcolor="#FFF3E0"; color="#EF6C00"; fontsize=14;
+    env [label=<<B>传送带产线</B><BR/>单流 · 间隔 1.5–4 m · 尺寸 ±15% · 0.08 m/s<BR/>四类料框（apple/strawberry/banana/pear）>, fillcolor="#FFE0B2"];
+    ctl [label=<<B>StreamController</B><BR/>可达窗 −0.45…+0.45 · 按类优先 · 按类让出<BR/>
+             纯感知选目标 · 送达即换 · 12 s 超时放弃>, fillcolor="#FFE0B2"];
+  }
+
+  /* ---------------- ⑪ 评测 ---------------- */
+  subgraph cluster_eval {
+    label=<<B>⑩ 评测（<U>唯一允许读真值的地方</U>，不进入模型）</B>>; style="rounded,dashed,filled";
+    fillcolor="#FCE4EC"; color="#AD1457"; fontsize=13;
+    score [label=<<B>按件记账</B><BR/>delivered / dropped / missed + 每类 95% CI<BR/>
+             bench_perception：召回/分类/3D 误差（真值只用于打分）>, fillcolor="#F8BBD0"];
+  }
+
+  /* ---- 连线 ---- */
+  cal -> un [label=" K,T "];
+  cam -> un [label=" rgb+depth "];
+  un -> gate -> morph -> cc -> split [label=" 掩码"];
+  split -> obb [label=" 掩码 + 点云 "];
+  plane -> obb [style=dashed, label=" 带面 z "];
+  obb -> rej -> feat [label=" 几何 "];
+  feat -> rule; feat -> mlp [style=dashed];
+  rule -> trk; mlp -> trk [style=dashed, label=" 选一个 "];
+  trk -> adp [label=" 实例列表 "];
+  adp -> st; adp -> im;
+  st -> tok; im -> tok;
+  tok -> enc -> dec [label=" memory "];
+  dec -> fsm [label=" 16×4 "];
+  fsm -> gz -> gr -> fsen;
+  fsen -> env [label=" 动作 "];
+  env -> ctl [style=dashed, label=" 事件/队列 "];
+  ctl -> fsm [style=dashed, label=" 选目标/让出 "];
+  fsen -> score [style=dotted, label=" 结果", color="#AD1457"];
+}

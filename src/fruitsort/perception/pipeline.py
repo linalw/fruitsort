@@ -109,6 +109,7 @@ class PerceptionPipeline:
         self.min_confidence = float(min_confidence)
         self.tracker = Tracker(dt=dt, max_lost=max_lost)
         self.last_stats = PipelineStats()
+        self.last_masks: list[tuple[object, str, float]] = []   # (SegMask, kind, conf) 供可视化
         self.last_debug: list[dict] = []
 
     # ------------------------------------------------------------------ #
@@ -123,6 +124,7 @@ class PerceptionPipeline:
 
         dets: list[Instance] = []
         dbg: list[dict] = []
+        accepted: list[tuple[object, str, float]] = []
         n_rej_shape = n_rej_cls = 0
         for seg in masks:
             g = obb_from_mask(pts, seg.mask, plane_z)
@@ -136,6 +138,7 @@ class PerceptionPipeline:
                 continue
             dets.append(Instance(kind=kind, pos=g.center.copy(), vel=np.zeros(3),
                                  area=seg.area, hue=seg.hue, extent=g.extent, yaw=g.yaw))
+            accepted.append((seg, kind, float(conf)))
             dbg.append(dict(kind=kind, conf=float(conf), extent=g.extent, width=g.width,
                             height=g.height, yaw=g.yaw, bbox=seg.bbox, area=seg.area))
 
@@ -150,6 +153,7 @@ class PerceptionPipeline:
                                         rejected_class=n_rej_cls, tracks=len(tracked),
                                         plane_z=plane_z)
         self.last_debug = dbg
+        self.last_masks = accepted
         return out
 
     def update(self, obs) -> dict[str, list[Instance]]:
