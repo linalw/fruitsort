@@ -107,3 +107,38 @@ v1 在倾斜机位直接归零：它的 `z = cam_z − depth` 把"沿光轴的�
   若换 4K 需要先 ROI 再反投影；
 - 未处理**深度缺失/反光**（Gemini 在深色果皮上会有洞）：掩码会缺角，extent 偏小 →
   已在 `split_plausible()` 里用上下界兜底，但极端情况下会漏检。
+
+## 8. 真机怎么接（系统接线）
+
+仿真里 `RGBDv2Source.update(obs)` 只是把 SAPIEN 的 obs 拆成 `rgb/depth` 再调
+`update_rgbd`。真机上**这一步就是全部**——不需要任何仿真对象：
+
+```python
+from fruitsort.perception.camera import CameraModel
+from fruitsort.perception.pipeline import PerceptionPipeline
+from fruitsort.policies.act_runner import ActPureRunner
+
+cam  = CameraModel.load("assets/calib/camera_overhead.json")   # 真机标定
+pipe = PerceptionPipeline(camera=cam, belt_z=0.45, dt=1/30)    # 带面高度：现场量一次
+runner = ActPureRunner(robot_env, ckpt, kind="apple",
+                       release_gate=0.10,
+                       close_z_gate_map={"apple": 0.012})
+
+while True:
+    rgb, depth_m = camera.grab()          # 1280×960 RGB + 深度（米）
+    objs = pipe.update_rgbd(rgb, depth_m) # {kind: [Instance(pos, vel, yaw, extent)]}
+    runner.set_actors(objs)               # 注入"感知替身"（接口与仿真完全一致）
+    act = runner.act(obs)                 # 7 维：Δxyz + 夹爪（基座系）
+    robot.step(act)                        # pd_ee_pose
+```
+
+需要替换的只有三样，接口都已固定：
+
+| 真机件 | 替换点 |
+| --- | --- |
+| 相机 | `camera.grab()` → `rgb, depth_m`（深度单位米、与 rgb 对齐） |
+| 机器人 | `robot.step(act)`（`act=[x,y,z,rx,ry,rz,grip]`，基座系） |
+| 触觉/F-T | `finger_normal_force(u)`（`act_runner` 里唯一读传感器的地方） |
+
+`perception → runner → 机器人` 之外还有两层**与模型无关**的部署门（闭爪高度门、放料门），
+它们只用到"果心高度"和"料框位置"，都属于夹具几何，换机器人不用改。
