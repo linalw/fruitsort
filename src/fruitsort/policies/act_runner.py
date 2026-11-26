@@ -40,6 +40,7 @@ class ActPureRunner:
                  carry_latch: bool = False, descend_commit: int = 0,
                  max_step: float = 0.06, lead: float = 0.0, z_gate: bool = False,
                  phase_fb: bool = True, hold_latch: bool = False,
+                 grip_hyst: float = 0.0,
                  grasp_retry: bool = True, chunk_exec: int = 1,
                  carry_max_step: float = 0.0, slip_guard: bool = False,
                  slip_thr: float = 0.05, slip_slow_step: float = 0.012,
@@ -112,6 +113,9 @@ class ActPureRunner:
         self.max_step_map = max_step_map or {}
         self.carry_step_map = carry_step_map or {}
         self.phase_fb, self.hold_latch, self.grasp_retry = phase_fb, hold_latch, grasp_retry
+        # 夹爪指令迟滞：模型在"闭不闭"之间输出抖动（logit 在 0 附近），EMA 之后仍会
+        # 每 3–5 步翻一次符号 → 指面刚合上又张开，永远夹不住。>0 时用双阈值锁存。
+        self.grip_hyst = float(grip_hyst)
         self.chunk_exec = chunk_exec
         # 搬运段单独限速：接近段要快要准，搬运段过冲会把水果带到框外
         self.carry_max_step = carry_max_step
@@ -649,7 +653,17 @@ class ActPureRunner:
             a = self.grip_ema
             self.grip_ema_val = glogit if self.grip_ema_val is None else a * self.grip_ema_val + (1 - a) * glogit
             glogit = self.grip_ema_val
-        grip = -1.0 if glogit > 0 else 1.0
+        if self.grip_hyst > 0:
+            # 双阈值：|logit| < h 时维持上一步，避免每几帧翻一次 → 指面抖动夹不住
+            if glogit > self.grip_hyst:
+                grip = -1.0
+            elif glogit < -self.grip_hyst:
+                grip = 1.0
+            else:
+                grip = -1.0 if self.prev_grip < 0 else 1.0
+            self.stats["grip_hold"] = self.stats.get("grip_hold", 0) + int(abs(glogit) < self.grip_hyst)
+        else:
+            grip = -1.0 if glogit > 0 else 1.0
         # ---- 力作为动作通道：第 5 维 = 目标夹持力（0..1 → 0..40N），用触觉 Fn 伺服 ----
         self.force_target = None
         self.tac_hist = []

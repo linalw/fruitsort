@@ -1,0 +1,7 @@
+/home/ubuntu/linalw/App/minconda3/envs/maniskill3/lib/python3.10/site-packages/sapien/_vulkan_tricks.py:78: UserWarning: Failed to find Vulkan ICD file. This is probably due to an incorrect or partial installation of the NVIDIA driver. SAPIEN will attempt to provide an ICD file anyway but it may not work.
+  warn(
+    [close] t=  6.2 apple      ph=1 fruit_x=-0.270 d=( +0.1, +0.0, +2.8)cm |d|= 2.8cm descend=0.33s att=False
+    [close] t=  7.0 apple      ph=1 fruit_x=-0.231 d=( +0.1, +0.1, +3.7)cm |d|= 3.7cm descend=1.17s att=False
+    [close] t=  7.7 apple      ph=1 fruit_x=-0.200 d=( +0.2, +0.0, +2.7)cm |d|= 2.7cm descend=1.90s att=False
+    [close] t=  8.9 apple      ph=1 fruit_x=-0.242 d=( +0.1, +0.1, +5.7)cm |d|= 5.7cm descend=3.10s att=False
+    [close] t=  9.6 apple      ph=1 fruit_x=-0.180 d=( +0.1, +0.0, +2.3)cm |d|= 2.3cm descend=3.77s att=False

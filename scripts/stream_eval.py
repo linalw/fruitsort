@@ -599,6 +599,8 @@ def main() -> None:
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
     ap.add_argument("--close-win-z", type=float, default=0.06)
+    ap.add_argument("--grip-hyst", type=float, default=0.0,
+                    help="夹爪指令迟滞（logit 双阈值）：>0 时 |logit|<h 维持上一步，抑制闭爪抖动")
     ap.add_argument("--close-z-off-map", default="",
                     help="闭爪门触发时的下探高度偏移（果心+该值），如 'strawberry=-0.005'")
     ap.add_argument("--close-z-gate-map", default="",
@@ -672,6 +674,8 @@ def main() -> None:
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
     ap.add_argument("--roi-m", type=float, default=0.0,
                     help="录制时额外保存目标 ROI 裁剪（米；0=不存）")
+    ap.add_argument("--trace-close", action="store_true",
+                    help="记录每次闭爪瞬间 TCP 与目标的偏差（拦截时序诊断：正=落在果实后面）")
     ap.add_argument("--trace-items", action="store_true",
                     help="逐件记账：每 20 步打印 (相位, 到框距离, 是否附着)，并在每局末打印每件结果")
     ap.add_argument("--seed", type=int, default=40000)
@@ -720,6 +724,7 @@ def main() -> None:
                              carry_max_step=args.carry_max_step,
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
+                             grip_hyst=args.grip_hyst,
                              close_z_gate=args.close_z_gate,
                              lead_long=args.lead_long,
                              lead_long_extent=args.lead_long_extent,
@@ -824,6 +829,9 @@ def main() -> None:
             _v.parent.mkdir(parents=True, exist_ok=True)
             _v = _v.with_suffix(".mp4")
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "roi": [], "kind": None, "id": None}
+        _prev_grip = 1.0
+        _t_phase1 = None
+        _t_phase2 = None
 
         for t in range(max_steps):
             if src is not None:
@@ -924,6 +932,27 @@ def main() -> None:
                                           (x0 + pw_ + 2, y0 + ph_ + 2), (90, 90, 90), 2)
                             img[y0:y0 + ph_, x0:x0 + pw_] = panel
                 writer.write(img)
+            _rn = ctrl.runner
+            if args.trace_close and _rn is not None:
+                _kind_t = ctrl.target["kind"] if ctrl.target is not None else None
+                _ph = _rn.phase_state
+                if _ph == 1 and _t_phase1 is None:
+                    _t_phase1 = float(u._t)
+                if _ph == 2 and _t_phase2 is None:
+                    _t_phase2 = float(u._t)
+                _g = float(getattr(_rn, "prev_grip", 1.0))
+                if _g < 0 <= _prev_grip and _kind_t is not None and ctrl.objs:
+                    _a = ctrl.objs.get(_kind_t)
+                    if _a is not None:
+                        _tcp = u.agent.tcp_pose.p[0].cpu().numpy()
+                        _fp = _a.pose.p[0].cpu().numpy()
+                        _d = _tcp - _fp
+                        print(f"    [close] t={u._t:5.1f} {_kind_t:10s} ph={_ph} "
+                              f"fruit_x={_fp[0]:+.3f} d=({_d[0]*100:+5.1f},{_d[1]*100:+5.1f},"
+                              f"{_d[2]*100:+5.1f})cm |d|={np.linalg.norm(_d)*100:4.1f}cm "
+                              f"descend={0.0 if _t_phase1 is None else u._t - _t_phase1:4.2f}s "
+                              f"att={getattr(_rn, 'attached', False)}", flush=True)
+                _prev_grip = _g
             if bool(term) or bool(trunc):
                 break
         flush()

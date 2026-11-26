@@ -77,6 +77,7 @@ Fruitsort/
 | `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
 | `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
 | `python scripts/camera_bench.py [--poses lower]` | 机位对比：px/m、覆盖率、抓取瞬间可见率（结论见 [`docs/camera-placement.md`](docs/camera-placement.md)） |
+| `python scripts/stream_eval.py --trace-close \| tee log` + `python scripts/analyze_close.py log` | 闭爪落点诊断（拦截时序）：看每次闭爪离果心多远，结论见 [`docs/interception-timing.md`](docs/interception-timing.md) |
 | `python scripts/stream_eval.py [--policy scripted]` | **连续作业**评测（`FruitSortStream-v1`：随机间隔/尺寸/多件在飞，按件统计吞吐）；加 `--video out.mp4` 录演示（画面叠加时间/带速/目标/相位/计数） |
 
 `Makefile` 里提供了短命令：`make doctor` / `make digest` / `make run NAME=xxx`。
@@ -108,6 +109,9 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
 
 - 环境 `FruitSortStream-v1`：每类 3 个 slot、单一下料流、间隔 `U(gap)` 米、尺寸 ±15%，
   **只会循环回收**（不回收就永远不再上料）。
+- **闭爪时机**（v1.88）：模型会在果心上方 3 cm 就闭爪（水平误差只有 1–2 mm），
+  加 `--close-z-gate-map apple=0.012 --close-z-off-map apple=0.0` 后 85% 落在果心 ±1.5 cm；
+  详见 [`docs/interception-timing.md`](docs/interception-timing.md)。
 - 现状：`act-wide-4c` 连续作业 14–17%（单发是 87.5%），规则专家 69–86%；
   模型是单发策略，换队列表现在"接近"相位会冻结（见 6.26.3）。
 
