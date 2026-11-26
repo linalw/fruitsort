@@ -752,7 +752,8 @@ def main() -> None:
                     help="oracle=仿真真值；fused=俯视+侧视 RGB-D 感知（无真值）")
     ap.add_argument("--camera-calib", default="overhead",
                     help="相机模型名（assets/calib/camera_<name>.json），--perception rgbdv2 用")
-    ap.add_argument("--seg-backend", default="classic", choices=["classic", "learned"],
+    ap.add_argument("--seg-backend", default="classic",
+                    choices=["classic", "learned", "hybrid"],
                     help="rgbdv2 的分割后端（learned 需 --seg-ckpt）")
     ap.add_argument("--seg-ckpt", default="runs/seg-unet/seg.pt")
     ap.add_argument("--seg-thresh", type=float, default=0.5)
@@ -828,11 +829,13 @@ def main() -> None:
             _rec = FeatureRecognizer.load(args.recognizer)
             print(f"识别头: {args.recognizer}", flush=True)
         _segm = None
-        if args.seg_backend == "learned":
-            from fruitsort.perception.learned_seg import LearnedSegmenter
-            _segm = LearnedSegmenter(args.seg_ckpt, thresh=args.seg_thresh)
-            print(f"分割后端: learned ({args.seg_ckpt}) device={_segm.device} "
-                  f"cuda={_segm.torch.cuda.is_available()}", flush=True)
+        if args.seg_backend in ("learned", "hybrid"):
+            from fruitsort.perception.learned_seg import HybridSegmenter, LearnedSegmenter
+            _cls = HybridSegmenter if args.seg_backend == "hybrid" else LearnedSegmenter
+            _segm = _cls(args.seg_ckpt, thresh=args.seg_thresh)
+            _dev = getattr(getattr(_segm, "learned", _segm), "device", "?")
+            print(f"分割后端: {args.seg_backend} ({args.seg_ckpt}) thresh={args.seg_thresh} "
+                  f"device={_dev}", flush=True)
         src = RGBDv2Source(env.unwrapped, dt=1.0 / args.control_freq,
                            camera=args.camera_calib, recognizer=_rec, seg=_segm,
                            near_hold=args.near_hold,

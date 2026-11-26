@@ -194,7 +194,12 @@ class RGBDSource(VisionSource):
                 v[2] = 0.0
                 self.miss[k] = 0
                 e_new = float(getattr(it, "extent", 0.0) or 0.0)
-                if e_new > 0:
+                # 手臂压在果子上时**不更新长度历史**：遮挡会让掩码缺一块，长轴系统性缩短
+                # （学习式后端实测面积 0.72–0.77×、长轴 −7 mm），一旦污染历史，
+                # near-hold 的"够大且紧凑"判据就会失效 → 抓手在遮挡期丢掉目标。
+                _occluded = (tcp is not None
+                             and float(np.hypot(p[0] - tcp[0], p[1] - tcp[1])) < 0.20)
+                if e_new > 0 and not _occluded:
                     self.extent_hist[k].append(e_new)
                 yy = float(getattr(it, "yaw", float("nan")))
                 if not np.isfinite(yy):

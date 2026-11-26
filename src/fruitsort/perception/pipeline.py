@@ -191,7 +191,8 @@ class PerceptionPipeline:
                                  area=seg.area, hue=seg.hue, extent=g.extent, yaw=g.yaw))
             accepted.append((seg, kind, float(conf)))
             dbg.append(dict(kind=kind, conf=float(conf), extent=g.extent, width=g.width,
-                            height=g.height, yaw=g.yaw, bbox=seg.bbox, area=seg.area))
+                            height=g.height, yaw=g.yaw, bbox=seg.bbox, area=seg.area,
+                            center=np.asarray(g.center, dtype=np.float64).copy()))
 
         tracked = self.tracker.update(dets)
         out: dict[str, list[Instance]] = {k: [] for k in KINDS}

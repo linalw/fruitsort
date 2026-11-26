@@ -84,7 +84,7 @@ class LearnedSegmenter:
 
     def __init__(self, ckpt: str | Path, device: str | None = None, thresh: float = 0.5,
                  down: int = 2, min_area: int = 60, split: bool = True,
-                 height_scale: float = 0.20):
+                 height_scale: float = 0.20, dilate: int = 1):
         import torch
         ck = torch.load(Path(ckpt), map_location="cpu", weights_only=False)
         self.net = _UNetSmall.build(int(ck.get("w", 24)))
@@ -96,6 +96,9 @@ class LearnedSegmenter:
         self.device = torch.device(device)
         self.net.to(self.device)
         self.thresh = float(thresh)
+        # CNN 在 0.75 阈值下边界比经典分割**系统性小 1 px**（实测：苹果面积 0.91×、
+        # 长轴 −4.6%，贴着手臂遮挡时更小）。1 px 膨胀把这半像素补回来。
+        self.dilate = int(dilate)
         self.down = int(down)
         self.height_scale = float(height_scale)
         self.torch = torch
@@ -120,6 +123,9 @@ class LearnedSegmenter:
         prob = self.torch.sigmoid(logit)[0, 0].cpu().numpy()
         prob = cv2.resize(prob, (rgb.shape[1], rgb.shape[0]), interpolation=cv2.INTER_LINEAR)
         m = (prob >= self.thresh).astype(np.uint8)
+        if self.dilate > 0 and m.sum() > 0:
+            k = np.ones((2 * self.dilate + 1,) * 2, np.uint8)
+            m = cv2.dilate(m, k)
         if m.sum() == 0:
             return []
         hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
@@ -129,3 +135,34 @@ class LearnedSegmenter:
     @staticmethod
     def build_net(w: int = 24):
         return _UNetSmall.build(w)
+
+
+class HybridSegmenter:
+    """经典 ∪ 学习式：召回不低于经典，边界由学习式补足，换灯时靠学习式兜底。
+
+    为什么需要：学习式后端单独用时，逐帧召回只有经典的 **87–88%**（小目标 + 遮挡），
+    目标一闪失，适配器的丢检外推就会攒满、控制器把目标判成 ghost 放弃——闭环 0/2
+    就是这么来的。并集保证"经典能看到的，学习式不会丢"。
+    """
+
+    name = "hybrid"
+
+    def __init__(self, ckpt: str | Path, thresh: float = 0.60, dilate: int = 0,
+                 min_area: int = 60, split: bool = True, device: str | None = None):
+        self.classic = DepthColorSegmenter(min_area=min_area, split=split)
+        self.learned = LearnedSegmenter(ckpt, device=device, thresh=thresh,
+                                        dilate=dilate, min_area=min_area, split=split)
+        self._post = DepthColorSegmenter(min_area=min_area, split=split)
+
+    def segment(self, rgb: np.ndarray, pts_world: np.ndarray, belt_z: float):
+        ms = self.classic.segment(rgb, pts_world, belt_z)
+        ml = self.learned.segment(rgb, pts_world, belt_z)
+        if not ms and not ml:
+            return []
+        m = np.zeros(rgb.shape[:2], np.uint8)
+        for s in ms:
+            m |= s.mask.astype(np.uint8)
+        for s in ml:
+            m |= s.mask.astype(np.uint8)
+        hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+        return masks_from_binary(m, hsv, self._post)
