@@ -1,6 +1,7 @@
 # v1.91 架构详解：感知 v2（分割 → 3D → 识别 → 跟踪）+ ACT-lite
 
-> 图：`docs/architecture-v2.png` / `.svg`（源 `docs/architecture-v2.dot`，`dot -Tpng -Gdpi=165`）
+> 图（详细，纵向）：`docs/architecture-v2.png` / `.svg`（源 `.dot`，`dot -Tpng -Gdpi=165`）
+> 图（一页版，横屏 2×4）：`docs/architecture-v2-slide.png` / `.svg`（neato 显式坐标，比例 ≈2.2:1）
 > 感知细节与实测数据见 [`perception-v2.md`](perception-v2.md)；本文是**整机视角**。
 
 ## 0. 一句话

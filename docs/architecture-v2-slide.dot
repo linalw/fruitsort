@@ -1,0 +1,35 @@
+digraph slide {
+  graph [layout=neato, overlap=false, splines=true, nodesep=0.30,
+         fontname="Noto Sans CJK JP", fontsize=15, labelloc=t,
+         label=<<B>FruitSort v1.91 · 一页版（横屏/投屏）</B>>, bgcolor="white", pad=0.15];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK JP", fontsize=10.5,
+        fillcolor="#F7F9FC", color="#5B6B7C", penwidth=1.1, margin="0.10,0.07", width=2.5];
+  edge [color="#4A6572", penwidth=1.3, arrowsize=0.7];
+
+  cam [pos="0,302!", label=<<B>① 相机 + 标定</B><BR/>1280×960 RGB-D · 30 Hz<BR/>K/T：棋盘格 + 手眼<BR/>仿真拟合 0.1 px>,
+       fillcolor="#EAF3FB", color="#7FA8C9"];
+  seg [pos="238,302!", label=<<B>② 分割 → 掩码</B><BR/>反投影 → 深度门+颜色门<BR/>形态学 → 连通域 → 峰分离<BR/><I>11 ms/帧；或 U-Net（IoU 99%）</I>>,
+       fillcolor="#EFF7EC", color="#8FBC8F"];
+  geo [pos="475,302!", label=<<B>③ 3D 几何</B><BR/>PCA 有向包围盒<BR/>中心/长轴/短轴/高/朝向<BR/>不假设相机竖直>,
+       fillcolor="#FFF6E5", color="#D9A441"];
+  rec [pos="713,302!", label=<<B>④ 识别</B><BR/>8 维特征 → 规则 / MLP<BR/>红 45 mm · 黄 115 mm<BR/>同色系靠尺寸>,
+       fillcolor="#F3EDF9", color="#9B7FBF"];
+  trk [pos="713,86!", label=<<B>⑤ 跟踪 + 适配</B><BR/>匈牙利 (3D + 类别)<BR/>near-hold · 带速外推<BR/>输出与真值同接口>,
+       fillcolor="#FDEEF4", color="#C97B9B"];
+  pol [pos="475,86!", label=<<B>⑥ ACT-lite 6.77 M</B><BR/>57 维状态 + 3×96² × 8 帧<BR/>4 token/帧 · 16 query<BR/>→ 16×4 Δxyz + 夹爪>,
+       fillcolor="#E8F5E9", color="#2E7D32"];
+  exe [pos="238,86!", label=<<B>⑦ 执行层</B><BR/>相位机 0/1/2<BR/>闭爪高度门 1.2 cm<BR/>放料门 10 cm · 指端力 &gt;0.2 N>,
+       fillcolor="#E3F2FD", color="#42A5F5"];
+  task [pos="0,86!", label=<<B>⑧ 任务层</B><BR/>传送带 0.08 m/s<BR/>按类优先/让出<BR/>12 s 超时放弃>,
+        fillcolor="#FFF3E0", color="#EF6C00"];
+  ev [pos="907,194!", label=<<B>评测 · 唯一读真值</B><BR/>delivered / dropped / missed<BR/>bench：召回/分类/3D>,
+      fillcolor="#FCE4EC", color="#AD1457", style="rounded,dashed,filled"];
+  note [pos="360,-101!", shape=note, style="filled", fillcolor="#F5F5F5", color="#9E9E9E",
+        fontsize=9.5, width=4.2, label=<<B>真值边界</B>：相机 → 执行 全程不读仿真真值（审计 0 次）<BR/>
+        <B>实测</B>：3D 0.29 cm（倾斜 15.4° 仍 100% 召回）· apple 11/14 = 79% · 掉落 0<BR/>
+        <B>换机位/换灯</B>：重标 K/T 即可；分割可切学习式（--seg-backend learned）>];
+
+  cam -> seg; seg -> geo; geo -> rec; rec -> trk;
+  trk -> pol; pol -> exe; exe -> task;
+  exe -> ev [style=dotted, color="#AD1457", label=" 结果"];
+}

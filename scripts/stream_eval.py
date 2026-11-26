@@ -583,23 +583,25 @@ def _head_panel(obs, tracks, tgt_xy, tgt_kind, proj, panel_w: int = 620, masks=N
     cv2.putText(img, f"overhead RGB-D 1280x960  |  model input, no GT  |  tracks={n_tr}",
                 (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA)
 
-    # ROI 缩略图（模型真正看到的目标窗口）
+    # ROI 缩略图（模型真正看到的目标窗口）+ 掩码叠加，放大 156×156 以便看清
+    pw_, ph_ = panel_w, ph
     if tgt_xy is not None:
         try:
-            if _ROI_HELPER[0] is None:
-                from fruitsort.perception.roi import RoiCrop
-                _ROI_HELPER[0] = RoiCrop(width_m=0.5, out_size=128)
-            roi = _ROI_HELPER[0].crop(rgb, tgt_xy)
-            roi = cv2.resize(roi, (150, 150), interpolation=cv2.INTER_NEAREST)
-            y0, x0 = ph - 158, panel_w - 158
-            cv2.rectangle(img, (x0 - 2, y0 - 2), (x0 + 152, y0 + 152), (255, 255, 255), 2)
-            img[y0:y0 + 150, x0:x0 + 150] = roi
-            cv2.putText(img, "ROI 0.5m -> 96x96", (x0 - 4, y0 - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
-        except Exception as e:  # noqa: BLE001
-            if not _ROI_HELPER[1:]:
-                import traceback; traceback.print_exc()
-                _ROI_HELPER.append(e)
+            u0, v0 = _px(tgt_xy)
+            u1, _ = _px((float(tgt_xy[0]) + 0.5, float(tgt_xy[1])))
+            half = float(np.clip(abs(u1 - u0) / 2.0, 8.0, 0.45 * min(pw_, ph_)))
+            x0, x1 = max(0, int(u0 - half)), min(pw_, int(u0 + half))
+            y0, y1 = max(0, int(v0 - half)), min(ph_, int(v0 + half))
+            crop = img[y0:y1, x0:x1]
+            if crop.size and (y1 - y0) >= 8 and (x1 - x0) >= 8:
+                roi = cv2.resize(crop, (156, 156), interpolation=cv2.INTER_NEAREST)
+                tx0, ty0 = panel_w - 164, ph - 164
+                cv2.rectangle(img, (tx0 - 2, ty0 - 2), (tx0 + 158, ty0 + 158), (255, 255, 255), 2)
+                img[ty0:ty0 + 156, tx0:tx0 + 156] = roi
+                cv2.putText(img, "ROI 0.5m x156", (tx0 - 4, ty0 - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+        except Exception:  # noqa: BLE001
+            pass
 
     return img
 
@@ -750,6 +752,10 @@ def main() -> None:
                     help="oracle=仿真真值；fused=俯视+侧视 RGB-D 感知（无真值）")
     ap.add_argument("--camera-calib", default="overhead",
                     help="相机模型名（assets/calib/camera_<name>.json），--perception rgbdv2 用")
+    ap.add_argument("--seg-backend", default="classic", choices=["classic", "learned"],
+                    help="rgbdv2 的分割后端（learned 需 --seg-ckpt）")
+    ap.add_argument("--seg-ckpt", default="runs/seg-unet/seg.pt")
+    ap.add_argument("--seg-thresh", type=float, default=0.5)
     ap.add_argument("--recognizer", default="",
                     help="识别头权重（scripts/train_recognizer.py 产出）；空=规则识别")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
@@ -821,8 +827,14 @@ def main() -> None:
         if args.recognizer:
             _rec = FeatureRecognizer.load(args.recognizer)
             print(f"识别头: {args.recognizer}", flush=True)
+        _segm = None
+        if args.seg_backend == "learned":
+            from fruitsort.perception.learned_seg import LearnedSegmenter
+            _segm = LearnedSegmenter(args.seg_ckpt, thresh=args.seg_thresh)
+            print(f"分割后端: learned ({args.seg_ckpt}) device={_segm.device} "
+                  f"cuda={_segm.torch.cuda.is_available()}", flush=True)
         src = RGBDv2Source(env.unwrapped, dt=1.0 / args.control_freq,
-                           camera=args.camera_calib, recognizer=_rec,
+                           camera=args.camera_calib, recognizer=_rec, seg=_segm,
                            near_hold=args.near_hold,
                            near_extent_min=args.near_extent_min,
                            near_extent=args.near_extent_max,

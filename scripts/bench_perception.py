@@ -17,6 +17,7 @@ from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
+import torch
 
 import fruitsort.sim.tasks  # noqa: F401
 from fruitsort.perception.camera import CALIB_DIR, CameraModel
@@ -102,6 +103,17 @@ def main() -> None:
     ap.add_argument("--slots", type=int, default=2)
     ap.add_argument("--match-m", type=float, default=0.08)
     ap.add_argument("--out", default="")
+    ap.add_argument("--dropout", type=float, default=0.0,
+                    help="随机丢弃多少比例的深度像素（模拟反光/深色果皮的洞）")
+    ap.add_argument("--noise-mm", type=float, default=0.0, help="深度高斯噪声（毫米）")
+    ap.add_argument("--no-repair", action="store_true", help="关掉 v2 的深度修复/掩码补洞")
+    ap.add_argument("--noise-seed", type=int, default=1234)
+    ap.add_argument("--seg", default="classic", choices=["classic", "learned"],
+                    help="v2 的分割后端：经典(颜色+深度) 或 学习式(U-Net)")
+    ap.add_argument("--seg-ckpt", default="runs/seg-unet/seg.pt")
+    ap.add_argument("--seg-thresh", type=float, default=0.5)
+    ap.add_argument("--brightness", type=float, default=1.0,
+                    help="光照强度缩放（模拟换灯/曝光），1.0=原始")
     args = ap.parse_args()
 
     cam = CameraModel.load_or_none(args.camera)
@@ -114,7 +126,25 @@ def main() -> None:
                    gap_range=(1.2, 1.6))
     u = env.unwrapped
     old = RGBDPerception(u, dt=1 / 30)
-    new = PerceptionPipeline(camera=cam, belt_z=float(u.belt_top_z), dt=1 / 30)
+    _seg = None
+    if args.seg == "learned":
+        from fruitsort.perception.learned_seg import LearnedSegmenter
+        _seg = LearnedSegmenter(args.seg_ckpt, thresh=args.seg_thresh)
+        print(f"分割后端: learned ({args.seg_ckpt})")
+    new = PerceptionPipeline(camera=cam, belt_z=float(u.belt_top_z), dt=1 / 30,
+                             segmenter=_seg,
+                             depth_repair=not args.no_repair,
+                             mask_fill=not args.no_repair)
+    rng = np.random.default_rng(args.noise_seed)
+
+    def degrade(depth_m):
+        d = depth_m.copy()
+        if args.noise_mm > 0:
+            d = d + rng.normal(0, args.noise_mm / 1000.0, d.shape)
+        if args.dropout > 0:
+            bad = rng.random(d.shape) < args.dropout
+            d[bad] = np.nan
+        return d
 
     rows_old, rows_new = [], []
     for ep in range(args.episodes):
@@ -124,6 +154,18 @@ def main() -> None:
             obs, *_ = env.step(np.zeros(7))
             if t < 25:
                 continue
+            if args.brightness != 1.0:
+                _r = obs["sensor_data"]["overhead"]["rgb"][0].cpu().numpy().astype(np.float32)
+                _r = np.clip(_r * args.brightness, 0, 255).astype(np.uint8)
+                obs["sensor_data"]["overhead"]["rgb"] = torch.as_tensor(
+                    _r[None], dtype=torch.uint8)
+            if args.dropout > 0 or args.noise_mm > 0:
+                _d = obs["sensor_data"]["overhead"]["depth"][0].cpu().numpy()
+                _d = (_d[..., 0] if _d.ndim == 3 else _d).astype(np.float64) / 1000.0
+                _d = degrade(_d)
+                obs["sensor_data"]["overhead"]["depth"] = torch.as_tensor(
+                    (np.nan_to_num(_d, nan=0.0, posinf=0.0, neginf=0.0) * 1000.0)[None, ..., None],
+                    dtype=torch.float32)
             gts = _gt(u)
             if not gts:
                 continue

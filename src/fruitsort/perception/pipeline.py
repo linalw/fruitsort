@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 from .camera import CameraModel
@@ -100,7 +101,9 @@ class PerceptionPipeline:
     def __init__(self, camera: CameraModel, belt_z: float, dt: float = 1 / 30,
                  segmenter: DepthColorSegmenter | None = None,
                  recognizer=None, max_lost: int = 20,
-                 min_confidence: float = 0.25, plane_prior: float | None = None):
+                 min_confidence: float = 0.25, plane_prior: float | None = None,
+                 depth_repair: bool = True, repair_iter: int = 3,
+                 mask_fill: bool = True):
         self.camera = camera
         self.belt_z = float(belt_z)
         self.plane_prior = float(plane_prior if plane_prior is not None else belt_z)
@@ -111,6 +114,47 @@ class PerceptionPipeline:
         self.last_stats = PipelineStats()
         self.last_masks: list[tuple[object, str, float]] = []   # (SegMask, kind, conf) 供可视化
         self.last_debug: list[dict] = []
+        # 深度修复：Gemini/RealSense 在深色果皮、反光、遮挡边缘会成片丢深度，
+        # 掩码随之"缺角/中空"，长轴和高度都会偏小 → 误分类、误抓。
+        self.depth_repair = bool(depth_repair)
+        self.repair_iter = int(repair_iter)
+        self.mask_fill = bool(mask_fill)
+        self.last_repair_frac = 0.0
+
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _repair_depth(d: np.ndarray, iters: int = 3) -> tuple[np.ndarray, float]:
+        """把无效深度按邻域最小值补上（迭代膨胀），并返回"坏了多少"。
+
+        用最小值而不是均值：深度是"最近的表面"，边缘的混合像素通常比真实表面
+        **更远**（打到背景），取近的那个更接近物体。
+        """
+        bad = ~np.isfinite(d) | (d <= 0.0)
+        frac = float(bad.mean())
+        if frac <= 1e-4:
+            return d, 0.0
+        dd = np.where(bad, np.inf, d).astype(np.float32)
+        k = np.ones((3, 3), np.uint8)
+        for _ in range(max(1, iters)):
+            mn = cv2.erode(np.where(np.isinf(dd), 1e3, dd).astype(np.float32), k)
+            fill = bad & np.isfinite(mn) & (mn < 1e3)
+            dd[fill] = mn[fill]
+            bad = bad & ~fill
+            if not bad.any():
+                break
+        out = np.where(np.isinf(dd), np.nan, dd).astype(np.float64)
+        return out, frac
+
+    @staticmethod
+    def _fill_mask(mask: np.ndarray) -> np.ndarray:
+        """补掩码内部空洞（深度丢点造成的"中空"）。"""
+        m = mask.astype(np.uint8)
+        cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            return mask
+        out = np.zeros_like(m)
+        cv2.drawContours(out, cnts, -1, 1, -1)
+        return out.astype(bool)
 
     # ------------------------------------------------------------------ #
     def update_rgbd(self, rgb: np.ndarray, depth_m: np.ndarray) -> dict[str, list[Instance]]:
@@ -118,6 +162,10 @@ class PerceptionPipeline:
         if self.camera.width and (self.camera.width != w or self.camera.height != h):
             raise ValueError(f"相机模型是 {self.camera.width}×{self.camera.height}，"
                              f"输入是 {w}×{h}：缩放或重标定后再用")
+        if self.depth_repair:
+            depth_m, self.last_repair_frac = self._repair_depth(depth_m, self.repair_iter)
+        else:
+            self.last_repair_frac = float((~np.isfinite(depth_m) | (depth_m <= 0)).mean())
         pts = self.camera.unproject(depth_m)
         plane_z = robust_plane_z(pts, self.plane_prior)
         masks = self.seg.segment(rgb, pts, plane_z)
@@ -127,6 +175,9 @@ class PerceptionPipeline:
         accepted: list[tuple[object, str, float]] = []
         n_rej_shape = n_rej_cls = 0
         for seg in masks:
+            if self.mask_fill:
+                seg.mask = self._fill_mask(seg.mask)
+                seg.area = int(seg.mask.sum())
             g = obb_from_mask(pts, seg.mask, plane_z)
             if g is None or not split_plausible(g):
                 n_rej_shape += 1

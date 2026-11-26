@@ -78,6 +78,7 @@ Fruitsort/
 | `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
 | `python scripts/fit_camera_model.py` | 拟合相机 K/T → `assets/calib/camera_<name>.json`（真机可手眼标定同格式） |
 | `python scripts/bench_perception.py` | 感知后端对比（召回/分类/3D 误差），支持倾斜机位 |
+| `python scripts/train_segmenter.py` | 训练学习式分割（U-Net，RGB+高度→掩码），产出 `runs/seg-unet/seg.pt` |
 | `python scripts/train_recognizer.py` | 训练识别头（掩码特征→类别），产出 `runs/seg-head/recognizer.pt` |
 | `FRUITSORT_AUDIT_GT=1 python scripts/stream_eval.py ...` | 真值审计：打印模型侧是否读了真值 |
 | `python scripts/camera_bench.py [--poses lower]` | 机位对比：px/m、覆盖率、抓取瞬间可见率（结论见 [`docs/camera-placement.md`](docs/camera-placement.md)） |
@@ -115,6 +116,10 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
   **只会循环回收**（不回收就永远不再上料）。
 - **放料门**（v1.89）：模型会在离料框 15–27 cm 就开爪（果子掉地上）。
   加 `--release-gate 0.10` 后开爪全部落在框内，掉落 4/15 → 1/14，见 [`docs/drop-reduction.md`](docs/drop-reduction.md)。
+- **深度修复**（v1.93）：`PerceptionPipeline` 默认开（邻域最小值填洞 + 掩码补洞），
+  深度丢 40% 时召回仍 100%（无修复会掉到 2.5%）。
+- **学习式分割**（v1.93）：`--seg-backend learned --seg-thresh 0.75`（U-Net，需 GPU，
+  bench 100% 召回/分类、3D 0.21 cm；过曝 1.5× 时召回 75%）。
 - **感知 v2**（v1.91）：`--perception rgbdv2` 走"分割掩码→3D 反投影→识别→跟踪"，
   不用单应/不用 `cam_z-depth`，**倾斜机位可用**；模型侧真值读取经审计为 0。
   详见 [`docs/perception-v2.md`](docs/perception-v2.md)。
