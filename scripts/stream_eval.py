@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -172,6 +173,13 @@ class StreamController:
                     [tp[0] + dx, tp[1], tp[2]], [belt, 0.0, 0.0])
             return
         for k in self.kinds:
+            if self.objs is not None:
+                # 感知模式：不读产线槽位。非目标类用"感知到的位置"（替身），
+                # 目标类由 runner.set_actors 注入；只有该类完全没检到时才留原位。
+                _a = self.objs.get(k)
+                if _a is not None and (self.target is None or self.target["kind"] != k):
+                    self.u.fruit_actors[k] = _a
+                continue
             live = [s["item"] for s in self.u._slots[k] if s["live"]]
             if not live:
                 # 该类当前没有在飞件：必须给一个"合理"的替身（刚上料的位姿），
@@ -270,6 +278,17 @@ class StreamController:
             return "passed"
         return ""
 
+    def _in_bin(self, p) -> bool:
+        """该点是否落在某个料框口内（料框是环境夹具，不是物体真值）。"""
+        try:
+            from fruitsort.sim.conveyor import BIN_LAYOUT
+        except Exception:  # noqa: BLE001
+            return False
+        for _k, (bx, by) in BIN_LAYOUT.items():
+            if float(np.hypot(float(p[0]) - bx, float(p[1]) - by)) < 0.17:
+                return True
+        return False
+
     def _pick_target(self):
         """选**最接近理想拦截点**的一件（不是最紧急的）。
 
@@ -283,6 +302,10 @@ class StreamController:
                 continue
             p = self._actor_pos(it["actor"])
             if np.linalg.norm(p - tcp) < 0.05:   # 就在指尖上（可能正抓着）
+                continue
+            # 已经在料框里（送达后的"幽灵"轨迹还在跟踪器里活几秒）→ 别再选它，
+            # 否则"选中→at_bin 丢弃→再选中"每步一次，把 runner 的历史清空
+            if self._in_bin(p):
                 continue
             if self.objs is not None:
                 # 感知模式下不要追"场外幽灵"：该类当前没有检测（替身停在 clip_x）时，
@@ -702,8 +725,13 @@ def main() -> None:
     ap.add_argument("--near-extent-max", type=float, default=0.11)
     ap.add_argument("--near-hold", action=argparse.BooleanOptionalAction, default=True,
                     help="感知：丢检且夹爪压到目标上方时位置取 TCP（只对紧凑水果生效；默认开）")
-    ap.add_argument("--perception", default="oracle", choices=["oracle", "vision", "rgbd", "fused"],
+    ap.add_argument("--perception", default="oracle",
+                    choices=["oracle", "vision", "rgbd", "rgbdv2", "fused"],
                     help="oracle=仿真真值；fused=俯视+侧视 RGB-D 感知（无真值）")
+    ap.add_argument("--camera-calib", default="overhead",
+                    help="相机模型名（assets/calib/camera_<name>.json），--perception rgbdv2 用")
+    ap.add_argument("--recognizer", default="",
+                    help="识别头权重（scripts/train_recognizer.py 产出）；空=规则识别")
     ap.add_argument("--policy", default="act", choices=["act", "scripted"],
                     help="act=部署策略；scripted=规则专家（测场景上限）")
     ap.add_argument("--only-kind", default=None,
@@ -766,6 +794,21 @@ def main() -> None:
                          grasp_axis_offset=args.grasp_axis_offset,
                          grasp_axis_extent=args.grasp_axis_extent,
                          use_hand=args.hand_cam)
+    elif args.perception == "rgbdv2":
+        from fruitsort.perception.adapter import RGBDv2Source
+        from fruitsort.perception.recognition import FeatureRecognizer
+        _rec = None
+        if args.recognizer:
+            _rec = FeatureRecognizer.load(args.recognizer)
+            print(f"识别头: {args.recognizer}", flush=True)
+        src = RGBDv2Source(env.unwrapped, dt=1.0 / args.control_freq,
+                           camera=args.camera_calib, recognizer=_rec,
+                           near_hold=args.near_hold,
+                           near_extent_min=args.near_extent_min,
+                           near_extent=args.near_extent_max,
+                           grasp_axis_offset=args.grasp_axis_offset,
+                           grasp_axis_extent=args.grasp_axis_extent,
+                           use_hand=args.hand_cam)
     elif args.perception == "vision":
         from fruitsort.perception.adapter import VisionSource
         src = VisionSource(env.unwrapped, dt=1.0 / args.control_freq)
@@ -812,6 +855,11 @@ def main() -> None:
                              yaw_map=parse_map(args.yaw_map),
                              width_map=(dict(WIDTH_MAP) if args.width_setpoint else None),
                              width_g=args.width_g, close_ramp=args.close_ramp)
+
+    if os.environ.get("FRUITSORT_AUDIT_GT"):
+        from fruitsort.perception.audit import install as _gt_install
+        _gt_install(env.unwrapped)
+        print("[GT 审计] 已挂上真值计数器（fruit_actors / _slots / is_grasping）", flush=True)
 
     runner = _mk(args.ckpt, "apple")
     runners = {}
@@ -1139,6 +1187,9 @@ def main() -> None:
         encoding="utf-8")
     if rec_dir is not None:
         print(f"录制 {n_saved} 条成功片段 → {rec_dir}")
+    if os.environ.get("FRUITSORT_AUDIT_GT"):
+        from fruitsort.perception import audit as _gt_audit
+        _gt_audit.report()
     print(f"结果写入 {out}/metrics.json | 用时 {(time.time()-t0)/60:.1f} min")
     if _vw["w"] is not None:
         _vw["w"].release(); _vw["w"] = None

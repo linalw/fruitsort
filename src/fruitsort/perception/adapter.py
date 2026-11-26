@@ -236,6 +236,40 @@ class RGBDSource(VisionSource):
         return out
 
 
+class RGBDv2Source(RGBDSource):
+    """新感知链路：分割掩码 → 3D 几何 → 识别 → 跟踪（不依赖俯视/平面假设）。
+
+    与 `RGBDSource` 的唯一区别是 `self.vs`：这里换成 `PerceptionPipeline`，
+    它需要一份**相机模型**（`assets/calib/camera_<name>.json`，真机用同样的格式）。
+    其余后处理（near-hold、带速外推、抓取点偏移、held 跟随 TCP）完全复用。
+    """
+
+    def __init__(self, u, dt: float = 1 / 30, camera: str = "overhead",
+                 cam_json=None, recognizer=None, seg=None, **kw):
+        from .camera import CameraModel
+        from .pipeline import PerceptionPipeline
+        super().__init__(u, dt=dt, **kw)
+        cam = CameraModel.load(cam_json) if cam_json else CameraModel.load_or_none(camera)
+        if cam is None:
+            raise FileNotFoundError(
+                f"缺少相机模型 assets/calib/camera_{camera}.json；"
+                f"仿真: python scripts/fit_camera_model.py --name {camera}；"
+                f"真机: 用 cv2.calibrateCamera + 手眼标定按同样格式写出")
+        self.camera = cam
+        self.vs = PerceptionPipeline(camera=cam, belt_z=self.plane_z, dt=dt,
+                                     segmenter=seg, recognizer=recognizer)
+        # 与旧链路一致：未检出的类用"刚上料"占位
+        specs = self.specs
+        self.last = {k: (np.array([self.clip_x, 0.0,
+                                   self.plane_z + specs[k].half_height], dtype=np.float64),
+                         np.zeros(3, dtype=np.float64)) for k in self.kinds}
+        self.miss = {k: 99 for k in self.kinds}
+
+    def update(self, obs, held_kind: str | None = None) -> dict:
+        # 父类 update 只调用 self.vs.update(obs)，接口同构，直接复用
+        return super().update(obs, held_kind=held_kind)
+
+
 class FusedSource(RGBDSource):
     """俯视（精确）+ 侧视（补远端 x<−1.0）融合。"""
 

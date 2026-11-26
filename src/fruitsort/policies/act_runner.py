@@ -34,13 +34,34 @@ def prep(x, size):
     return (x.astype(np.float32) / 255.0).transpose(2, 0, 1)
 
 
+def finger_normal_force(u) -> float:
+    """两指法向力均值（N）——真机上就是指端 F/T/触觉读数。
+
+    这里刻意**不读物体状态**：只用左右指的接触力与它们的连线方向，
+    因此可以原样搬到真机（换一只带 F/T 的夹爪即可）。
+    """
+    try:
+        L = u.agent.robot.links_map["panda_leftfinger"]
+        R = u.agent.robot.links_map["panda_rightfinger"]
+        FL = L.get_net_contact_forces()[0].cpu().numpy()
+        FR = R.get_net_contact_forces()[0].cpu().numpy()
+        pL = L.pose.p[0].cpu().numpy()
+        pR = R.pose.p[0].cpu().numpy()
+    except Exception:  # noqa: BLE001
+        return 0.0
+    ax = pL - pR
+    n = float(np.linalg.norm(ax))
+    ax = ax / n if n > 1e-6 else np.array([0.0, 1.0, 0.0])
+    return 0.5 * (abs(float(np.dot(FL, ax))) + abs(float(np.dot(FR, -ax))))
+
+
 class ActPureRunner:
     def __init__(self, env, ckpt_path, kind: str, device: str = "cpu", *,
                  fb: float = 0.0, fb_z: bool = False, grip_ema: float = 0.0,
                  carry_latch: bool = False, descend_commit: int = 0,
                  max_step: float = 0.06, lead: float = 0.0, z_gate: bool = False,
                  phase_fb: bool = True, hold_latch: bool = False,
-                 grip_hyst: float = 0.0,
+                 grip_hyst: float = 0.0, contact_force_th: float = 0.2,
                  release_gate: float = 0.0, release_wait: int = 120,
                  grasp_retry: bool = True, chunk_exec: int = 1,
                  carry_max_step: float = 0.0, slip_guard: bool = False,
@@ -117,6 +138,7 @@ class ActPureRunner:
         # 夹爪指令迟滞：模型在"闭不闭"之间输出抖动（logit 在 0 附近），EMA 之后仍会
         # 每 3–5 步翻一次符号 → 指面刚合上又张开，永远夹不住。>0 时用双阈值锁存。
         self.grip_hyst = float(grip_hyst)
+        self.contact_force_th = float(contact_force_th)
         # 放料门：模型会在**离料框 15–27 cm** 时就开爪（实测 trace），果子直接掉地上。
         # 料框位置是环境夹具（事先已知，不是物体真值），所以可以在部署侧硬拦：
         # 未进入框上方 release_gate 米内 → 不放开 + 直接把目标点设成框心。
@@ -504,10 +526,18 @@ class ActPureRunner:
             # 抓取判定用**指端接触力**（现实中对应指端 F/T / 触觉），
             # 与"物体状态来自感知还是真值"无关；感知模式下 actor 是替身，
             # 因此这里显式对真实物体做接触查询（物体身份由跟踪提供）。
-            _real = u.fruit_actors.get(kind)
-            if _real is not None and not hasattr(_real, "_bodies"):
-                _real = None            # 该槽位被替身占用（感知模式）：跳过接触查询
-            grabbing = bool(u.agent.is_grasping(_real)[0]) if _real is not None else False
+            # 感知模式（actors 已注入）下**不读** `u.fruit_actors`，也不做真实接触查询：
+            # 真机上没有 `is_grasping`，只有指端力/触觉（走 build_tactile）+ 几何判据。
+            if self.actors is not None:
+                # 感知模式：没有 `is_grasping`（那是仿真真值），改用**指端法向力**
+                # ——真机上对应 F/T 或触觉，是最直接的可迁移信号。
+                _real = None
+                grabbing = bool(finger_normal_force(u) > self.contact_force_th)
+            else:
+                _real = u.fruit_actors.get(kind)
+                if _real is not None and not hasattr(_real, "_bodies"):
+                    _real = None
+                grabbing = bool(u.agent.is_grasping(_real)[0]) if _real is not None else False
             # 近似判据（"离得近 + 上一步闭爪"）只在**查不到真实接触**时才用：
             # 感知模式下估计误差 3–6 cm 时，它会把"在果实上方 10 cm 闭爪"误判成抓住，
             # 之后一路搬运空气、果实从指间滑走（连续流 banana 0/4 的直接原因）。

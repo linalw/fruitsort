@@ -15,6 +15,47 @@
 
 ---
 
+## [1.91.0] - 2026-11-26
+
+### Added — 感知 v2：分割 / 掩码 / 识别 / 3D 几何，真机可用
+- `perception/camera.py`：`CameraModel(K, T)` + 反投影/投影，格式与真机手眼标定一致；
+- `perception/segmentation.py`：深度门（世界 z 高于带面）+ 颜色门 + 形态学 + **峰分离**粘连；
+- `perception/geometry.py`：掩码 + 世界点 → PCA 有向包围盒（中心/长轴/短轴/高度/朝向），
+  不再假设相机竖直；
+- `perception/recognition.py`：规则识别（颜色族+尺寸）与可训练 MLP（8 维特征）双后端；
+- `perception/pipeline.py`：segment → geometry → recognize → track，输出与旧链路同构；
+- `adapter.RGBDv2Source` + `stream_eval --perception rgbdv2 --camera-calib --recognizer`；
+- 工具：`scripts/fit_camera_model.py`（36 点、重投影 0.1 px）、`scripts/bench_perception.py`、
+  `scripts/train_recognizer.py`、`FRUITSORT_AUDIT_GT=1` 真值审计；
+- `tests/test_perception_v2.py`（8 个单测，0.2 s）。
+
+### Changed — 模型侧真值依赖清零
+- 抓取判定：`u.agent.is_grasping(真实 actor)` → **指端法向力**（真机对应 F/T，阈值 0.2 N）；
+- `_repoint` 不再枚举产线槽位；`_target_live` 判"已送达"改用**果实**位置；
+- 审计结果：**模型/策略侧真值读取 0 次**（环境侧 1.9 万次，属物理/回收/记账）。
+
+### Measured — 同一批帧（50 帧 × ~2 件）
+| 机位 | 后端 | 召回 | 分类 | 3D 误差 | z 误差 |
+| --- | --- | --- | --- | --- | --- |
+| 竖直 2.45 m | v1 | 100% | 100% | 0.66 cm | 0.61 cm |
+| 竖直 2.45 m | **v2** | 100% | 100% | **0.29 cm** | **0.02 cm** |
+| **倾斜 15.4°** | v1 | **0%** | – | – | – |
+| **倾斜 15.4°** | **v2** | **100%** | 98% | **0.36 cm** | 0.25 cm |
+
+倾斜机位下 v1 归零（`z=cam_z−depth` 15° 偏 7 cm），v2 不受影响。
+
+### Measured — 闭环（apple-only，slots 2，dense，90 s × 2 局）
+| 后端 | 合计 | 掉落 |
+| --- | --- | --- |
+| v1 | 10/10 | 0 |
+| **v2** | 11/14 = 79% | **0** |
+
+### Known limits
+分割仍基于颜色+深度（同色系靠尺寸区分）；真机应换学习式分割/分类，接口已留好
+（`segment(rgb, pts_world, belt_z)` / `predict(feat)`）。
+
+---
+
 ## [1.90.0] - 2026-11-26
 
 ### Fixed — 四类混跑"越跑越差"的根因：`at_bin` 误判导致策略每步重置

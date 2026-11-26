@@ -1,0 +1,31 @@
+{
+  "camera": "overhead_tilt",
+  "v1": {
+    "name": "v1 (HSV+单应)",
+    "frames": 50,
+    "n_gt": 100,
+    "hit": 0,
+    "recall": 0.0,
+    "cls_acc": 0.0,
+    "fp_per_frame": 1.0,
+    "err_mean_cm": null,
+    "err_p95_cm": null,
+    "xy_mean_cm": null,
+    "z_mean_cm": null,
+    "z_p95_cm": null
+  },
+  "v2": {
+    "name": "v2 (掩码+反投影)",
+    "frames": 50,
+    "n_gt": 100,
+    "hit": 100,
+    "recall": 1.0,
+    "cls_acc": 0.98,
+    "fp_per_frame": 0.0,
+    "err_mean_cm": 0.36066192140127923,
+    "err_p95_cm": 0.4975513164051965,
+    "xy_mean_cm": 0.2230705776141242,
+    "z_mean_cm": 0.24664276283545422,
+    "z_p95_cm": 0.27854878973772784
+  }
+}
