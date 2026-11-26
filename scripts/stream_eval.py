@@ -799,6 +799,7 @@ def main() -> None:
     max_steps = int(args.seconds * args.control_freq)
     runs = []
     t0 = time.time()
+    _vw = {"w": None}          # 跨局共用：每局重建会截断文件（实测 3×90s 只剩 90s）
     for ep in range(args.episodes):
         obs, _ = env.reset(seed=args.seed + ep)
         u = env.unwrapped
@@ -818,7 +819,7 @@ def main() -> None:
                             decline_kinds=tuple(k.strip() for k in args.decline_kinds.split(",") if k.strip()),
                             perception_targets=args.perception_targets,
                             give_up_s=args.give_up_s, src=src)
-        writer = None
+        writer = _vw["w"]
         if args.video:
             _v = Path(args.video)
             _v.parent.mkdir(parents=True, exist_ok=True)
@@ -832,7 +833,6 @@ def main() -> None:
                     and it.get("outcome") == "delivered"):
                 _save_demo(rec_dir, n_saved, buf, args.seed + ep)
                 n_saved += 1
-            writer = None
         if args.video:
             _v = Path(args.video)
             _v.parent.mkdir(parents=True, exist_ok=True)
@@ -899,10 +899,12 @@ def main() -> None:
                     h, w = img.shape[:2]
                     writer = cv2.VideoWriter(str(_v), cv2.VideoWriter_fourcc(*"mp4v"),
                                              float(args.video_fps or args.control_freq), (w, h))
+                    _vw["w"] = writer
                 st_v = u.stream_stats
                 tgt_v = ctrl.target["kind"] if ctrl.target is not None else "-"
                 ph = ctrl.runner.phase_state if ctrl.runner is not None else -1
-                lines = [f"t={u._t:5.1f}s   belt={args.belt:.2f} m/s   gap={args.gap_min}-{args.gap_max} m",
+                lines = [f"ep={ep + 1}/{args.episodes}   t={u._t:5.1f}s   belt={args.belt:.2f} m/s"
+                         f"   gap={args.gap_min}-{args.gap_max} m",
                          f"target={tgt_v}   phase={ph}   grip={'closed' if ctrl.runner.prev_grip < 0 else 'open'}",
                          f"delivered={st_v['delivered']}   missed={st_v['missed']}   dropped={st_v['dropped']}"
                          f"   spawned={st_v['spawned']}",
@@ -1012,8 +1014,6 @@ def main() -> None:
             if bool(term) or bool(trunc):
                 break
         flush()
-        if writer is not None:
-            writer.release(); writer = None
         st = u.stream_stats
         # "机会内"口径：只算本臂接管过的件（其余漏检视为让给旁边的工作臂）
         items = st.get("items", {})
@@ -1088,6 +1088,9 @@ def main() -> None:
     if rec_dir is not None:
         print(f"录制 {n_saved} 条成功片段 → {rec_dir}")
     print(f"结果写入 {out}/metrics.json | 用时 {(time.time()-t0)/60:.1f} min")
+    if _vw["w"] is not None:
+        _vw["w"].release(); _vw["w"] = None
+        print(f"视频写入 {Path(args.video).with_suffix('.mp4')}")
     env.close()
 
 

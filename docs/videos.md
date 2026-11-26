@@ -8,6 +8,9 @@
 | `pure_policy_v008.mp4` | v1.7 | `act-wide-4c` + `--fb 0.5 --grip-ema 0.6 --carry-latch --carry-max-step 0.02` | 0.08 m/s，四类同场 | **4/4** | 纯策略低速档；单件处理 3.6–7.1 s |
 | `pure_policy_v015.mp4` | v1.7 | 同上 | 0.15 m/s，四类同场 | **4/4** | 纯策略中速档；四类各 8 局的整批成功率 31/32 = 96.9% |
 | `pure_policy_learned_carry_v015.mp4` | v1.7 | `act-wide-4c-v2`（`--carry-boost 3`）+ 无人工搬运限速 | 0.15 m/s，四类同场 | **4/4** | 搬运减速由策略自己学；整批 32/32 = 100% |
+
+`pure_policy_v015.mp4` 的逐层架构、CVAE 说明、测试结果与逐段视频数据见
+[`docs/architecture-act-wide-4c.md`](architecture-act-wide-4c.md)。
 | `stream_geom_sparse_3m.mp4` | v1.53 | `act-geom` + `--fb 0.7 --grip-ema 0.7 --carry-latch --carry-max-step 0.02` | 连续作业 0.08 m/s，间距 3–4 m，尺寸 ±15% | **6/6 = 100%** | 完整 120 s 不剪辑（seed 60004）；同配置 5 局 26/30 = 86.7% |
 | `stream_geom_dense_1m.mp4` | v1.53 | 同上 | 连续作业 0.08 m/s，间距 0.6–1.2 m（超载） | **12/14 = 92.3%** | 完整 120 s 不剪辑（seed 60002）；同配置 5 局 51/69 = 73.9% |
 | `assets/videos/stream_demo_v153.gif` | v1.53 | 同上 | 稀疏档片段 | — | README 首页用（12 s，8 fps） |
@@ -42,3 +45,5 @@
 | `stream_suction_5of5.mp4` | 纯感知 + 吸盘末端，连续作业 **5/5 送达**、机会内 100%、5 件/min、单件 4.6 s | v1.74.0 / `runs/act-suction/ckpt.pt` |
 | `head_rgbd_apple_only.mp4` | 头部 RGB-D + 纯感知 + 夹爪，交付口径（只做苹果）：apple 1/1；固定口径 42.3%（CI 26–61%）；**画中画=模型唯一图像输入+检测结果** | v1.86.1 / `runs/act-dagger/ckpt.pt` |
 | `head_rgbd_all_kinds.mp4` | 四类都接：apple 1/1、**strawberry 1/3（首次）**、banana/pear 0；加密流 1.5–2.5 m；画中画同上 | v1.86.1 / `runs/act-dagger/ckpt.pt` |
+| `head_rgbd_gates_apple.mp4` | **交付口径（v1.88/1.89 两道门）**：apple 6/6 = 100%，0 掉落；270 s | v1.89.1 / `runs/act-dagger/ckpt.pt` |
+| `head_rgbd_gates_all.mp4` | 四类都接（含失败）：strawberry **3/5**、apple 0/4、3 掉落；180 s | v1.89.1 / `runs/act-dagger/ckpt.pt` |
