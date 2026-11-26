@@ -137,19 +137,27 @@ class DepthColorSegmenter:
             return []
         if self.erode > 0:
             m = cv2.erode(m, np.ones((2 * self.erode + 1,) * 2, np.uint8))
-        n, lab, stats, _ = cv2.connectedComponentsWithStats(m, 8)
-        pieces = self._split_touching(lab, n, stats)
-        out: list[SegMask] = []
-        for mask, origin in pieces:
-            area = int(mask.sum())
-            if area < self.min_area:
-                continue
-            ys, xs = np.nonzero(mask)
-            bbox = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
-            hue = float(np.median(hsv[..., 0][mask]))
-            sat = float(np.median(hsv[..., 1][mask]))
-            val = float(np.median(hsv[..., 2][mask]))
-            out.append(SegMask(mask=mask, bbox=bbox, area=area,
-                               family=family_of(hue), hue=hue, sat=sat, val=val,
-                               split_of=origin))
-        return out
+        return masks_from_binary(m, hsv, self)
+
+
+def masks_from_binary(m: np.ndarray, hsv: np.ndarray, cfg) -> list[SegMask]:
+    """二值图 → `SegMask` 列表（连通域 + 粘连分离 + 外观统计）。
+
+    经典分割与学习式分割共用这一段：谁产生二值图都能接上。
+    """
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(m, 8)
+    pieces = cfg._split_touching(lab, n, stats)
+    out: list[SegMask] = []
+    for mask, origin in pieces:
+        area = int(mask.sum())
+        if area < cfg.min_area:
+            continue
+        ys, xs = np.nonzero(mask)
+        bbox = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+        hue = float(np.median(hsv[..., 0][mask]))
+        sat = float(np.median(hsv[..., 1][mask]))
+        val = float(np.median(hsv[..., 2][mask]))
+        out.append(SegMask(mask=mask, bbox=bbox, area=area,
+                           family=family_of(hue), hue=hue, sat=sat, val=val,
+                           split_of=origin))
+    return out
