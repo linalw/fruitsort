@@ -432,6 +432,90 @@ def _pack_images(obs, roi=None, xy=None):
             if wr is not None else b"", roi_b)
 
 
+_KIND_BGR = {"apple": (60, 60, 220), "strawberry": (90, 60, 235),
+             "banana": (60, 195, 240), "pear": (90, 180, 90)}
+_ROI_HELPER = [None]
+
+
+def _head_panel(obs, tracks, tgt_xy, tgt_kind, hom, panel_w: int = 620):
+    """头部相机画面 + 纯感知检测结果 → 画中画面板。
+
+    存在的理由：演示视频的第三人称视角无法证明"没读仿真真值"。这里直接贴**模型唯一的
+    图像输入**（overhead RGB-D）和它的检测输出，观众可以自己核对"框住的确实是感知算出来的"。
+    """
+    try:
+        rgb = obs["sensor_data"]["overhead"]["rgb"][0].cpu().numpy()
+    except Exception:  # noqa: BLE001
+        return None
+    if rgb.dtype != np.uint8:
+        rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+    rgb = np.ascontiguousarray(rgb[..., ::-1])      # RGB → BGR（下面统一按 BGR 画）
+    h0, w0 = rgb.shape[:2]
+    ph = int(round(panel_w * h0 / w0))
+    img = cv2.resize(rgb, (panel_w, ph), interpolation=cv2.INTER_AREA).copy()
+
+    # 1 m 在世界系 ≈ 多少像素（单应是仿射近似，取 x 方向即可）
+    def _px(xy):
+        p = hom.H @ np.array([float(xy[0]), float(xy[1]), 1.0], dtype=np.float64)
+        return float(p[0] / p[2]) * panel_w / w0, float(p[1] / p[2]) * ph / h0
+
+    ox, oy = _px((-1.10, 0.0))
+    ux, uy = _px((-0.10, 0.0))
+    ppm = max(1.0, float(np.hypot(ux - ox, uy - oy)) / 1.0)
+
+    n_tr = 0
+    for kind, insts in (tracks or {}).items():
+        for ins in insts:
+            if getattr(ins, "lost", 0) > 3:
+                continue
+            n_tr += 1
+            u, v = _px(ins.pos[:2])
+            r = int(max(7, 0.5 * float(getattr(ins, "extent", 0.06)) * ppm))
+            col = _KIND_BGR.get(kind, (200, 200, 200))
+            cv2.circle(img, (int(u), int(v)), r, col, 2, cv2.LINE_AA)
+            cv2.putText(img, kind[:2], (int(u) - 8, int(v) - r - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
+    if tgt_xy is not None:
+        u, v = _px(tgt_xy)
+        col = _KIND_BGR.get(tgt_kind or "", (255, 255, 255))
+        cv2.drawMarker(img, (int(u), int(v)), col, cv2.MARKER_CROSS, 18, 2, cv2.LINE_AA)
+        cv2.circle(img, (int(u), int(v)), 19, (255, 255, 255), 1, cv2.LINE_AA)
+        txt = f"TARGET {tgt_kind}"
+        (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        tx, ty = int(u) + 22, int(v) + 18
+        if tx + tw + 6 > panel_w:
+            tx = int(u) - tw - 26
+        cv2.rectangle(img, (tx - 4, ty - th - 4), (tx + tw + 4, ty + 6), (0, 0, 0), -1)
+        cv2.putText(img, txt, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 1, cv2.LINE_AA)
+
+    # 标题条：强调这是"模型输入"，不是仿真真值
+    bar = img.copy()
+    cv2.rectangle(bar, (0, 0), (panel_w, 26), (0, 0, 0), -1)
+    cv2.addWeighted(bar, 0.55, img, 0.45, 0, img)
+    cv2.putText(img, f"overhead RGB-D 1280x960  |  model input, no GT  |  tracks={n_tr}",
+                (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA)
+
+    # ROI 缩略图（模型真正看到的目标窗口）
+    if tgt_xy is not None:
+        try:
+            if _ROI_HELPER[0] is None:
+                from fruitsort.perception.roi import RoiCrop
+                _ROI_HELPER[0] = RoiCrop(width_m=0.5, out_size=128)
+            roi = _ROI_HELPER[0].crop(rgb, tgt_xy)
+            roi = cv2.resize(roi, (150, 150), interpolation=cv2.INTER_NEAREST)
+            y0, x0 = ph - 158, panel_w - 158
+            cv2.rectangle(img, (x0 - 2, y0 - 2), (x0 + 152, y0 + 152), (255, 255, 255), 2)
+            img[y0:y0 + 150, x0:x0 + 150] = roi
+            cv2.putText(img, "ROI 0.5m -> 96x96", (x0 - 4, y0 - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+        except Exception as e:  # noqa: BLE001
+            if not _ROI_HELPER[1:]:
+                import traceback; traceback.print_exc()
+                _ROI_HELPER.append(e)
+
+    return img
+
+
 def _save_demo(out_dir: Path, idx: int, buf: dict, seed: int) -> None:
     if len(buf["obs"]) < 20:
         return
@@ -581,6 +665,8 @@ def main() -> None:
                          "比收集模型失败状态安全得多")
     ap.add_argument("--video", default="",
                     help="输出演示视频（mp4）。画面叠加：时间/带速/目标类别/送达·漏检·掉落/相位")
+    ap.add_argument("--no-video-inset", action="store_true",
+                    help="视频里不贴头部 RGB-D 画中画（默认贴：证明模型输入只有相机）")
     ap.add_argument("--video-fps", type=int, default=0,
                     help="视频帧率，0 = 跟随 control-freq（与实时一致）")
     ap.add_argument("--record", default="", help="把专家在连续流里的成功片段录成训练数据（目录）")
@@ -591,6 +677,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=40000)
     ap.add_argument("--out", default="")
     args = ap.parse_args()
+    args.video_inset = not args.no_video_inset
 
     env = gym.make(
         "FruitSortStream-v1", obs_mode="rgbd", control_mode="pd_ee_pose", sim_backend="cpu",
@@ -817,6 +904,25 @@ def main() -> None:
                                 (0, 0, 0), 4, cv2.LINE_AA)
                     cv2.putText(img, txt, org, cv2.FONT_HERSHEY_SIMPLEX, fs,
                                 (255, 255, 255), 2, cv2.LINE_AA)
+                if args.video_inset and src is not None and getattr(src, "vs", None) is not None:
+                    _k = ctrl.runner.kind if ctrl.runner is not None else None
+                    _est = (ctrl.objs or {}).get(_k) if _k else None
+                    _txy = None
+                    if _est is not None:
+                        try:
+                            _txy = _est.pose.p[0].cpu().numpy()[:2]
+                        except Exception:  # noqa: BLE001
+                            _txy = None
+                    panel = _head_panel(obs, getattr(src, "last_tracks", None),
+                                        _txy, _k, src.vs.homography)
+                    if panel is not None:
+                        ph_, pw_ = panel.shape[:2]
+                        m = int(round(ww * 0.008))
+                        y0, x0 = hh - ph_ - m, ww - pw_ - m
+                        if y0 > 0 and x0 > 0:
+                            cv2.rectangle(img, (x0 - 2, y0 - 2),
+                                          (x0 + pw_ + 2, y0 + ph_ + 2), (90, 90, 90), 2)
+                            img[y0:y0 + ph_, x0:x0 + pw_] = panel
                 writer.write(img)
             if bool(term) or bool(trunc):
                 break

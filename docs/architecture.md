@@ -126,3 +126,9 @@ python scripts/stream_eval.py --ckpt runs/act-dagger/ckpt.pt --perception rgbd \
 
 两段都用 `--perception rgbd --perception-targets --grasp-verify`，`gap 1.5–2.5 m`（为了 60 s 内
 有足够事件而加密），无真值、无吸盘、无脚本搬运。视频内叠加了带速/时间/目标/相位/计数。
+
+**画中画（`--video-inset`，默认开）**：右下角贴的就是**模型唯一的图像输入**——头部 1280×960
+RGB-D，上面叠的是感知自己算出来的实例圈、TARGET 十字和 ROI 0.5 m 缩略图（→96×96）。
+第三人称视角看不出"是否偷看真值"，画中画可以让人直接核对；`--no-video-inset` 可关掉。
+
+![frame](media/head_rgbd_frame.jpg)

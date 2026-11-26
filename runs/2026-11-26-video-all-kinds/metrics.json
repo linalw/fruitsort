@@ -78,12 +78,14 @@
     "allow_ghost_frames": false,
     "noise": 0.0,
     "video": "data/fruitsort/eval/head_rgbd_all_kinds.mp4",
+    "no_video_inset": false,
     "video_fps": 30,
     "record": "",
     "roi_m": 0.0,
     "trace_items": false,
     "seed": 60001,
-    "out": "runs/2026-11-26-video-all-kinds"
+    "out": "runs/2026-11-26-video-all-kinds",
+    "video_inset": true
   },
   "runs": [
     {

@@ -15,6 +15,23 @@
 
 ---
 
+## [1.86.1] - 2026-11-26
+
+### Added — 演示视频带"模型输入画中画"
+- `scripts/stream_eval.py --video` 新增 `--video-inset`（默认开，`--no-video-inset` 关闭）：
+  右下角贴头部 RGB-D 原图 + 感知实例圈 + TARGET 十字 + ROI 0.5 m 缩略图，
+  直接证明"模型只看到相机、没看到真值"。
+- `docs/media/head_rgbd_frame.jpg`：画中画静帧，嵌进 `docs/architecture.md` §5。
+
+### Changed
+- `head_rgbd_apple_only.mp4` / `head_rgbd_all_kinds.mp4` 用同参数重录（数字逐位不变：
+  apple 1/1；all-kinds 另加 strawberry 1/3），`.txt` 与 `docs/videos.md` 同步。
+
+### Fixed
+- 画中画 ROI 缩略图不显示：`ctrl.objs` 的值是单个 `_Stub` 不是列表，被 `except: pass` 吞掉。
+
+---
+
 ## [1.86.0] - 2026-11-26
 
 ### Added — 架构图 + 演示视频
