@@ -49,3 +49,4 @@
 | ~~`head_rgbd_gates_all.mp4`~~（已被 v190 取代） | | 四类都接（含失败）：strawberry **3/5**、apple 0/4、3 掉落；180 s | v1.89.1 / `runs/act-dagger/ckpt.pt` |
 | `head_rgbd_v190_apple.mp4` | **交付口径（v1.90）**：apple 5/5 = 100%，0 掉落；180 s | v1.90.0 / `runs/act-dagger/ckpt.pt` |
 | `head_rgbd_v190_all.mp4` | 四类都接（v1.90 修 bug 后）：apple **5/5**、strawberry 1/3、banana/pear 0，0 掉落；180 s | v1.90.0 / `runs/act-dagger/ckpt.pt` |
+| `percv2_masks_apple.mp4` | **感知 v2**（分割掩码可见）：apple 3/3 = 100%，0 掉落；180 s | v1.92.0 / `runs/act-dagger/ckpt.pt` |
