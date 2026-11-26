@@ -1,0 +1,49 @@
+digraph video {
+  graph [rankdir=LR, splines=spline, nodesep=0.30, ranksep=0.54,
+         fontname="Noto Sans CJK SC", fontsize=13, pad=0.18, bgcolor="white"];
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=10,
+         margin="0.10,0.06", color="#2d3748", penwidth=1.0, fillcolor="#f7fafc"];
+  edge  [color="#4a5568", penwidth=1.0, arrowsize=0.6,
+         fontname="Noto Sans CJK SC", fontsize=9, fontcolor="#2d3748"];
+
+  subgraph cluster_rec {
+    label="② record_video.py --executor act：逐类录制"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    loop [label="for kind in\napple → strawberry → banana → pear\n（4 个独立 episode）", fillcolor="#e6fffa"];
+    env  [label="FruitSort-v1 reset\n4 类同场 · 间距 0.45 m · 带速 0.15 m/s\ninstruction_kind = kind", fillcolor="#e6fffa"];
+    pol  [label="act-wide-4c 闭环\n最多 1200 步\n(30 Hz)", fillcolor="#bee3f8"];
+    ok   [label="成功？", shape=diamond, style="filled", fillcolor="#fefcbf", margin="0.02,0.02"];
+    retry[label="重试（每类最多 3 次）\n失败片段不写入", fillcolor="#fed7d7"];
+    write[label="成功片段写入\n每 2 个控制步取 1 帧\n叠字：kind / belt / t / phase", fillcolor="#c6f6d5"];
+    loop -> env -> pol -> ok;
+    ok -> retry [label="否", color="#c53030", fontcolor="#c53030"];
+    retry -> env [style=dashed, color="#c53030"];
+    ok -> write [label="是", color="#2f855a", fontcolor="#2f855a"];
+  }
+
+  subgraph cluster_out {
+    label="③ 输出"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    mp4 [label="pure_policy_v015.mp4\n1920×1080 · 20 fps · 39.95 s\n4 段成功片段顺序拼接", fillcolor="#e9d8fd"];
+    txt [label="同名 .txt\n代码版本 / 权重 / 部署配置\n场景 / 分集结果 / 复现命令", fillcolor="#e9d8fd"];
+  }
+
+  subgraph cluster_tab {
+    label="① 视频里的四段"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    tb [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+        <TR><TD ALIGN="LEFT"><B>类</B></TD><TD ALIGN="RIGHT"><B>步数</B></TD><TD ALIGN="RIGHT"><B>整局(实时)</B></TD><TD ALIGN="RIGHT"><B>视频片段</B></TD><TD ALIGN="RIGHT"><B>单件处理</B></TD></TR>
+        <TR><TD ALIGN="LEFT">apple</TD><TD ALIGN="RIGHT">220</TD><TD ALIGN="RIGHT">7.3 s</TD><TD ALIGN="RIGHT">5.5 s</TD><TD ALIGN="RIGHT">5.5 s</TD></TR>
+        <TR><TD ALIGN="LEFT">strawberry</TD><TD ALIGN="RIGHT">361</TD><TD ALIGN="RIGHT">12.0 s</TD><TD ALIGN="RIGHT">9.0 s</TD><TD ALIGN="RIGHT">7.4 s</TD></TR>
+        <TR><TD ALIGN="LEFT">banana</TD><TD ALIGN="RIGHT">452</TD><TD ALIGN="RIGHT">15.1 s</TD><TD ALIGN="RIGHT">11.3 s</TD><TD ALIGN="RIGHT">6.1 s</TD></TR>
+        <TR><TD ALIGN="LEFT">pear</TD><TD ALIGN="RIGHT">563</TD><TD ALIGN="RIGHT">18.8 s</TD><TD ALIGN="RIGHT">14.1 s</TD><TD ALIGN="RIGHT">7.5 s</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>合计</B></TD><TD ALIGN="RIGHT"><B>1596</B></TD><TD ALIGN="RIGHT"><B>53.2 s</B></TD><TD ALIGN="RIGHT"><B>39.9 s</B></TD><TD ALIGN="RIGHT"><B>—</B></TD></TR>
+      </TABLE>>, shape=plaintext, fillcolor="#fefcbf"];
+    note [label="视频按 20 fps 写入，但每 2 个控制步才取 1 帧\n→ 播放速度约为实时的 1.33×\n整局时间随目标果的出生位置变长\n（apple 最近、pear 最远）", fillcolor="#faf5ff"];
+  }
+
+  write -> mp4;
+  write -> txt [style=dashed];
+  tb -> note [style=invis];
+}

@@ -48,6 +48,9 @@ python scripts/stream_eval.py --ckpt runs/act-geom/ckpt.pt --fb 0.7 --grip-ema 0
     --belt 0.08 --seconds 120 --slots 1 --gap-min 3.0 --gap-max 4.0 --seed 60001
 ```
 
+逐层架构图、57 维状态布局、训练/部署细节与完整测试表：
+[`docs/architecture-v1.53.md`](docs/architecture-v1.53.md)。
+
 评测链路里的一个关键 bug 已修（v1.27）：缺类时 `fruit_actors[kind]` 指向场外 `z=-5` 的 ghost，
 观测离开分布导致策略冻结；现在缺类会给"刚上料"的替身。详见 `docs/model-architecture.md` 6.26。
 
@@ -70,6 +73,9 @@ python scripts/eval_act_pure.py --ckpt runs/act-wide-4c/ckpt.pt \
   --instruction apple --episodes 8 --belt 0.15 --spawn-spacing 0.45 --control-freq 30 \
   --fb 0.5 --grip-ema 0.6 --carry-latch --carry-max-step 0.02
 ```
+
+逐层架构、CVAE、测试结果与 `pure_policy_v015.mp4` 的逐段说明：
+[`docs/architecture-act-wide-4c.md`](docs/architecture-act-wide-4c.md)。
 
 
 ### 连续作业口径：机会内成功率 + 提速（v1.54）

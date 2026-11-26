@@ -1,0 +1,98 @@
+digraph model {
+  graph [rankdir=TB, splines=spline, nodesep=0.24, ranksep=0.42,
+         fontname="Noto Sans CJK SC", fontsize=13, pad=0.16, bgcolor="white"];
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=10,
+         margin="0.10,0.055", color="#2d3748", penwidth=1.0, fillcolor="#f7fafc"];
+  edge  [color="#4a5568", penwidth=1.0, arrowsize=0.6,
+         fontname="Noto Sans CJK SC", fontsize=9, fontcolor="#2d3748"];
+
+  subgraph cluster_in {
+    label="① 输入：每个控制步取最近 T = 8 帧"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    oh [label="overhead RGB\n96×96×3 × 8 帧\n与上一帧绝对差 → 第 4 通道", fillcolor="#e6fffa"];
+    wr [label="wrist RGB\n96×96×3 × 8 帧\npanda_wristcam", fillcolor="#e6fffa"];
+    st [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+        <TR><TD COLSPAN="3" ALIGN="LEFT"><B>状态 s ∈ R⁵⁷（每帧）= 49 base + 3 phase + 1 queue + 4 geom</B></TD></TR>
+        <TR><TD ALIGN="LEFT">0–6</TD><TD ALIGN="LEFT">TCP 位姿：xyz + 四元数</TD><TD ALIGN="LEFT">机器人</TD></TR>
+        <TR><TD ALIGN="LEFT">7–15</TD><TD ALIGN="LEFT">qpos 9：7 关节 + 2 指</TD><TD ALIGN="LEFT">机器人</TD></TR>
+        <TR><TD ALIGN="LEFT">16</TD><TD ALIGN="LEFT">传送带线速度</TD><TD ALIGN="LEFT">场景</TD></TR>
+        <TR><TD ALIGN="LEFT">17–48</TD><TD ALIGN="LEFT">4 类 ×［pos 3, vel 3, active, held］</TD><TD ALIGN="LEFT">物体状态</TD></TR>
+        <TR><TD ALIGN="LEFT">49–51</TD><TD ALIGN="LEFT">相位 one-hot：接近 / 下探闭爪 / 搬运</TD><TD ALIGN="LEFT">策略反馈</TD></TR>
+        <TR><TD ALIGN="LEFT">52</TD><TD ALIGN="LEFT">队列：|x|&lt;0.6 且在带面的件数 ÷ 4</TD><TD ALIGN="LEFT">派生</TD></TR>
+        <TR><TD ALIGN="LEFT">53–56</TD><TD ALIGN="LEFT"><B>抓取几何：TCP − 目标果心 (dx,dy,dz) + |d|</B></TD><TD ALIGN="LEFT"><B>v1.53 新增</B></TD></TR>
+      </TABLE>>, shape=plaintext, fillcolor="#ebf8ff"];
+    kd [label="类别 id ∈ {all, apple,\nstrawberry, banana, pear}", fillcolor="#faf5ff"];
+  }
+
+  subgraph cluster_enc {
+    label="② 观测编码"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    cnn [label="共享 CNN（两视角同权重）\n4→24→48→96→256 · stride 2 ×4\nGroupNorm + ReLU + GAP → 256", fillcolor="#c6f6d5"];
+    smlp [label="状态 MLP\n57 → 256 → 256（GELU）", fillcolor="#c6f6d5"];
+    cls [label="CLS = 可学习向量\n+ kind_emb（5×256）", fillcolor="#c6f6d5"];
+  }
+
+  subgraph cluster_seq {
+    label="③ 序列拼装"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    tok [label="每帧 3 个 token：[overhead] + [wrist] + [state]\n各自 + view_type + time_pos(t)\n序列 = CLS + 8×3 = 25 token", fillcolor="#fefcbf"];
+  }
+
+  subgraph cluster_tr {
+    label="④ ACT-lite 主干"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    enc [label="TransformerEncoder × 4\nd=256 · 8 头 · FFN 768 · pre-LN · GELU\n因果 mask：第 t 帧只能看 ≤ t 帧（CLS 可见全部）", fillcolor="#bee3f8"];
+    dec [label="TransformerDecoder × 4\nself-attn + cross-attn(memory 25×256)\nd=256 · 8 头 · FFN 768", fillcolor="#bee3f8"];
+    q   [label="16 个可学习 query\nquery_pos（16×256）", fillcolor="#fed7d7"];
+    short [label="+ state_short(s_T)\n当前帧状态残差捷径", fillcolor="#fed7d7"];
+  }
+
+  subgraph cluster_out {
+    label="⑤ 输出头"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    act [label="act_head：16 × 4\n[Δx, Δy, Δz, 夹爪 logit]\nΔ 相对 TCP，训练时裁剪 ±0.06 m", fillcolor="#feebc8"];
+    ph  [label="phase_head：16 × 3\n接近 / 下探闭爪 / 搬运\n辅助头，损失权重 0.5", fillcolor="#feebc8"];
+  }
+
+  subgraph cluster_run {
+    label="⑥ 闭环执行 ActPureRunner（30 Hz，无脚本 FSM）"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    un [label="反归一化 Δ，clip ±max_step\ntgt = TCP + Δ", fillcolor="#feb2b2"];
+    fb [label="+ 0.7·(果心 − TCP)，仅 xy\n残差反馈：只补前馈残余", fillcolor="#feb2b2"];
+    gr [label="夹爪 logit EMA 0.7 → 阈值 0\n搬运锁爪；搬运限速 0.02 m/步", fillcolor="#feb2b2"];
+    phf[label="相位反馈：k=0 argmax\n2 降级为 1 + 迟滞 + 停滞守卫", fillcolor="#feb2b2"];
+    cmd[label="动作 = [tgt_xyz, HOME_EULER, grip]\npd_ee_pose @ 30 Hz", fillcolor="#feb2b2"];
+  }
+
+  subgraph cluster_param {
+    label="参数量分解（合计 6,771,935）"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    pt [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1">
+        <TR><TD ALIGN="LEFT">view_enc（共享 CNN）</TD><TD ALIGN="RIGHT">276.7 k</TD></TR>
+        <TR><TD ALIGN="LEFT">state_enc + state_short</TD><TD ALIGN="RIGHT">161.3 k</TD></TR>
+        <TR><TD ALIGN="LEFT">encoder 4 层</TD><TD ALIGN="RIGHT">2.63 M</TD></TR>
+        <TR><TD ALIGN="LEFT">decoder 4 层</TD><TD ALIGN="RIGHT">3.69 M</TD></TR>
+        <TR><TD ALIGN="LEFT">query / time / view / kind / cls</TD><TD ALIGN="RIGHT">8.4 k</TD></TR>
+        <TR><TD ALIGN="LEFT">act_head + phase_head</TD><TD ALIGN="RIGHT">1.8 k</TD></TR>
+        <TR><TD ALIGN="LEFT">LayerNorm</TD><TD ALIGN="RIGHT">1.5 k</TD></TR>
+      </TABLE>>, shape=plaintext, fillcolor="#e9d8fd"];
+  }
+
+  oh -> cnn; wr -> cnn;
+  cnn -> tok; smlp -> tok; cls -> tok;
+  st -> smlp;
+  kd -> cls;
+  tok -> enc -> dec;
+  q -> dec;
+  dec -> short;
+  dec -> act;
+  dec -> ph;
+  short -> act [style=dashed, label="+ s_T"];
+  act -> un -> fb -> gr -> cmd;
+  ph -> phf [style=dashed];
+  phf -> st [style=dashed, color="#805ad5", constraint=false,
+             label="写回下一步 s[49:51]"];
+  gr -> cmd;
+}

@@ -2413,6 +2413,9 @@ python scripts/stream_eval.py --policy scripted --noise 0.01 --allow-ghost-frame
 
 ### 6.26.48 **突破：观测加入抓取几何 → 稀疏 86.7%、密集 73.9%（v1.53）**
 
+> 逐层架构图、57 维状态布局、训练/部署细节与完整测试表：
+> [`docs/architecture-v1.53.md`](architecture-v1.53.md)
+
 评审建议"换表示而不是加数据"。实现的几何特征（由 49 维基础观测直接算出，训练/推理同源）：
 
 ```

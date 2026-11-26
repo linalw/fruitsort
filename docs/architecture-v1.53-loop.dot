@@ -1,0 +1,48 @@
+digraph loop {
+  graph [rankdir=LR, splines=spline, nodesep=0.30, ranksep=0.55,
+         fontname="Noto Sans CJK SC", fontsize=13, pad=0.18, bgcolor="white"];
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=10,
+         margin="0.10,0.06", color="#2d3748", penwidth=1.0, fillcolor="#f7fafc"];
+  edge  [color="#4a5568", penwidth=1.0, arrowsize=0.6,
+         fontname="Noto Sans CJK SC", fontsize=9, fontcolor="#2d3748"];
+
+  subgraph cluster_sim {
+    label="① 仿真与示教采集（20 Hz）"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    env [label="FruitSort-v1 / FruitSortStream-v1\nPanda + 平行夹爪 + 传送带\n4 类水果 · 尺寸 ±15%", fillcolor="#e6fffa"];
+    expert [label="规则专家 ScriptedSorter\n（成功率约 87%，只存成功片段）", fillcolor="#e6fffa"];
+    rec [label="record_demos.py --images\noverhead + wrist JPEG + 49 维状态\n+ 4 维动作（世界目标位姿 + 夹爪）", fillcolor="#e6fffa"];
+    env -> expert -> rec;
+  }
+
+  subgraph cluster_data {
+    label="② 数据集（742 段 / 189,644 窗口）"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    d1 [label="repro-* 425 段\n单件、干净、四类均衡", fillcolor="#e9d8fd"];
+    d2 [label="noisy-* 109 段\n感知噪声 / 丢检增强", fillcolor="#e9d8fd"];
+    d3 [label="gnoisy-* 208 段\n连续流上下文 + 队列", fillcolor="#e9d8fd"];
+    rec -> d1; rec -> d2; rec -> d3;
+  }
+
+  subgraph cluster_fit {
+    label="③ 训练（train_act.py）"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    aug [label="逐窗口拼观测\n[49 base][phase 3][queue 1][geom 4]\nΔ 动作裁剪 ±0.06\n下探 / 搬运窗 ×3 过采样", fillcolor="#fefcbf"];
+    fit [label="ACT-lite 6.77 M\nhist 8 · chunk 16 · stride 2\n12 epoch · best val 0.1248", fillcolor="#fefcbf"];
+    ck  [label="runs/act-geom/ckpt.pt", fillcolor="#fbb6ce"];
+    d1 -> aug; d2 -> aug; d3 -> aug; aug -> fit -> ck;
+  }
+
+  subgraph cluster_deploy {
+    label="④ 闭环推理（30 Hz，无脚本 FSM）"; labeljust=l;
+    style="rounded,dashed"; color="#718096"; fontcolor="#1a202c"; penwidth=1.2;
+    sc  [label="StreamController\n只在 x ≥ −0.45 接管\n按“最接近拦截点”选件\n缺类 → “刚上料”替身\n目标类 → 当前件", fillcolor="#c6f6d5"];
+    obs [label="观测拼装（来自环境）\n图像 8 帧 × 2 视角\n状态 57 维，geom 与训练同源", fillcolor="#c6f6d5"];
+    pol [label="ActPolicy（act-geom）\n25 token → 16×4 动作 + 16×3 相位", fillcolor="#bee3f8"];
+    run [label="ActPureRunner\ntgt = TCP + Δ + 0.7·(果−TCP)xy\ngrip EMA 0.7 · 搬运锁爪 / 限速 0.02", fillcolor="#feb2b2"];
+    sc -> obs -> pol -> run;
+  }
+
+  ck -> pol [style=dashed, color="#805ad5", constraint=false, label="权重"];
+  run -> env [style=dashed, color="#805ad5", constraint=false, label="动作 → 下一帧（闭环）"];
+}
