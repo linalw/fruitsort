@@ -263,6 +263,8 @@ class RGBDv2Source(RGBDSource):
         self.camera = cam
         self.vs = PerceptionPipeline(camera=cam, belt_z=self.plane_z, dt=dt,
                                      segmenter=seg, recognizer=recognizer)
+        # 夹爪位置是"机器人信号"（真机同样可得），供遮挡补全使用
+        self.vs.tcp_provider = lambda: self.u.agent.tcp_pose.p[0].cpu().numpy()[:2]
         # 与旧链路一致：未检出的类用"刚上料"占位
         specs = self.specs
         self.last = {k: (np.array([self.clip_x, 0.0,

@@ -84,11 +84,15 @@ def main() -> None:
                                    dilate=args.seg_dilate)
     lrn = PerceptionPipeline(camera=cam, belt_z=float(u.belt_top_z), dt=1 / 30,
                              segmenter=lrn_seg)
+    _tcp_fn = lambda: u.agent.tcp_pose.p[0].cpu().numpy()[:2]   # noqa: E731
+    cls.tcp_provider = _tcp_fn
+    lrn.tcp_provider = _tcp_fn
     _dev = getattr(getattr(lrn_seg, "learned", lrn_seg), "device", "?")
     print(f"backend={args.backend} thresh={args.seg_thresh} device={_dev}")
 
     rows = []
     n_cls = n_lrn = 0
+    n_occl = n_carry = 0
     for seed in [int(s) for s in args.seeds.split(",")]:
         obs, _ = env.reset(seed=seed)
         cls.tracker.tracks.clear()
@@ -104,6 +108,8 @@ def main() -> None:
             a = _dets(cls)
             b = _dets(lrn)
             n_cls += len(a); n_lrn += len(b)
+            n_occl += int(getattr(lrn, "last_occluded", 0))
+            n_carry += int(getattr(lrn, "last_geom_carry", 0))
             for da, db, dist in _match(a, b):
                 under_arm = float(np.hypot(da["center"][0] - tcp[0],
                                           da["center"][1] - tcp[1])) < 0.16
@@ -153,6 +159,7 @@ def main() -> None:
         ex = np.median([(r["ext_l"] - r["ext_c"]) * 1000 for r in sub])
         print(f"  under_arm={int(ua):d}: n={len(sub):4d} 分类一致 {ag*100:5.1f}% "
               f"面积比 {ar:.2f} Δ长轴 {ex:+5.1f} mm")
+    print(f"  遮挡补全触发 {n_occl} 次（累计）/ 帧，几何沿用 {n_carry} 次")
     print(f"  跨过分类阈值(45/115mm) 的件: {thr_flip}/{len(R)} = {thr_flip/len(R)*100:.1f}%")
     print(f"  Δ中心z > 12 mm（会动到闭爪门）: {gate_flip}/{len(R)} = {gate_flip/len(R)*100:.1f}%")
 
