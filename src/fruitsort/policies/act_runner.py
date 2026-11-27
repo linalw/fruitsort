@@ -66,6 +66,7 @@ class ActPureRunner:
                  grasp_retry: bool = True, chunk_exec: int = 1,
                  carry_max_step: float = 0.0, slip_guard: bool = False,
                  slip_thr: float = 0.05, slip_slow_step: float = 0.012,
+                 slip_hold: int = 6,
                  regrasp: bool = False, regrasp_thr: float = 0.6,
                  regrasp_depth: float = 0.02, drop_ckpt: str = "",
                  grasp_gate: bool = False, gate_min_force: float = 2.0,
@@ -154,6 +155,10 @@ class ActPureRunner:
         self.slip_guard = slip_guard
         self.slip_thr = slip_thr
         self.slip_slow_step = slip_slow_step
+        # 自适应限速的"拖尾"：rho 掉回阈值以下后再保持 N 步慢速，避免在阈值附近抖动
+        # （一步快一步慢会把果子晃松，正好是要避免的）
+        self.slip_hold = int(slip_hold)
+        self._slip_left = 0
         # 触觉预测驱动「闭爪前重抓」：滑移头认为这一抓会滑 → 先开爪、下沉 2cm、再闭
         self.regrasp = regrasp
         self.regrasp_thr = regrasp_thr
@@ -206,6 +211,7 @@ class ActPureRunner:
         self.slip_guard = slip_guard
         self.slip_thr = slip_thr
         self.slip_slow_step = slip_slow_step
+        self.slip_hold = int(slip_hold)
         # 触觉预测驱动「闭爪前重抓」：滑移头认为这一抓会滑 → 先开爪、下沉 2cm、再闭
         self.regrasp = regrasp
         self.regrasp_thr = regrasp_thr
@@ -426,6 +432,7 @@ class ActPureRunner:
         self.prev_closed = False
         self.open_streak = 0
         self.slip_slow = False
+        self._slip_left = 0
         self.force_target = None
         self.tac_hist = []
         self.gate_timer = 0
@@ -817,7 +824,13 @@ class ActPureRunner:
                 self.stats["rel_gate"] = self.stats.get("rel_gate", 0) + 1
             else:
                 self._rel_wait = 0
-        self.slip_slow = False
+        # 自适应限速（迟滞）：上一帧判定滑移后，再保持 slip_hold 步慢速，然后恢复原速。
+        # 没有迟滞时，rho 在阈值附近抖动会让搬运"一步快一步慢"，反而把果子晃松。
+        if self._slip_left > 0:
+            self._slip_left -= 1
+            self.slip_slow = True
+        else:
+            self.slip_slow = False
         self.force_target = None
         self.tac_hist = []
         self.gate_timer = 0
@@ -999,6 +1012,7 @@ class ActPureRunner:
                     self.stats["slip_first"] = self.stats["steps"]
                 if self.phase_state == 2:
                     self.slip_slow = True
+                    self._slip_left = self.slip_hold
 
         # ---- 停滞守卫：连续多步"实际位移≈0"且水果仍在接近窗口 → 朝水果迈最小步 ----
         # 现象（docs 6.26.35）：模型接近增量为 0、残差反馈被 ±0.15 饱和成常数 →

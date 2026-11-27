@@ -699,6 +699,8 @@ def main() -> None:
                     help="滑移判据：摩擦利用率 rho=|Ft|/Fn 超过它就限速（经典摩擦锥 ~0.6）")
     ap.add_argument("--slip-slow-step", type=float, default=0.012,
                     help="滑移时的搬运步长（米/步）")
+    ap.add_argument("--slip-hold", type=int, default=6,
+                    help="滑移解除后再保持慢速多少步（迟滞，避免快慢抖动）")
     ap.add_argument("--close-force-hold", type=float, default=0.0,
                     help="力控闭合：闭爪时指端力到 N 就冻结（标定 4 N ≈ 58.7 mm 开口）")
     ap.add_argument("--contact-force-th", type=float, default=0.2,
@@ -885,7 +887,7 @@ def main() -> None:
                              contact_force_th=args.contact_force_th,
                              close_force_hold=args.close_force_hold,
                              slip_guard=args.slip_guard, slip_thr=args.slip_thr,
-                             slip_slow_step=args.slip_slow_step,
+                             slip_slow_step=args.slip_slow_step, slip_hold=args.slip_hold,
                              close_force_th=args.close_force_th,
                              grip_hyst=args.grip_hyst,
                              release_gate=args.release_gate, release_wait=args.release_wait,
