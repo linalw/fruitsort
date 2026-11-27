@@ -72,6 +72,7 @@ class ActPureRunner:
                  gate_asym: float = 0.5, gate_slip: float = 0.02,
                  gate_delay: int = 5, gate_retries: int = 2,
                  gate_bias: float = 0.005, close_force_th: float = 0.0,
+                 close_force_hold: float = 0.0,
                  side_servo: bool = False, side_step: float = 0.002,
                  width_map: dict | None = None, width_delta: float = 0.002,
                  width_g: float | None = None, close_ramp: float = 0.0,
@@ -168,6 +169,11 @@ class ActPureRunner:
         self.gate_bias = gate_bias
         # ---- 闭合到力阈（论文③：力→位置，小果不被挤飞、大果夹紧）----
         self.close_force_th = close_force_th
+        # 力控闭合：闭爪过程中指端 Fn 到 close_force_hold（N）就**冻结**当前指令并锁存。
+        # 标定表：g=+0.4 → 开口 58.7 mm、Fn=4.1 N 是最稳的夹持点；
+        # 位置式"宽度设定点"的可夹窗口只有 58–60 mm（再小就把果子挤飞），力控没有这个问题。
+        self.close_force_hold = float(close_force_hold)
+        self._fhold_grip: float | None = None
         # ---- 单侧接触微伺服（论文②）：闭爪过程中只有一指受力 → 朝弱侧平移再闭 ----
         self.side_servo = side_servo
         self.side_step = side_step
@@ -413,6 +419,7 @@ class ActPureRunner:
         self.grasp_lost = 0
         self.closed_steps = 0
         self.grip_ema_val = None
+        self._fhold_grip = None
         self.prev_grip = 1.0
         # 显式的"开/合"状态：grip 的**数值**可能为正（宽度设定点），不能再靠符号判断
         self.closed = False
@@ -730,6 +737,18 @@ class ActPureRunner:
         else:
             closed = bool(glogit > 0)
         grip = self._close_cmd(kind) if closed else 1.0
+        # ---- 力控闭合（--close-force-hold）：Fn 到位就冻结指令并锁存 ----
+        if self.close_force_hold > 0 and closed and not grasping:
+            if self._fhold_grip is None:
+                _fn = finger_normal_force(u)
+                if _fn >= self.close_force_hold:
+                    self._fhold_grip = float(grip)
+                    self.stats["force_latch"] = self.stats.get("force_latch", 0) + 1
+            if self._fhold_grip is not None:
+                grip = self._fhold_grip
+        elif not closed:
+            self._fhold_grip = None          # 张开就解锁
+
         # ---- 力作为动作通道：第 5 维 = 目标夹持力（0..1 → 0..40N），用触觉 Fn 伺服 ----
         self.force_target = None
         self.tac_hist = []
