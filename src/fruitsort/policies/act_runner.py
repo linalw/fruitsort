@@ -814,7 +814,16 @@ class ActPureRunner:
                 _bxr, _byr = _BLr[kind]
             except Exception:  # noqa: BLE001
                 _bxr, _byr = 0.0, -0.3
-            _db = float(np.hypot(float(tcp[0]) - _bxr, float(tcp[1]) - _byr))
+            # 判据用**果实**的位置而不是 TCP：搬运中果实会比夹爪滞后 10–15 cm（滑移），
+            # 实测 seed 60015 的掉落就是"TCP 距框 9 cm 放爪、果实还在 21 cm 外" → 掉在框后面。
+            _px, _py = float(tcp[0]), float(tcp[1])
+            if actor is not None:
+                try:
+                    _fp = actor.pose.p[0].cpu().numpy()
+                    _px, _py = float(_fp[0]), float(_fp[1])
+                except Exception:  # noqa: BLE001
+                    pass
+            _db = float(np.hypot(_px - _bxr, _py - _byr))
             if _db > self.release_gate and self._rel_wait < self.release_wait:
                 grip = self._close_cmd(kind)
                 closed = True

@@ -1,0 +1,123 @@
+/home/ubuntu/linalw/App/minconda3/envs/maniskill3/lib/python3.10/site-packages/sapien/_vulkan_tricks.py:78: UserWarning: Failed to find Vulkan ICD file. This is probably due to an incorrect or partial installation of the NVIDIA driver. SAPIEN will attempt to provide an ICD file anyway but it may not work.
+  warn(
+    [trk] t= 160 id=  0 apple      ph=0 att=False bd= 34.1cm tcp=(-0.27,+0.00,0.57) engaged_at=4.8s
+    [trk] t= 180 id=  0 apple      ph=0 att=False bd= 30.4cm tcp=(-0.32,-0.01,0.57) engaged_at=4.8s
+    [trk] t= 200 id=  0 apple      ph=0 att=False bd= 32.6cm tcp=(-0.29,-0.00,0.56) engaged_at=4.8s
+    [trk] t= 220 id=  0 apple      ph=1 att=False bd= 36.0cm tcp=(-0.23,-0.00,0.51) engaged_at=4.8s
+    [close] t=  7.5 apple      ph=1 fruit_x=-0.244 d=( +1.1, +0.5, +0.6)cm |d|= 1.4cm descend=0.30s att=False
+    [trk] t= 240 id=  0 apple      ph=2 att=False bd= 30.1cm tcp=(-0.27,-0.05,0.53) engaged_at=4.8s
+    [trk] t= 260 id=  0 apple      ph=2 att=False bd= 20.6cm tcp=(-0.34,-0.12,0.56) engaged_at=4.8s
+    [trk] t= 280 id=  0 apple      ph=2 att=False bd= 12.5cm tcp=(-0.35,-0.21,0.55) engaged_at=4.8s
+    [trk] t= 300 id=  0 apple      ph=2 att=False bd=  3.3cm tcp=(-0.44,-0.26,0.53) engaged_at=4.8s
+    [trk] t= 320 id=  0 apple      ph=1 att=False bd=  4.1cm tcp=(-0.43,-0.25,0.52) engaged_at=4.8s
+    [trk] t= 340 id=  0 apple      ph=1 att=False bd=  5.8cm tcp=(-0.43,-0.23,0.52) engaged_at=4.8s
+    [trk] t= 360 id=  0 apple      ph=1 att=False bd=  6.5cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 380 id=  0 apple      ph=1 att=False bd=  6.8cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 400 id=  0 apple      ph=1 att=False bd=  7.0cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 420 id=  0 apple      ph=1 att=False bd=  7.0cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 440 id=  0 apple      ph=1 att=False bd=  7.1cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 460 id=  0 apple      ph=1 att=False bd=  7.1cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 480 id=  0 apple      ph=1 att=False bd=  7.1cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 500 id=  0 apple      ph=1 att=False bd=  7.1cm tcp=(-0.43,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 900 id= 22 apple      ph=0 att=False bd= 33.6cm tcp=(-0.29,+0.01,0.57) engaged_at=29.4s
+    [trk] t= 920 id= 22 apple      ph=0 att=False bd= 31.6cm tcp=(-0.32,+0.00,0.56) engaged_at=29.4s
+    [trk] t= 940 id= 22 apple      ph=0 att=False bd= 33.0cm tcp=(-0.29,+0.00,0.55) engaged_at=29.4s
+    [trk] t= 960 id= 22 apple      ph=0 att=False bd= 35.5cm tcp=(-0.24,-0.00,0.57) engaged_at=29.4s
+    [trk] t= 980 id= 22 apple      ph=0 att=False bd= 39.0cm tcp=(-0.19,-0.00,0.56) engaged_at=29.4s
+    [close] t= 33.0 apple      ph=1 fruit_x=-0.169 d=( +0.7, +0.5, -0.7)cm |d|= 1.1cm descend=25.80s att=False
+    [trk] t=1000 id= 22 apple      ph=2 att=False bd= 39.0cm tcp=(-0.17,-0.02,0.51) engaged_at=29.4s
+    [trk] t=1020 id= 22 apple      ph=2 att=False bd= 29.9cm tcp=(-0.24,-0.07,0.57) engaged_at=29.4s
+    [trk] t=1040 id= 22 apple      ph=2 att=False bd= 21.3cm tcp=(-0.28,-0.17,0.58) engaged_at=29.4s
+    [trk] t=1060 id= 22 apple      ph=2 att=False bd= 15.1cm tcp=(-0.34,-0.18,0.53) engaged_at=29.4s
+    [close] t= 35.7 apple      ph=2 fruit_x=-0.288 d=( -4.5, -1.8, +3.3)cm |d|= 5.8cm descend=28.47s att=False
+    [trk] t=1080 id= 22 apple      ph=1 att=False bd= 20.1cm tcp=(-0.29,-0.17,0.52) engaged_at=29.4s
+    [close] t= 36.4 apple      ph=2 fruit_x=-0.247 d=( -0.1, +0.5, +2.6)cm |d|= 2.6cm descend=29.13s att=False
+    [trk] t=1100 id= 22 apple      ph=2 att=False bd= 23.7cm tcp=(-0.25,-0.16,0.54) engaged_at=29.4s
+    [trk] t=1120 id= 22 apple      ph=2 att=False bd= 21.8cm tcp=(-0.25,-0.22,0.59) engaged_at=29.4s
+    [trk] t=1140 id= 22 apple      ph=2 att=False bd= 20.7cm tcp=(-0.25,-0.30,0.59) engaged_at=29.4s
+    [trk] t=1160 id= 22 apple      ph=2 att=False bd= 14.5cm tcp=(-0.34,-0.37,0.58) engaged_at=29.4s
+    [trk] t=1180 id= 22 apple      ph=1 att=False bd= 13.8cm tcp=(-0.37,-0.39,0.50) engaged_at=29.4s
+    [close] t= 39.4 apple      ph=1 fruit_x=-0.375 d=( -0.1, +0.0, +0.3)cm |d|= 0.3cm descend=32.20s att=False
+    [trk] t=1200 id= 22 apple      ph=1 att=False bd=  9.2cm tcp=(-0.41,-0.36,0.52) engaged_at=29.4s
+    [close] t= 40.3 apple      ph=1 fruit_x=-0.417 d=( +0.1, +0.1, +0.7)cm |d|= 0.7cm descend=33.10s att=False
+    [drop] t= 40.4 apple      id=  5 ph=2 grasp=1 tcp=(-0.42,-0.36,0.50) last=(-0.28,-0.39,0.13) bin=(-0.46,-0.28) d_bin= 9.0cm
+    [trk] t=1220 id= 22 apple      ph=2 att=False bd=  8.2cm tcp=(-0.42,-0.35,0.51) engaged_at=29.4s
+    [close] t= 41.0 apple      ph=1 fruit_x=-0.428 d=( +0.1, +0.1, +0.7)cm |d|= 0.7cm descend=33.80s att=False
+    [trk] t=1240 id= 22 apple      ph=2 att=False bd=  7.6cm tcp=(-0.43,-0.35,0.51) engaged_at=29.4s
+[ep0] 60s 上料 6 | 送达 1 | 机会内 1/2 = 50% | 让给同伴 3 | 单件 5.8s 掉落 1 漏过 3 | 抓取过 2 | 成功率 20.0% | 吞吐 1.00 件/min | 换目标 2
+      每类: apple 1/2(drop 1)   strawberry 0/1(drop 0)   banana 0/1(drop 0)   pear 0/2(drop 0) 
+    [item] id=1 apple      outcome=delivered engage=4.766666666666667 end=10.55 x_engage=-0.45 dur=5.8s
+    [item] id=2 strawberry outcome=missed engage=None end=19.775 x_engage=- dur=-
+    [item] id=3 banana     outcome=missed engage=None end=30.233333333333334 x_engage=- dur=-
+    [item] id=4 pear       outcome=missed engage=None end=33.575 x_engage=- dur=-
+    [item] id=5 apple      outcome=dropped engage=29.4 end=40.36666666666667 x_engage=-0.45 dur=11.0s
+    [item] id=6 pear       outcome=None engage=None end=None x_engage=- dur=-
+      机会内每类: apple 1/2  strawberry 0/0  banana 0/0  pear 0/0
+    [trk] t= 160 id= 33 apple      ph=0 att=False bd= 33.8cm tcp=(-0.27,-0.00,0.58) engaged_at=4.8s
+    [trk] t= 180 id= 33 apple      ph=0 att=False bd= 30.9cm tcp=(-0.32,-0.01,0.57) engaged_at=4.8s
+    [trk] t= 200 id= 33 apple      ph=0 att=False bd= 32.8cm tcp=(-0.27,-0.01,0.60) engaged_at=4.8s
+    [trk] t= 220 id= 33 apple      ph=1 att=False bd= 35.9cm tcp=(-0.23,-0.00,0.51) engaged_at=4.8s
+    [close] t=  7.5 apple      ph=1 fruit_x=-0.235 d=( +0.5, +0.3, +1.2)cm |d|= 1.3cm descend=0.27s att=False
+    [trk] t= 240 id= 33 apple      ph=2 att=False bd= 32.9cm tcp=(-0.25,-0.03,0.56) engaged_at=4.8s
+    [trk] t= 260 id= 33 apple      ph=2 att=False bd= 23.0cm tcp=(-0.31,-0.10,0.58) engaged_at=4.8s
+    [trk] t= 280 id= 33 apple      ph=2 att=False bd= 14.6cm tcp=(-0.35,-0.19,0.56) engaged_at=4.8s
+    [trk] t= 300 id= 33 apple      ph=2 att=False bd=  6.1cm tcp=(-0.43,-0.23,0.55) engaged_at=4.8s
+    [trk] t= 320 id= 33 apple      ph=2 att=False bd=  5.4cm tcp=(-0.44,-0.23,0.55) engaged_at=4.8s
+    [close] t= 10.7 apple      ph=2 fruit_x=-0.447 d=( +0.4, +0.6, +1.8)cm |d|= 1.9cm descend=3.50s att=False
+    [close] t= 10.9 apple      ph=2 fruit_x=-0.449 d=( -0.2, -0.4, +0.8)cm |d|= 1.0cm descend=3.73s att=False
+    [trk] t= 340 id= 33 apple      ph=1 att=False bd=  3.3cm tcp=(-0.45,-0.25,0.52) engaged_at=4.8s
+    [close] t= 11.4 apple      ph=2 fruit_x=-0.452 d=( +0.1, -0.0, +2.7)cm |d|= 2.7cm descend=4.23s att=False
+    [close] t= 11.8 apple      ph=2 fruit_x=-0.454 d=( -0.1, -0.1, +2.1)cm |d|= 2.1cm descend=4.60s att=False
+    [trk] t= 360 id= 33 apple      ph=2 att=False bd=  3.3cm tcp=(-0.47,-0.25,0.55) engaged_at=4.8s
+    [trk] t= 380 id= 33 apple      ph=1 att=False bd=  3.5cm tcp=(-0.47,-0.25,0.53) engaged_at=4.8s
+    [close] t= 12.9 apple      ph=1 fruit_x=-0.474 d=( +0.2, +0.1, +0.5)cm |d|= 0.5cm descend=5.67s att=False
+    [trk] t= 400 id= 33 apple      ph=2 att=False bd=  4.6cm tcp=(-0.48,-0.24,0.54) engaged_at=4.8s
+    [trk] t= 420 id= 33 apple      ph=1 att=False bd=  5.0cm tcp=(-0.48,-0.23,0.54) engaged_at=4.8s
+    [close] t= 14.1 apple      ph=1 fruit_x=-0.474 d=( +0.2, +0.1, +0.9)cm |d|= 0.9cm descend=6.87s att=False
+    [trk] t= 440 id= 33 apple      ph=2 att=False bd=  5.5cm tcp=(-0.49,-0.23,0.52) engaged_at=4.8s
+    [close] t= 15.3 apple      ph=1 fruit_x=-0.483 d=( +0.2, +0.1, +1.3)cm |d|= 1.3cm descend=8.13s att=False
+    [trk] t= 460 id= 33 apple      ph=2 att=False bd=  6.2cm tcp=(-0.48,-0.22,0.54) engaged_at=4.8s
+    [trk] t= 480 id= 33 apple      ph=2 att=False bd=  6.7cm tcp=(-0.49,-0.22,0.52) engaged_at=4.8s
+    [trk] t= 500 id= 33 apple      ph=1 att=False bd=  7.3cm tcp=(-0.49,-0.21,0.53) engaged_at=4.8s
+    [close] t= 16.7 apple      ph=1 fruit_x=-0.487 d=( -0.0, +0.1, +0.7)cm |d|= 0.7cm descend=9.50s att=False
+    [trk] t= 900 id= 49 apple      ph=0 att=False bd= 52.4cm tcp=(-0.02,+0.00,0.55) engaged_at=29.9s
+    [trk] t= 920 id= 49 apple      ph=0 att=False bd= 30.0cm tcp=(-0.35,-0.00,0.57) engaged_at=29.9s
+    [trk] t= 940 id= 49 apple      ph=0 att=False bd= 31.3cm tcp=(-0.32,+0.00,0.56) engaged_at=29.9s
+    [trk] t= 960 id= 49 apple      ph=0 att=False bd= 32.8cm tcp=(-0.29,-0.00,0.56) engaged_at=29.9s
+    [trk] t= 980 id= 49 apple      ph=0 att=False bd= 35.9cm tcp=(-0.23,-0.00,0.56) engaged_at=29.9s
+    [trk] t=1000 id= 49 apple      ph=0 att=False bd= 39.2cm tcp=(-0.18,-0.00,0.56) engaged_at=29.9s
+    [close] t= 33.7 apple      ph=1 fruit_x=-0.164 d=( +0.4, +0.4, +0.1)cm |d|= 0.6cm descend=26.47s att=False
+    [trk] t=1020 id= 49 apple      ph=2 att=False bd= 39.8cm tcp=(-0.16,-0.02,0.52) engaged_at=29.9s
+    [trk] t=1040 id= 49 apple      ph=2 att=False bd= 30.3cm tcp=(-0.23,-0.08,0.58) engaged_at=29.9s
+    [trk] t=1060 id= 49 apple      ph=2 att=False bd= 20.7cm tcp=(-0.29,-0.15,0.57) engaged_at=29.9s
+    [trk] t=1080 id= 49 apple      ph=2 att=False bd= 16.6cm tcp=(-0.34,-0.16,0.53) engaged_at=29.9s
+    [trk] t=1100 id= 49 apple      ph=2 att=False bd= 12.9cm tcp=(-0.38,-0.18,0.53) engaged_at=29.9s
+    [close] t= 37.0 apple      ph=2 fruit_x=-0.329 d=( -6.6, -2.0, +3.3)cm |d|= 7.7cm descend=29.77s att=False
+    [trk] t=1120 id= 49 apple      ph=1 att=False bd= 19.4cm tcp=(-0.31,-0.16,0.52) engaged_at=29.9s
+    [trk] t=1140 id= 49 apple      ph=1 att=False bd= 25.0cm tcp=(-0.25,-0.15,0.51) engaged_at=29.9s
+    [close] t= 38.1 apple      ph=2 fruit_x=-0.247 d=( +0.1, +0.5, +1.4)cm |d|= 1.5cm descend=30.90s att=False
+    [trk] t=1160 id= 49 apple      ph=2 att=False bd= 21.9cm tcp=(-0.28,-0.16,0.52) engaged_at=29.9s
+    [trk] t=1180 id= 49 apple      ph=2 att=False bd= 22.0cm tcp=(-0.28,-0.16,0.52) engaged_at=29.9s
+    [trk] t=1200 id= 49 apple      ph=2 att=False bd= 21.9cm tcp=(-0.28,-0.16,0.52) engaged_at=29.9s
+    [trk] t=1220 id= 49 apple      ph=2 att=False bd= 14.0cm tcp=(-0.35,-0.20,0.56) engaged_at=29.9s
+    [trk] t=1240 id= 49 apple      ph=2 att=False bd=  4.2cm tcp=(-0.42,-0.26,0.53) engaged_at=29.9s
+    [close] t= 41.7 apple      ph=2 fruit_x=-0.437 d=( -0.0, +0.1, +2.7)cm |d|= 2.7cm descend=34.47s att=False
+    [trk] t=1780 id= 59 apple      ph=0 att=False bd= 47.3cm tcp=(-0.08,+0.01,0.56) engaged_at=59.1s
+[ep1] 60s 上料 6 | 送达 2 | 机会内 2/3 = 67% | 让给同伴 3 | 单件 9.2s 掉落 0 漏过 3 | 抓取过 2 | 成功率 40.0% | 吞吐 2.00 件/min | 换目标 3
+      每类: apple 2/3(drop 0)   strawberry 0/1(drop 0)   banana 0/1(drop 0)   pear 0/1(drop 0) 
+    [item] id=1 apple      outcome=delivered engage=4.766666666666667 end=11.241666666666667 x_engage=-0.45 dur=6.5s
+    [item] id=2 strawberry outcome=missed engage=None end=19.775 x_engage=- dur=-
+    [item] id=3 banana     outcome=missed engage=None end=30.175 x_engage=- dur=-
+    [item] id=4 pear       outcome=missed engage=None end=33.458333333333336 x_engage=- dur=-
+    [item] id=5 apple      outcome=delivered engage=29.933333333333334 end=41.833333333333336 x_engage=-0.45 dur=11.9s
+    [item] id=6 apple      outcome=None engage=59.13333333333333 end=None x_engage=-0.45 dur=-
+      机会内每类: apple 2/3  strawberry 0/0  banana 0/0  pear 0/0
+
+== 连续作业 @0.08 m/s，间隔 1.5–2.5 m，尺寸 ±14% ==
+总上料 12 | 送达 3 | 掉落 1 | 漏过 6 | 成功率 30.0% | 吞吐 1.50 件/min
+机会内成功率: 3/5 = 60.0% | 让给同伴（未接管即漏检）: 6 件
+  apple      3/5 = 60%
+  strawberry 0/2 = 0%
+  banana     0/2 = 0%
+  pear       0/3 = 0%
+结果写入 runs/2026-11-29-drops/s60015/metrics.json | 用时 5.3 min

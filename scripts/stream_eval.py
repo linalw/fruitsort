@@ -693,8 +693,10 @@ def main() -> None:
                     help="放料门：只在料框中心该距离内才允许开爪（米；0=关）")
     ap.add_argument("--release-wait", type=int, default=120,
                     help="放料门最长拦截步数（超过就放开，避免抱着果子跑整局）")
-    ap.add_argument("--slip-guard", action="store_true",
-                    help="搬运段滑移检测（摩擦利用率 rho>阈值）→ 限速到 --slip-slow-step")
+    ap.add_argument("--slip-guard", action="store_true", default=True,
+                    help="搬运段自适应限速（rho>阈值降速、解除后 6 步恢复）；v1.108 起默认开")
+    ap.add_argument("--no-slip-guard", dest="slip_guard", action="store_false",
+                    help="关掉滑移限速（对照实验用）")
     ap.add_argument("--slip-thr", type=float, default=0.5,
                     help="滑移判据：摩擦利用率 rho=|Ft|/Fn 超过它就限速（经典摩擦锥 ~0.6）")
     ap.add_argument("--slip-slow-step", type=float, default=0.012,
