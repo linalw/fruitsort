@@ -1013,6 +1013,7 @@ def main() -> None:
             _v.parent.mkdir(parents=True, exist_ok=True)
             _v = _v.with_suffix(".mp4")
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "roi": [], "kind": None, "id": None}
+        _phase_t = {0: 0.0, 1: 0.0, 2: 0.0, -1: 0.0}   # 各相位耗时（秒）；-1=没有目标
         _prev_grip = 1.0
         _t_phase1 = None
         _t_phase2 = None
@@ -1025,6 +1026,9 @@ def main() -> None:
                 ctrl.objs = objs
                 ctrl.runner.set_actors(objs)
             act = ctrl.act(obs)
+            _ph_now = (ctrl.runner.phase_state
+                       if (ctrl.target is not None and ctrl.runner is not None) else -1)
+            _phase_t[_ph_now] = _phase_t.get(_ph_now, 0.0) + 1.0 / args.control_freq
             it = ctrl.target
             if args.trace_items and it is not None and t % 20 == 0:
                 _tcp = u.agent.tcp_pose.p[0].cpu().numpy()
@@ -1242,6 +1246,10 @@ def main() -> None:
               f"| 换目标 {row['switches']}"
               + (f" | 腕部确认 {getattr(ctrl.runner, 'wrist_ok_total', 0)}" if getattr(ctrl.runner, 'wrist_checker', None) else ""),
               flush=True)
+        _busy = sum(r["handle_s"] for r in runs[-1:]) if runs else 0.0
+        print(f"      相位耗时: 接近 {_phase_t.get(0,0):.1f}s · 下探 {_phase_t.get(1,0):.1f}s · "
+              f"搬运 {_phase_t.get(2,0):.1f}s · 空闲 {_phase_t.get(-1,0):.1f}s"
+              f"（合计 {sum(_phase_t.values()):.1f}s）", flush=True)
         print("      每类: " + "  ".join(
             f"{k} {v['delivered']}/{v['spawned']}(drop {v['dropped']}) "
             for k, v in row["per_kind"].items()), flush=True)
