@@ -215,11 +215,29 @@ class RGBDSource(VisionSource):
                 yy = self.yaw[k]
                 self.miss[k] += 1
             else:
-                p = np.array([self.clip_x, 0.0,
-                              self.plane_z + self.specs[k].half_height], dtype=np.float64)
-                v = np.array([belt, 0.0, 0.0])
-                yy = None
-                self.miss[k] = 99
+                # 兜底：**冻结在最后位置**，不要瞬移到带子上游的占位（clip_x）。
+                # 之前的写法在"已经送到 x≈+0.30、这一帧恰好丢检"时会把替身瞬移 3 m，
+                # 观测里出现一个巨大的跳变，控制器随即把目标判成 ghost 放弃——
+                # 实测这是学习式闭环 0/20 的直接原因（miss=0、last_x=+0.30 就触发）。
+                import os as _os
+                if _os.environ.get("FRUITSORT_DEBUG_GHOST"):
+                    print(f"    [ghost] {k}: miss={self.miss[k]} last_x="
+                          f"{float(self.last[k][0][0]):+.2f} hold_x_max={self.hold_x_max}",
+                          flush=True)
+                if self.miss[k] < 99:
+                    # 有过历史：冻结（位置保持，速度记 0），并保留朝向
+                    p0 = self.last[k][0]
+                    p = np.array([p0[0], p0[1], p0[2]], dtype=np.float64)
+                    v = np.zeros(3, dtype=np.float64)
+                    yy = self.yaw[k]
+                    self.miss[k] = min(self.miss[k] + 1, 99)
+                else:
+                    # 从来没检到过：仍用"刚上料"的占位（与训练分布一致）
+                    p = np.array([self.clip_x, 0.0,
+                                  self.plane_z + self.specs[k].half_height], dtype=np.float64)
+                    v = np.array([belt, 0.0, 0.0])
+                    yy = None
+                    self.miss[k] = 99
             if (self.near_hold and self.miss[k] > 0 and held_kind is None
                     and self.near_extent_min <= self._extent_of(k) <= self.near_extent
                     and tcp is not None

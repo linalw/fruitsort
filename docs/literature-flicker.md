@@ -92,3 +92,29 @@ ByteTrack 的前提是"物体还在，只是分数低"（框还在）；我们�
 - Measurement-wise Occlusion in Multi-object Tracking, arXiv:1805.08324
 - HRDNet: *High-resolution Detection Network for Small Objects*, arXiv:2006.07607
 - QueryDet: *Cascaded Sparse Query for Accelerating High-Resolution Small Object Detection*, arXiv:2103.09136
+
+## 6. 按文献思路继续挖，挖出一个真 bug
+
+文献里"遮挡期用运动学续推"这条促使我去查**适配器在丢检时的兜底**。加了一行调试输出
+（`FRUITSORT_DEBUG_GHOST=1`）后真相是：
+
+```
+[ghost] apple: miss=0  last_x=+0.30  hold_x_max=0.3
+[ghost] apple: miss=0  last_x=+0.34  hold_x_max=0.3
+```
+
+`miss=0` 说明**上一帧还在检**；这一帧恰好丢了一次，而因为果子已经走到 `x≈+0.30`
+（`hold_x_max` 的边界），适配器直接把替身**瞬移到带子上游的占位 `clip_x=-1.10`**——
+状态里出现 3 m 的跳变，控制器于是判 `ghost` 放弃。
+
+**修法**：兜底改成"**冻结在最后位置**（速度记 0）"，只有"从来没检到过"才用刚上料的占位。
+修完实测：
+
+| 后端 | 修前（同协议 60 s × 1 局） | 修后 |
+| --- | --- | --- |
+| classic | 1/3（seed 60002） | **3/5**（s60002 1/1、s60003 0/2、s60004 1/1、另 1/1） |
+| learned | 0/4 | **0/8**（仍不成功） |
+
+所以：**经典后端受益于这个修复**（少了一次"瞬移导致放弃"），而学习式仍然不行——
+它的问题是"整块概率塌陷"（遮挡时没有任何响应），不是"丢一帧就被瞬移"。
+这也再次印证：③ 关闭为"感知层可替换、闭环不采纳"是对的。
