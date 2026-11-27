@@ -693,6 +693,8 @@ def main() -> None:
                     help="放料门：只在料框中心该距离内才允许开爪（米；0=关）")
     ap.add_argument("--release-wait", type=int, default=120,
                     help="放料门最长拦截步数（超过就放开，避免抱着果子跑整局）")
+    ap.add_argument("--contact-force-th", type=float, default=0.2,
+                    help="判'抓住'的指端力阈值（N）：宽度设定点时接触力很小，需调高")
     ap.add_argument("--close-force-th", type=float, default=0.0,
                     help="闭爪力上限（N）：指端力超过它就退到 -0.3（防止夹到上肩时越夹越紧）")
     ap.add_argument("--grip-hyst", type=float, default=0.0,
@@ -872,6 +874,7 @@ def main() -> None:
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
                              wrist_tol=args.wrist_tol,
+                             contact_force_th=args.contact_force_th,
                              close_force_th=args.close_force_th,
                              grip_hyst=args.grip_hyst,
                              release_gate=args.release_gate, release_wait=args.release_wait,

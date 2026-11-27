@@ -383,6 +383,13 @@ class ActPureRunner:
     def _objs(self) -> dict:
         return self.actors if self.actors is not None else self.u.fruit_actors
 
+    def _close_cmd(self, kind: str) -> float:
+        """闭爪时的指令：有宽度设定点就按目标开口反解（**可能为正**），否则合到底。"""
+        if self.width_map and kind in self.width_map:
+            w = float(self.width_map[kind]) - float(self.width_delta)
+            return float(np.clip((w - 0.030) / 0.050, -1.0, 1.0))
+        return -1.0
+
     def _grasp_proxy(self, actor, tcp) -> bool:
         """感知模式下的"抓住"判据（无成对接触力可用）：闭合 + 水平对齐 + 指面到果身高度。"""
         try:
@@ -391,7 +398,7 @@ class ActPureRunner:
             near_xy = float(np.linalg.norm(p[:2] - tcp[:2])) < 0.05
             at_pad = abs(float(tcp[2] - p[2])) < 0.05
             lifted = float(p[2]) > belt + 0.02
-            return bool(self.prev_grip < 0 and near_xy and (at_pad or lifted))
+            return bool(self.prev_closed and near_xy and (at_pad or lifted))
         except Exception:  # noqa: BLE001
             return False
 
@@ -407,6 +414,9 @@ class ActPureRunner:
         self.closed_steps = 0
         self.grip_ema_val = None
         self.prev_grip = 1.0
+        # 显式的"开/合"状态：grip 的**数值**可能为正（宽度设定点），不能再靠符号判断
+        self.closed = False
+        self.prev_closed = False
         self.open_streak = 0
         self.slip_slow = False
         self.force_target = None
@@ -500,7 +510,7 @@ class ActPureRunner:
                 # 吸盘物理上"接触即吸"：贴到 5 cm 内直接吸上（不再依赖模型的闭爪时机，
                 # 那正是平口夹爪失败的地方）；模型只负责"什么时候放"
                 if (not self.attached and float(fpos_now[2]) > 0.30
-                        and (fd < 0.05 or (self.prev_grip < 0 and fd < self.suction_radius))):
+                        and (fd < 0.05 or (self.prev_closed and fd < self.suction_radius))):
                     self.attached = True
                     # 附着偏移取"果心相对 TCP"，但**至少往下一段**，避免吸住的果身与
                     # 指面/机身在物理上重叠（重叠会把手臂顶起来，实测 z 从 0.82 被顶到 0.92）
@@ -552,7 +562,7 @@ class ActPureRunner:
             if self.suction:
                 use_proxy = False
             if self.grasp_retry and use_proxy:
-                grasping = grabbing or (fd < 0.045 and self.prev_grip < 0)
+                grasping = grabbing or (fd < 0.045 and self.prev_closed)
             else:
                 grasping = grabbing
             if self.suction:
@@ -711,14 +721,15 @@ class ActPureRunner:
         if self.grip_hyst > 0:
             # 双阈值：|logit| < h 时维持上一步，避免每几帧翻一次 → 指面抖动夹不住
             if glogit > self.grip_hyst:
-                grip = -1.0
+                closed = True
             elif glogit < -self.grip_hyst:
-                grip = 1.0
+                closed = False
             else:
-                grip = -1.0 if self.prev_grip < 0 else 1.0
+                closed = bool(self.prev_closed)
             self.stats["grip_hold"] = self.stats.get("grip_hold", 0) + int(abs(glogit) < self.grip_hyst)
         else:
-            grip = -1.0 if glogit > 0 else 1.0
+            closed = bool(glogit > 0)
+        grip = self._close_cmd(kind) if closed else 1.0
         # ---- 力作为动作通道：第 5 维 = 目标夹持力（0..1 → 0..40N），用触觉 Fn 伺服 ----
         self.force_target = None
         self.tac_hist = []
@@ -732,6 +743,7 @@ class ActPureRunner:
             if glogit > 0:                       # 只在"想闭爪"时做力伺服
                 fn = float(build_tactile(u, kind)[0])
                 self.stats["fn_peak"] = max(self.stats.get("fn_peak", 0.0), fn)
+                closed = True
                 if fn < self.force_target - 3.0:
                     grip = -1.0                  # 力不够 → 继续闭紧
                 elif fn > self.force_target + 3.0:
@@ -739,7 +751,7 @@ class ActPureRunner:
                 else:
                     grip = -0.8                  # 命中目标力 → 维持
         # ---- 单侧接触微伺服：闭爪时只有一指受力说明水果偏了 → 朝弱侧平移 ----
-        if self.side_servo and self.phase_state == 1 and grip < 0 and actor is not None:
+        if self.side_servo and self.phase_state == 1 and closed and actor is not None:
             try:
                 L = u.agent.robot.links_map["panda_leftfinger"]
                 R = u.agent.robot.links_map["panda_rightfinger"]
@@ -770,7 +782,7 @@ class ActPureRunner:
         else:
             self.open_streak = 0
         # ---- 放料门：只在框上方开爪（超时后放弃守卫，避免抱着果子跑整局）----
-        if self.release_gate > 0 and grasping and grip > 0:
+        if self.release_gate > 0 and grasping and not closed:
             try:
                 from fruitsort.sim.conveyor import BIN_LAYOUT as _BLr
                 _bxr, _byr = _BLr[kind]
@@ -778,7 +790,8 @@ class ActPureRunner:
                 _bxr, _byr = 0.0, -0.3
             _db = float(np.hypot(float(tcp[0]) - _bxr, float(tcp[1]) - _byr))
             if _db > self.release_gate and self._rel_wait < self.release_wait:
-                grip = -1.0
+                grip = self._close_cmd(kind)
+                closed = True
                 tgt = np.array([float(_bxr), float(_byr),
                                 max(float(tcp[2]), 0.52)], dtype=np.float64)
                 self._rel_wait += 1
@@ -813,14 +826,14 @@ class ActPureRunner:
         # 宽度设定点只在"**想闭爪**"时生效。
         # 原来的条件是 `glogit>0 or phase==2`——搬运段无条件套用，于是**放料时也被覆盖**，
         # 果子永远放不下来（实测 --width-setpoint 0/4，而全闭合 3/4）。
-        if self.width_map and kind in self.width_map and grip < 0:
+        if self.width_map and kind in self.width_map and closed:
             if self.width_g is not None:
                 grip = float(np.clip(self.width_g, -1.0, 1.0))
             else:
                 w_target = self.width_map[kind] - self.width_delta
                 grip = float(np.clip((w_target - 0.030) / 0.050, -1.0, 0.7))
             self.stats["grip_w"] = grip
-        self.stats["close"] += int(grip < 0)
+        self.stats["close"] += int(closed)
         self.stats["descend"] += int(self.phase_state == 1)
         self.stats["carry"] += int(self.phase_state == 2)
         self.stats["steps"] += 1
@@ -896,7 +909,7 @@ class ActPureRunner:
                     pass
 
         # ---- 触觉预测驱动的闭爪前重抓 ----
-        if (self.regrasp and not grasping and self.phase_state == 1 and grip < 0
+        if (self.regrasp and not grasping and self.phase_state == 1 and closed
                 and not self.regrasp_done
                 and max(self.slip_prob or 0.0, self.drop_prob) > self.regrasp_thr):
             grip = 1.0                      # 先张开
@@ -911,7 +924,7 @@ class ActPureRunner:
             fpos_i = actor.pose.p[0].cpu().numpy().astype(np.float64)
             fv_i = actor.linear_velocity[0].cpu().numpy().astype(np.float64)
             dz_i = float(tcp[2] - fpos_i[2])
-            if self._descend_target is None and grip < 0 and dz_i > 0.05:
+            if self._descend_target is None and closed and dz_i > 0.05:
                 self._descend_target = True
                 self._descend_steps = 0
                 self.stats["intercept"] = self.stats.get("intercept", 0) + 1
@@ -929,26 +942,28 @@ class ActPureRunner:
 
         # ---- 闭爪高度门：禁止在空中闭爪，改为继续下探 ----
         _czg = float(self.close_z_gate_map.get(kind, self.close_z_gate))
-        if (_czg > 0 and grip < 0 and not grasping
+        if (_czg > 0 and closed and not grasping
                 and self.phase_state != 2 and actor is not None):
             fpos_g = actor.pose.p[0].cpu().numpy().astype(np.float64)
             if float(tcp[2] - fpos_g[2]) > _czg:
                 grip = 1.0
+                closed = False
                 _off = float(self.close_z_off_map.get(kind, 0.02))
                 tgt = np.array([fpos_g[0], fpos_g[1], fpos_g[2] + _off])
                 self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 8
                 self.stats["zgate"] = self.stats.get("zgate", 0) + 1
         # 抓空复位（对应专家 close_steps=12）
-        if grip < 0 and not grasping:
+        if closed and not grasping:
             self.closed_steps += 1
             if self.closed_steps > 12:
                 grip = 1.0
+                closed = False
                 self.closed_steps = 0
                 if self.phase_state == 1:
                     self.phase_state, self.same, self.phase_cand, self.commit = 0, 0, 0, 0
         else:
             self.closed_steps = 0
-        if self.hold_latch and grip < 0 and not grasping:
+        if self.hold_latch and closed and not grasping:
             tgt = tcp.copy()
 
         # ---- 触觉补救：滑移检测 → 降速 ----
@@ -1089,6 +1104,8 @@ class ActPureRunner:
                              logits=(None if logits is None else logits[0].detach().cpu().numpy().copy()),
                              sb=np.array(sb, dtype=np.float64))
         self.prev_grip = grip
+        self.prev_closed = closed
+        self.closed = closed
         yaw = float(self.yaw_map.get(kind, 0.0))
         _ya_ext = float(getattr(actor, "extent", 0.0) or 0.0) if actor is not None else 0.0
         if (self.yaw_align and actor is not None
