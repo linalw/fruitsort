@@ -51,3 +51,4 @@
 | `head_rgbd_v190_all.mp4` | 四类都接（v1.90 修 bug 后）：apple **5/5**、strawberry 1/3、banana/pear 0，0 掉落；180 s | v1.90.0 / `runs/act-dagger/ckpt.pt` |
 | `percv2_masks_apple.mp4` | **感知 v2**（分割掩码可见）：apple 3/3 = 100%，0 掉落；180 s | v1.92.0 / `runs/act-dagger/ckpt.pt` |
 | `learned_seg_masks.mp4` | 学习式分割（U-Net）+ ROI 放大窗：apple 1/1；闭环尚未打通 | v1.93.0 / `runs/act-dagger/ckpt.pt` |
+| `sort_rate_2026_11_27.mp4` | **当前交付口径**连续作业（2 局 × 90 s）：apple 3/3、0 掉落；统计口径见 `docs/success-rate.md` | v1.96.0 / `runs/act-dagger/ckpt.pt` |
