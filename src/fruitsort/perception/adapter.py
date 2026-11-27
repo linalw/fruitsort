@@ -268,7 +268,8 @@ class RGBDv2Source(RGBDSource):
     """
 
     def __init__(self, u, dt: float = 1 / 30, camera: str = "overhead",
-                 cam_json=None, recognizer=None, seg=None, **kw):
+                 cam_json=None, recognizer=None, seg=None, use_hand_fallback: bool = False,
+                 **kw):
         from .camera import CameraModel
         from .pipeline import PerceptionPipeline
         super().__init__(u, dt=dt, **kw)
@@ -279,6 +280,13 @@ class RGBDv2Source(RGBDSource):
                 f"仿真: python scripts/fit_camera_model.py --name {camera}；"
                 f"真机: 用 cv2.calibrateCamera + 手眼标定按同样格式写出")
         self.camera = cam
+        # 腕部相机兜底：**只在头部丢检时**用，而且只用 xy、z 沿用历史。
+        # 历史教训（本文件 FusedSource 的注释）：持续融合会让 apple 4/6→3/6、掉落 2→3，
+        # 因为腕部 z 精度只有 1–3 cm；但"丢检时补 xy"没有这个问题。
+        self.hand = None
+        if use_hand_fallback:
+            from .hand import HandCamera
+            self.hand = HandCamera(u)
         self.vs = PerceptionPipeline(camera=cam, belt_z=self.plane_z, dt=dt,
                                      segmenter=seg, recognizer=recognizer)
         # 夹爪位置是"机器人信号"（真机同样可得），供遮挡补全使用
@@ -292,7 +300,37 @@ class RGBDv2Source(RGBDSource):
 
     def update(self, obs, held_kind: str | None = None) -> dict:
         # 父类 update 只调用 self.vs.update(obs)，接口同构，直接复用
-        return super().update(obs, held_kind=held_kind)
+        out = super().update(obs, held_kind=held_kind)
+        if self.hand is None or held_kind is not None:
+            return out
+        if not any(self.miss[k] > 0 for k in self.kinds):
+            return out
+        try:
+            dets = self.hand.detect(obs)
+            tcp = self.u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
+            belt = float(self.u.belt_speed[0])
+        except Exception:  # noqa: BLE001
+            return out
+        for k in self.kinds:
+            if self.miss[k] == 0:
+                continue
+            cands = [d for d in dets if d["kind"] == k]
+            if not cands:
+                continue
+            cands.sort(key=lambda d: float(np.linalg.norm(
+                np.asarray(d["pos"], float)[:2] - tcp[:2])))
+            d = cands[0]
+            # xy 用腕部的，z 沿用历史（腕部 z 有 1–3 cm 误差，会把闭爪门/抓取确认搞坏）
+            p = np.array([float(d["pos"][0]), float(d["pos"][1]), float(self.last[k][0][2])],
+                         dtype=np.float64)
+            v = np.array([belt, 0.0, 0.0], dtype=np.float64)
+            ext = float(d.get("extent", 0.0) or 0.0)
+            out[k] = _Stub(p, v, raw_p=p, yaw=self.yaw[k],
+                           extent=ext if ext > 0 else self._extent_of(k))
+            self.last[k] = (p, v)
+            self.miss[k] = 0
+            self.hand_fallback_hits = getattr(self, "hand_fallback_hits", 0) + 1
+        return out
 
 
 class FusedSource(RGBDSource):

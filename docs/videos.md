@@ -52,3 +52,4 @@
 | `percv2_masks_apple.mp4` | **感知 v2**（分割掩码可见）：apple 3/3 = 100%，0 掉落；180 s | v1.92.0 / `runs/act-dagger/ckpt.pt` |
 | `learned_seg_masks.mp4` | 学习式分割（U-Net）+ ROI 放大窗：apple 1/1；闭环尚未打通 | v1.93.0 / `runs/act-dagger/ckpt.pt` |
 | `sort_rate_2026_11_27.mp4` | **当前交付口径**连续作业（2 局 × 90 s）：apple 3/3、0 掉落；统计口径见 `docs/success-rate.md` | v1.96.0 / `runs/act-dagger/ckpt.pt` |
+| `hand_fallback_2026_11_28.mp4` | 腕部相机兜底（头部丢检时补 xy）：apple 2/2、0 掉落；配对统计 87%→94%、掉落 1→0 | v1.100.0 / `runs/act-dagger/ckpt.pt` |

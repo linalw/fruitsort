@@ -750,6 +750,8 @@ def main() -> None:
     ap.add_argument("--perception", default="oracle",
                     choices=["oracle", "vision", "rgbd", "rgbdv2", "fused"],
                     help="oracle=仿真真值；fused=俯视+侧视 RGB-D 感知（无真值）")
+    ap.add_argument("--hand-fallback", action="store_true",
+                    help="头部丢检时用腕部相机补 xy（z 沿用历史；v1.100 实验）")
     ap.add_argument("--camera-calib", default="overhead",
                     help="相机模型名（assets/calib/camera_<name>.json），--perception rgbdv2 用")
     ap.add_argument("--seg-backend", default="classic",
@@ -838,6 +840,7 @@ def main() -> None:
                   f"device={_dev}", flush=True)
         src = RGBDv2Source(env.unwrapped, dt=1.0 / args.control_freq,
                            camera=args.camera_calib, recognizer=_rec, seg=_segm,
+                           use_hand_fallback=args.hand_fallback,
                            near_hold=args.near_hold,
                            near_extent_min=args.near_extent_min,
                            near_extent=args.near_extent_max,
