@@ -693,6 +693,8 @@ def main() -> None:
                     help="放料门：只在料框中心该距离内才允许开爪（米；0=关）")
     ap.add_argument("--release-wait", type=int, default=120,
                     help="放料门最长拦截步数（超过就放开，避免抱着果子跑整局）")
+    ap.add_argument("--close-force-th", type=float, default=0.0,
+                    help="闭爪力上限（N）：指端力超过它就退到 -0.3（防止夹到上肩时越夹越紧）")
     ap.add_argument("--grip-hyst", type=float, default=0.0,
                     help="夹爪指令迟滞（logit 双阈值）：>0 时 |logit|<h 维持上一步，抑制闭爪抖动")
     ap.add_argument("--close-z-off-map", default="",
@@ -711,6 +713,8 @@ def main() -> None:
                     help="固定的夹爪闭合指令值（位置等价力控；gap≈0.030+0.050g）")
     ap.add_argument("--close-ramp", type=float, default=0.0,
                     help="渐进闭爪：每步 -close_ramp（0=一步到位）")
+    ap.add_argument("--width-delta", type=float, default=0.002,
+                    help="宽度设定点比果径小多少（米）：越大夹得越紧")
     ap.add_argument("--width-setpoint", action="store_true",
                     help="闭爪到按类的宽度设定点(LeTac 式)，而不是合到底")
     ap.add_argument("--stall-guard", type=float, default=0.0,
@@ -868,6 +872,7 @@ def main() -> None:
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
                              wrist_tol=args.wrist_tol,
+                             close_force_th=args.close_force_th,
                              grip_hyst=args.grip_hyst,
                              release_gate=args.release_gate, release_wait=args.release_wait,
                              close_z_gate=args.close_z_gate,
@@ -900,6 +905,7 @@ def main() -> None:
                              grasp_z_bias=parse_map(args.z_bias_map),
                              yaw_map=parse_map(args.yaw_map),
                              width_map=(dict(WIDTH_MAP) if args.width_setpoint else None),
+                             width_delta=args.width_delta,
                              width_g=args.width_g, close_ramp=args.close_ramp)
 
     if os.environ.get("FRUITSORT_AUDIT_GT"):

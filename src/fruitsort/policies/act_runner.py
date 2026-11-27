@@ -810,7 +810,10 @@ class ActPureRunner:
             tgt[2] = tgt[2] + float(self.grasp_z_bias[kind])
         # ---- 宽度设定点（LeTac 式位置等价力控）：闭合到 w*(类)−δ，而不是合到底 ----
         # 实测空载映射 gap ≈ 0.030 + 0.050·g，反解 g = (w−0.030)/0.050
-        if self.width_map and kind in self.width_map and (glogit > 0 or self.phase_state == 2):
+        # 宽度设定点只在"**想闭爪**"时生效。
+        # 原来的条件是 `glogit>0 or phase==2`——搬运段无条件套用，于是**放料时也被覆盖**，
+        # 果子永远放不下来（实测 --width-setpoint 0/4，而全闭合 3/4）。
+        if self.width_map and kind in self.width_map and grip < 0:
             if self.width_g is not None:
                 grip = float(np.clip(self.width_g, -1.0, 1.0))
             else:

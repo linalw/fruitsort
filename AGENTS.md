@@ -76,6 +76,7 @@ Fruitsort/
 | `python scripts/demo.py` | 跑仿真 + 录制视频（`--kinds` 选水果） |
 | `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
 | `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
+| `python scripts/calibrate_gripper.py` | 夹爪标定：指令 → 开口/接触力（`assets/calib/gripper_width.json`） |
 | `python scripts/fit_hand_eye.py` | 腕部相机手眼标定 → `assets/calib/camera_hand.json`（真机 `cv2.calibrateHandEye` 同格式） |
 | `python scripts/fit_camera_model.py` | 拟合相机 K/T → `assets/calib/camera_<name>.json`（真机可手眼标定同格式） |
 | `python scripts/bench_perception.py` | 感知后端对比（召回/分类/3D 误差），支持倾斜机位 |
