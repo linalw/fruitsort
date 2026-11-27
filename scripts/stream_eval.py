@@ -754,6 +754,11 @@ def main() -> None:
                     help="头部丢检时用腕部相机补 xy（z 沿用历史）；v1.100 起默认开")
     ap.add_argument("--no-hand-fallback", dest="hand_fallback", action="store_false",
                     help="关掉腕部兜底（对照实验用）")
+    ap.add_argument("--wrist-verify", action="store_true", default=False,
+                    help="遮挡期用腕部相机确认'果子在两指之间'（实验；10 seeds 无增益，默认关）")
+    ap.add_argument("--no-wrist-verify", dest="wrist_verify", action="store_false")
+    ap.add_argument("--wrist-tol", type=float, default=0.02,
+                    help="腕部确认的容差（米，果子到两指中点）")
     ap.add_argument("--camera-calib", default="overhead",
                     help="相机模型名（assets/calib/camera_<name>.json），--perception rgbdv2 用")
     ap.add_argument("--seg-backend", default="classic",
@@ -862,6 +867,7 @@ def main() -> None:
                              carry_max_step=args.carry_max_step,
                              stall_guard=args.stall_guard,
                              descend_commit=args.descend_commit,
+                             wrist_tol=args.wrist_tol,
                              grip_hyst=args.grip_hyst,
                              release_gate=args.release_gate, release_wait=args.release_wait,
                              close_z_gate=args.close_z_gate,
@@ -902,15 +908,23 @@ def main() -> None:
         print("[GT 审计] 已挂上真值计数器（fruit_actors / _slots / is_grasping）", flush=True)
 
     runner = _mk(args.ckpt, "apple")
+    _wc = getattr(src, "wrist_check", None) if (args.wrist_verify and args.hand_fallback) else None
+    if _wc is not None:
+        runner.wrist_checker = _wc
+        print(f"腕部抓取确认: 开（容差 {args.wrist_tol*1000:.0f} mm）", flush=True)
     runners = {}
     if args.ckpt_map:
         for kv in args.ckpt_map.split(","):
             _k, _path = kv.split("=", 1)
             runners[_k.strip()] = _mk(_path, _k.strip())
+            if _wc is not None:
+                runners[_k.strip()].wrist_checker = _wc
         print("按类路由:", list(runners), flush=True)
     single_runner = None
     if args.single_ckpt:
         single_runner = _mk(args.single_ckpt, "apple")
+        if _wc is not None:
+            single_runner.wrist_checker = _wc
         print(f"队列切换: 单件模式={args.single_ckpt} (queue<={args.queue_thr})", flush=True)
     yaw_rng = np.random.default_rng(args.seed + 7)
     ep_yaw = 0.0
@@ -1201,7 +1215,9 @@ def main() -> None:
               f"| 让给同伴 {row['declined']} | 单件 {row['handle_s']:.1f}s "
               f"掉落 {row['dropped']} 漏过 {row['missed']} | 抓取过 {row['picked']} | "
               f"成功率 {row['success_rate']*100:.1f}% | 吞吐 {row['throughput_per_min']:.2f} 件/min "
-              f"| 换目标 {row['switches']}", flush=True)
+              f"| 换目标 {row['switches']}"
+              + (f" | 腕部确认 {getattr(ctrl.runner, 'wrist_ok_total', 0)}" if getattr(ctrl.runner, 'wrist_checker', None) else ""),
+              flush=True)
         print("      每类: " + "  ".join(
             f"{k} {v['delivered']}/{v['spawned']}(drop {v['dropped']}) "
             for k, v in row["per_kind"].items()), flush=True)

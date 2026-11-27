@@ -97,6 +97,7 @@ class ActPureRunner:
                  lead_long_taper: float = 0.15, grasp_proxy: str = "always",
                  close_win_xy: float = 0.03, close_win_z: float = 0.06,
                  grasp_verify: bool = False, grasp_verify_xy: float = 0.0,
+                 wrist_checker=None, wrist_tol: float = 0.02,
                  yaw_align: bool = False,
                  yaw_align_off: float = 0.0,
                  max_step_map: dict | None = None,
@@ -293,6 +294,11 @@ class ActPureRunner:
         self.close_win_z = float(close_win_z)
         # 抓取确认：只"碰到顶端"不算抓住（队列里会误判成 phase 2、随后水果滑走）
         self.grasp_verify = bool(grasp_verify)
+        # 腕部抓取确认：遮挡期（头部看不到）用腕部掩码判断"果子还在两指之间"。
+        # 由控制器注入 `callable(kind, tcp, obs) -> 距离(米) | None`。
+        self.wrist_checker = wrist_checker
+        self.wrist_tol = float(wrist_tol)
+        self.wrist_ok_total = 0        # 腕部确认救回的次数（不随 reset 清零）
         # 附加水平对齐窗口（米；0=关闭）。默认关闭：实测 4–6 cm 的感知误差会把真抓取否掉
         self.grasp_verify_xy = float(grasp_verify_xy)
         # ---- 手腕对准（验证性实验，用仿真真值 yaw）----
@@ -569,7 +575,19 @@ class ActPureRunner:
                     near_xy = float(np.hypot(float(tcp[0]) - float(raw[0]),
                                              float(tcp[1]) - float(raw[1]))) < self.grasp_verify_xy
                 if not (lifted or (at_pad and near_xy)):
-                    grasping = False
+                    # 几何判据不过 → 再问一次腕部相机（只在遮挡期有效）：
+                    # 果子落在两指连线中点 wrist_tol 内，就认为"确实夹在两指之间"。
+                    ok_wrist = False
+                    if self.wrist_checker is not None:
+                        try:
+                            _d = self.wrist_checker(kind, tcp, obs)
+                        except Exception:  # noqa: BLE001
+                            _d = None
+                        if _d is not None and float(_d) <= self.wrist_tol:
+                            ok_wrist = True
+                            self.wrist_ok_total += 1
+                    if not ok_wrist:
+                        grasping = False
             if grasping:
                 self.phase_state, self.grasp_lost = 2, 0
             elif self.phase_state == 2:

@@ -161,6 +161,9 @@ class RGBDSource(VisionSource):
                          np.zeros(3, dtype=np.float64))
                      for k in self.kinds}
         self.miss = {k: 99 for k in self.kinds}
+        # 头部"自己"有没有看到（不含腕部兜底）：腕部抓取确认要用它判断是否处于遮挡期
+        self.head_miss = {k: 99 for k in self.kinds}
+        self._hand_dets: list = []
         self.yaw = {k: None for k in self.kinds}
         # 每类最近 15 次检测到的世界长度：取**中位数**做"是否紧凑"的判据
         # （单帧在边缘/被挡时会偏小或合并偏大，中位数最稳）
@@ -187,6 +190,7 @@ class RGBDSource(VisionSource):
         out = {}
         for k in self.kinds:
             cands = [it for it in got.get(k, []) if it.pos[0] >= self.clip_x]
+            self.head_miss[k] = 0 if cands else self.head_miss[k] + 1
             if cands:
                 it = max(cands, key=lambda i: i.pos[0])       # 最靠前的一件
                 p = np.array(it.pos, dtype=np.float64)
@@ -298,15 +302,42 @@ class RGBDv2Source(RGBDSource):
                          np.zeros(3, dtype=np.float64)) for k in self.kinds}
         self.miss = {k: 99 for k in self.kinds}
 
+    def wrist_check(self, kind: str, tcp, obs=None) -> float | None:
+        """腕部抓取确认：返回"果子到两指连线中点"的水平距离（米）。
+
+        只在**头部当前没看到这一类**（遮挡期）时返回数值；否则返回 None，表示
+        "头部更准，不需要腕部"。调用方（`ActPureRunner.grasp_verify`）用它判断
+        "果子是否还在两指之间"。
+        """
+        if self.hand is None:
+            return None
+        if self.head_miss.get(kind, 99) == 0:
+            return None
+        cands = [d for d in self._hand_dets if d["kind"] == kind]
+        if not cands:
+            return None
+        try:
+            L = self.u.agent.robot.links_map["panda_leftfinger"].pose.p[0].cpu().numpy()
+            R = self.u.agent.robot.links_map["panda_rightfinger"].pose.p[0].cpu().numpy()
+            mid = 0.5 * (np.asarray(L, float) + np.asarray(R, float))
+        except Exception:  # noqa: BLE001
+            mid = np.asarray(tcp, float)
+        return min(float(np.hypot(float(np.asarray(c["pos"])[0]) - mid[0],
+                                  float(np.asarray(c["pos"])[1]) - mid[1])) for c in cands)
+
     def update(self, obs, held_kind: str | None = None) -> dict:
         # 父类 update 只调用 self.vs.update(obs)，接口同构，直接复用
         out = super().update(obs, held_kind=held_kind)
-        if self.hand is None or held_kind is not None:
-            return out
-        if not any(self.miss[k] > 0 for k in self.kinds):
+        if self.hand is None:
             return out
         try:
-            dets = self.hand.detect(obs)
+            dets = self.hand.detect(obs)      # 每帧一次（128×128，很便宜），供兜底与抓取确认共用
+            self._hand_dets = dets
+        except Exception:  # noqa: BLE001
+            return out
+        if held_kind is not None or not any(self.miss[k] > 0 for k in self.kinds):
+            return out
+        try:
             tcp = self.u.agent.tcp_pose.p[0].cpu().numpy().astype(np.float64)
             belt = float(self.u.belt_speed[0])
         except Exception:  # noqa: BLE001
@@ -375,6 +406,9 @@ class FusedSource(RGBDSource):
                          np.zeros(3, dtype=np.float64))
                      for k in self.kinds}
         self.miss = {k: 99 for k in self.kinds}
+        # 头部"自己"有没有看到（不含腕部兜底）：腕部抓取确认要用它判断是否处于遮挡期
+        self.head_miss = {k: 99 for k in self.kinds}
+        self._hand_dets: list = []
         self.yaw = {k: None for k in self.kinds}
         # 每类最近 15 次检测到的世界长度：取**中位数**做"是否紧凑"的判据
         # （单帧在边缘/被挡时会偏小或合并偏大，中位数最稳）
