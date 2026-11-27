@@ -76,6 +76,7 @@ Fruitsort/
 | `python scripts/demo.py` | 跑仿真 + 录制视频（`--kinds` 选水果） |
 | `python scripts/benchmark.py` | 官方评测（per_class / pair / all4） |
 | `python scripts/dexterous_sort5.py --robot <uid>` | 灵巧手任务级分拣（`panda_allegro` / `panda_dclaw` / `panda_wristcam` 同台对照） |
+| `python scripts/fit_hand_eye.py` | 腕部相机手眼标定 → `assets/calib/camera_hand.json`（真机 `cv2.calibrateHandEye` 同格式） |
 | `python scripts/fit_camera_model.py` | 拟合相机 K/T → `assets/calib/camera_<name>.json`（真机可手眼标定同格式） |
 | `python scripts/bench_perception.py` | 感知后端对比（召回/分类/3D 误差），支持倾斜机位 |
 | `python scripts/train_segmenter.py` | 训练学习式分割（U-Net，RGB+高度→掩码），产出 `runs/seg-unet/seg.pt` |
@@ -116,6 +117,8 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
   **只会循环回收**（不回收就永远不再上料）。
 - **放料门**（v1.89）：模型会在离料框 15–27 cm 就开爪（果子掉地上）。
   加 `--release-gate 0.10` 后开爪全部落在框内，掉落 4/15 → 1/14，见 [`docs/drop-reduction.md`](docs/drop-reduction.md)。
+- **腕部相机兜底**（v1.101，默认开）：头部丢检时用 `hand_camera` 补 xy（z 沿用历史），
+  配对 5 seeds：apple 87% → 94%、掉落 1 → 0；`--no-hand-fallback` 可关。
 - **深度修复**（v1.93）：`PerceptionPipeline` 默认开（邻域最小值填洞 + 掩码补洞），
   深度丢 40% 时召回仍 100%（无修复会掉到 2.5%）。
 - **学习式分割**（v1.93）：`--seg-backend learned --seg-thresh 0.75`（U-Net，需 GPU，
