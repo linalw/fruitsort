@@ -693,6 +693,12 @@ def main() -> None:
                     help="放料门：只在料框中心该距离内才允许开爪（米；0=关）")
     ap.add_argument("--release-wait", type=int, default=120,
                     help="放料门最长拦截步数（超过就放开，避免抱着果子跑整局）")
+    ap.add_argument("--slip-guard", action="store_true",
+                    help="搬运段滑移检测（摩擦利用率 rho>阈值）→ 限速到 --slip-slow-step")
+    ap.add_argument("--slip-thr", type=float, default=0.5,
+                    help="滑移判据：摩擦利用率 rho=|Ft|/Fn 超过它就限速（经典摩擦锥 ~0.6）")
+    ap.add_argument("--slip-slow-step", type=float, default=0.012,
+                    help="滑移时的搬运步长（米/步）")
     ap.add_argument("--close-force-hold", type=float, default=0.0,
                     help="力控闭合：闭爪时指端力到 N 就冻结（标定 4 N ≈ 58.7 mm 开口）")
     ap.add_argument("--contact-force-th", type=float, default=0.2,
@@ -878,6 +884,8 @@ def main() -> None:
                              wrist_tol=args.wrist_tol,
                              contact_force_th=args.contact_force_th,
                              close_force_hold=args.close_force_hold,
+                             slip_guard=args.slip_guard, slip_thr=args.slip_thr,
+                             slip_slow_step=args.slip_slow_step,
                              close_force_th=args.close_force_th,
                              grip_hyst=args.grip_hyst,
                              release_gate=args.release_gate, release_wait=args.release_wait,

@@ -985,10 +985,14 @@ class ActPureRunner:
         if self.hold_latch and closed and not grasping:
             tgt = tcp.copy()
 
-        # ---- 触觉补救：滑移检测 → 降速 ----
+        # ---- 触觉补救：滑移检测 → 搬运段降速 ----
+        # 判据用**摩擦利用率** rho = |Ft|/Fn（tac[2]，经典摩擦锥判据），而不是相对速度：
+        # 感知模式下 `tac[5]`（v_slip）是用"物体估计速度 − TCP 速度"算的，而物体估计
+        # 在夹住后被钉在 TCP 上（速度为 0）→ v_slip ≡ TCP 速度，永远"在滑"，
+        # 等于把搬运段无条件下限速（那不是滑移检测）。rho 只依赖力传感器，真机同样可用。
         if self.slip_guard and actor is not None:
             tac = build_tactile(u, kind)
-            slipping = float(tac[0]) > 3.0 and float(tac[5]) > self.slip_thr
+            slipping = float(tac[0]) > 3.0 and float(tac[2]) > self.slip_thr
             if slipping:
                 self.stats["slip"] += 1
                 if self.stats["slip_first"] < 0:
