@@ -38,7 +38,8 @@ class Tracker:
         self._next_id = 0
         self.t = 0
 
-    def update(self, dets: list[Instance]) -> list[Instance]:
+    def update(self, dets: list[Instance], low: list[Instance] | None = None) -> list[Instance]:
+        """`low`：低置信度候选（ByteTrack 式第二阶段）——只用来**续跟已有轨迹**，不新建。"""
         self.t += 1
         preds = [tr.predict(self.dt, tr.lost + 1) for tr in self.tracks]
         if not self.tracks:
@@ -79,6 +80,35 @@ class Tracker:
                 continue
             d.track_id = self._next_id; self._next_id += 1; d.last_t = self.t
             self.tracks.append(d); out.append(d)
+        # ---- 第二阶段：用低分候选把"这一帧没配上"的轨迹续上（ByteTrack）----
+        if low:
+            alive = [tr for tr in self.tracks if tr.last_t != self.t]
+            if alive:
+                c2 = np.full((len(alive), len(low)), 1e3)
+                for i, tr in enumerate(alive):
+                    pred = tr.predict(self.dt, tr.lost + 1)
+                    for j, d in enumerate(low):
+                        dxy = float(np.linalg.norm(pred[:2] - d.pos[:2]))
+                        # 低分候选没跑识别（kind=""）→ 不施加类别惩罚，只按距离
+                        c2[i, j] = dxy + (0.15 if (d.kind and tr.kind != d.kind) else 0.0)
+                try:
+                    from scipy.optimize import linear_sum_assignment
+                    r2, k2 = linear_sum_assignment(c2)
+                except Exception:                       # noqa: BLE001
+                    r2 = k2 = np.array([], dtype=int)
+                for i, j in zip(r2, k2):
+                    if c2[i, j] > 0.12:                 # 低分候选的门限更紧
+                        continue
+                    tr, d = alive[i], low[j]
+                    # 只更新位置/速度，类别沿用轨迹的（低分候选的类别不可靠）
+                    v = (d.pos - tr.pos) / max(self.dt * (tr.lost + 1), 1e-6)
+                    tr.vel = self.vel_alpha * v + (1 - self.vel_alpha) * tr.vel
+                    tr.pos = d.pos
+                    tr.hue, tr.area = d.hue, d.area
+                    tr.extent = 0.7 * tr.extent + 0.3 * d.extent
+                    tr.hits += 1; tr.last_t = self.t; tr.lost = 0
+                    out.append(tr)
+
         for tr in self.tracks:
             if tr.last_t != self.t:
                 tr.lost += 1
@@ -102,6 +132,7 @@ class PerceptionPipeline:
                  segmenter: DepthColorSegmenter | None = None,
                  recognizer=None, max_lost: int = 20,
                  min_confidence: float = 0.25, plane_prior: float | None = None,
+                 low_score: float = 0.30, two_stage: bool = True,
                  depth_repair: bool = True, repair_iter: int = 3,
                  mask_fill: bool = True, occlusion_fix: bool = False):
         self.camera = camera
@@ -110,6 +141,10 @@ class PerceptionPipeline:
         self.seg = segmenter or DepthColorSegmenter()
         self.rec = recognizer or RuleRecognizer()
         self.min_confidence = float(min_confidence)
+        # ByteTrack 式两阶段关联：低分掩码（score<高分阈值）只用来续跟已有轨迹。
+        # 动机：学习式逐帧召回只有经典的 82–88%，目标"闪断"一下就被判 ghost 放弃。
+        self.low_score = float(low_score)
+        self.two_stage = bool(two_stage)
         self.tracker = Tracker(dt=dt, max_lost=max_lost)
         self.last_stats = PipelineStats()
         self.last_masks: list[tuple[object, str, float]] = []   # (SegMask, kind, conf) 供可视化
@@ -220,7 +255,17 @@ class PerceptionPipeline:
             self.last_repair_frac = float((~np.isfinite(depth_m) | (depth_m <= 0)).mean())
         pts = self.camera.unproject(depth_m)
         plane_z = robust_plane_z(pts, self.plane_prior)
+        # 分割分两次取：高分图用于正常检测；若开两阶段，再取一份低分图（同一个网络，
+        # 只是阈值更低），只喂给跟踪器的第二阶段。
         masks = self.seg.segment(rgb, pts, plane_z)
+        masks_low = []
+        if self.two_stage:
+            _th = getattr(self.seg, "thresh", 1.0)
+            if _th > self.low_score:
+                try:
+                    masks_low = self.seg.segment(rgb, pts, plane_z, thresh=self.low_score)
+                except TypeError:
+                    masks_low = []
 
         dets: list[Instance] = []
         dbg: list[dict] = []
@@ -265,7 +310,18 @@ class PerceptionPipeline:
                             height=g.height, yaw=g.yaw, bbox=seg.bbox, area=seg.area,
                             center=np.asarray(g.center, dtype=np.float64).copy()))
 
-        tracked = self.tracker.update(dets)
+        # 低分候选：同一个类别的掩码，score 在 [low, 高) 之间；只用于续跟
+        low_dets: list[Instance] = []
+        if masks_low:
+            for seg in masks_low:
+                if float(getattr(seg, "score", 1.0)) >= getattr(self.seg, "thresh", 1.0):
+                    continue                       # 高分那一份已经处理过
+                g2 = obb_from_mask(pts, seg.mask, plane_z)
+                if g2 is None or not split_plausible(g2):
+                    continue
+                low_dets.append(Instance(kind="", pos=g2.center.copy(), vel=np.zeros(3),
+                                         area=seg.area, hue=seg.hue, extent=g2.extent, yaw=g2.yaw))
+        tracked = self.tracker.update(dets, low=low_dets)
         out: dict[str, list[Instance]] = {k: [] for k in KINDS}
         for it in tracked:
             if it.kind in out:

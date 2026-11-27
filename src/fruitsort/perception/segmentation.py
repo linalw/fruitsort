@@ -46,6 +46,7 @@ class SegMask:
     sat: float
     val: float
     split_of: int = -1          # 由哪个大连通域切开（诊断用）
+    score: float = 1.0          # 该掩码的置信度（经典=1.0；学习式=掩码内平均概率）
 
 
 class DepthColorSegmenter:

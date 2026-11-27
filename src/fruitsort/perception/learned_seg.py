@@ -84,7 +84,7 @@ class LearnedSegmenter:
 
     def __init__(self, ckpt: str | Path, device: str | None = None, thresh: float = 0.5,
                  down: int = 2, min_area: int = 60, split: bool = True,
-                 height_scale: float = 0.20, dilate: int = 1):
+                 height_scale: float = 0.20, dilate: int = 1, scale: float = 1.0):
         import torch
         ck = torch.load(Path(ckpt), map_location="cpu", weights_only=False)
         self.net = _UNetSmall.build(int(ck.get("w", 24)))
@@ -99,6 +99,8 @@ class LearnedSegmenter:
         # CNN 在 0.75 阈值下边界比经典分割**系统性小 1 px**（实测：苹果面积 0.91×、
         # 长轴 −4.6%，贴着手臂遮挡时更小）。1 px 膨胀把这半像素补回来。
         self.dilate = int(dilate)
+        # SAHI 的最简版本：整幅放大 s 倍再推理（小目标变大），掩码再缩回原尺寸。
+        self.scale = float(scale)
         self.down = int(down)
         self.height_scale = float(height_scale)
         self.torch = torch
@@ -116,20 +118,32 @@ class LearnedSegmenter:
                            interpolation=cv2.INTER_AREA)
         return np.ascontiguousarray(x.transpose(2, 0, 1)[None])              # 1,4,h,w
 
-    def segment(self, rgb: np.ndarray, pts_world: np.ndarray, belt_z: float):
+    def segment(self, rgb: np.ndarray, pts_world: np.ndarray, belt_z: float,
+                thresh: float | None = None):
+        """`thresh` 单独给时用它（ByteTrack 式两阶段：低阈值只用于续跟，不新建轨迹）。"""
+        _th = self.thresh if thresh is None else float(thresh)
         x = self.torch.from_numpy(self._input(rgb, pts_world, belt_z)).to(self.device)
+        if self.scale != 1.0:
+            x = self.torch.nn.functional.interpolate(
+                x, scale_factor=self.scale, mode="bilinear", align_corners=False)
         with self.torch.no_grad():
             logit = self.net(x)
         prob = self.torch.sigmoid(logit)[0, 0].cpu().numpy()
-        prob = cv2.resize(prob, (rgb.shape[1], rgb.shape[0]), interpolation=cv2.INTER_LINEAR)
-        m = (prob >= self.thresh).astype(np.uint8)
+        if self.scale != 1.0:
+            prob = cv2.resize(prob, (rgb.shape[1], rgb.shape[0]), interpolation=cv2.INTER_LINEAR)
+        else:
+            prob = cv2.resize(prob, (rgb.shape[1], rgb.shape[0]), interpolation=cv2.INTER_LINEAR)
+        m = (prob >= _th).astype(np.uint8)
         if self.dilate > 0 and m.sum() > 0:
             k = np.ones((2 * self.dilate + 1,) * 2, np.uint8)
             m = cv2.dilate(m, k)
         if m.sum() == 0:
             return []
         hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-        return masks_from_binary(m, hsv, self._post)
+        out = masks_from_binary(m, hsv, self._post)
+        for seg in out:                      # 逐掩码平均概率 = 置信度
+            seg.score = float(prob[seg.mask].mean())
+        return out
 
     # ---------------- 训练支持 ----------------
     @staticmethod
@@ -165,4 +179,7 @@ class HybridSegmenter:
         for s in ml:
             m |= s.mask.astype(np.uint8)
         hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-        return masks_from_binary(m, hsv, self._post)
+        out = masks_from_binary(m, hsv, self._post)
+        for seg in out:                      # 逐掩码平均概率 = 置信度
+            seg.score = float(prob[seg.mask].mean())
+        return out
