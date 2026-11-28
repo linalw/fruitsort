@@ -1067,6 +1067,7 @@ def main() -> None:
         _t_phase1 = None
         _t_phase2 = None
         _n_ev = 0
+        _n_rv = 0
         _last_pos = {}
 
         for t in range(max_steps):
@@ -1213,6 +1214,18 @@ def main() -> None:
                     _evs = u.stream_stats["events"]
                 except Exception:  # noqa: BLE001
                     _evs = []
+                # 真实位姿事件（sim 侧记录，事件发生前）
+                _rv = u.stream_stats.get("recycle_evts", [])
+                while _n_rv < len(_rv):
+                    _e = _rv[_n_rv]
+                    _n_rv += 1
+                    if _e[3] != "dropped":
+                        continue
+                    _ps = _e[5]
+                    print(f"    [rdrop] t={_e[0]:5.1f} {_e[1]:10s} id={_e[2]:3d} "
+                          f"pos=({_e[4][0]:+.2f},{_e[4][1]:+.2f},{_e[4][2]:.2f}) "
+                          f"spawn=({_ps[0]:+.2f},{_ps[1]:+.2f},{_ps[2]:.2f}) "
+                          f"grasp={int(_e[6])} life={_e[0]-_e[7]:.1f}s", flush=True)
                 while _n_ev < len(_evs):
                     _te, _ke, _what, _iid = _evs[_n_ev]
                     _n_ev += 1
@@ -1226,6 +1239,15 @@ def main() -> None:
                         _bx, _by = 0.0, -0.3
                     _lp = _last_pos.get(_iid)
                     _lp = None if _lp is None else np.asarray(_lp)
+                    _it = u.stream_stats["items"].get(_iid)
+                    _pa = None
+                    _ps = None
+                    if _it is not None:
+                        try:
+                            _pa = _it["actor"].pose.p[0].cpu().numpy()
+                        except Exception:  # noqa: BLE001
+                            pass
+                        _ps = _it.get("p_spawn")
                     _att = getattr(_rn, "attached", False)
                     _gr = getattr(_rn, "grasping", False)
                     print(f"    [drop] t={u._t:5.1f} {_ke:10s} id={_iid:3d} "
@@ -1234,6 +1256,12 @@ def main() -> None:
                           f"last=({'-' if _lp is None else f'{_lp[0]:+.2f}'.strip()},"
                           f"{'-' if _lp is None else f'{_lp[1]:+.2f}'.strip()},"
                           f"{'-' if _lp is None else f'{_lp[2]:.2f}'.strip()}) "
+                          f"act=({'-' if _pa is None else f'{_pa[0]:+.2f}'.strip()},"
+                          f"{'-' if _pa is None else f'{_pa[1]:+.2f}'.strip()},"
+                          f"{'-' if _pa is None else f'{_pa[2]:.2f}'.strip()}) "
+                          f"spawn=({'-' if _ps is None else f'{_ps[0]:+.2f}'.strip()},"
+                          f"{'-' if _ps is None else f'{_ps[1]:+.2f}'.strip()},"
+                          f"{'-' if _ps is None else f'{_ps[2]:.2f}'.strip()}) "
                           f"bin=({_bx:+.2f},{_by:+.2f}) "
                           f"d_bin={float(np.hypot(_tcp[0]-_bx, _tcp[1]-_by))*100:4.1f}cm", flush=True)
             if args.trace_drop:
@@ -1304,6 +1332,9 @@ def main() -> None:
                    engaged=st["engaged"], engaged_delivered=st["engaged_delivered"],
                    engaged_success=(len(eng_done) / len(eng_res)) if eng_res else 0.0,
                    declined=st["declined"], handle_s=st["handle_s"],
+                   drop_grasped=st.get("drop_grasped", 0),
+                   drop_ungrasped=st.get("drop_ungrasped", 0),
+                   drop_off_belt=st.get("drop_off_belt", 0),
                    throughput_per_min=60.0 * st["delivered"] / max(u._t, 1e-6),
                    per_kind=st["per_kind"])
         runs.append(row)
@@ -1314,6 +1345,8 @@ def main() -> None:
               f"掉落 {row['dropped']} 漏过 {row['missed']} | 抓取过 {row['picked']} | "
               f"成功率 {row['success_rate']*100:.1f}% | 吞吐 {row['throughput_per_min']:.2f} 件/min "
               f"| 换目标 {row['switches']}"
+              + (f" | 掉落分类 未夹持{row.get('drop_ungrasped', 0)}/夹持{row.get('drop_grasped', 0)}"
+                 f" 带外{row.get('drop_off_belt', 0)}" if row["dropped"] else "")
               + (f" | 腕部确认 {getattr(ctrl.runner, 'wrist_ok_total', 0)}" if getattr(ctrl.runner, 'wrist_checker', None) else ""),
               flush=True)
         _f = 1.0 / args.control_freq

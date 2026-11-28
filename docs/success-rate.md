@@ -37,6 +37,16 @@
 \* 那次掉落 `grasp=0`、果实距 TCP 31 cm、已在带面外侧 —— 果子自己从带侧跌落，
 不是夹持/搬运掉落（`docs/throughput.md` §6.3）。按"送达/上料"口径仍记为掉落。
 
+### 1.0.0 掉落的口径（v1.117 起）
+
+掉落按**掉落瞬间是否夹住**分两类记录（`metrics.json` 每局的
+`drop_grasped` / `drop_ungrasped` / `drop_off_belt`）：
+
+- `drop_ungrasped`：从未夹住（实测为**被侧向挤下带边**，见 `docs/drop-reduction.md` §8）；
+- `drop_grasped`：夹住后丢失（真正的夹持/搬运掉落）。
+
+头号数字里报的"掉落 3"这类计数**仍按总数**（不因分类而减少），分类只用于判断该修哪一层。
+
 ### 1.0.1 密集来料（gap 0.6–1.2 m）配对：10 seeds
 
 压力测试（非主口径）。同一 seed 跑 `--no-carry-assist` 与 `--carry-assist`：

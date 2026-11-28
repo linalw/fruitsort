@@ -203,7 +203,9 @@ class FruitStreamEnv(FruitSortEnv):
         actor.set_angular_velocity(torch.zeros(1, 3))
         self._item_seq += 1
         item = dict(id=self._item_seq, kind=kind, actor=actor, scale=scale,
-                    t_spawn=self._t, picked=False)
+                    t_spawn=self._t, picked=False,
+                    # 生成位姿：用于诊断"掉落果实是不是本来就出现在带外"
+                    p_spawn=(float(x), float(y), float(z)))
         slot.update(live=True, item=item)
         self.stream_stats["items"][item["id"]] = item
         self.stream_stats["spawned"] += 1
@@ -230,6 +232,22 @@ class FruitStreamEnv(FruitSortEnv):
         if not (delivered or dropped or missed):
             return
         ev = "delivered" if delivered else ("dropped" if dropped else "missed")
+        if ev == "dropped":
+            # 掉落分类（不改变判定，只做记账）：掉落瞬间是否夹住、是否已离开带面
+            _g = bool(self.agent.is_grasping(actor)[0])
+            _off = abs(float(p[1])) > (self.conveyor_spec.width / 2 + 0.01)
+            self.stream_stats["drop_grasped" if _g else "drop_ungrasped"] = (
+                self.stream_stats.get("drop_grasped" if _g else "drop_ungrasped", 0) + 1)
+            if _off:
+                self.stream_stats["drop_off_belt"] = self.stream_stats.get("drop_off_belt", 0) + 1
+        # 诊断：记录**事件发生前**的真实刚体位姿（之后 actor 会被挪到停车位 z=-5）
+        self.stream_stats.setdefault("recycle_evts", []).append(
+            (float(self._t), kind, int(item["id"]), ev,
+             (float(p[0]), float(p[1]), float(p[2])),
+             item.get("p_spawn"),
+             bool(self.agent.is_grasping(actor)[0]),
+             float(item.get("t_spawn", -1.0))))
+
         self.stream_stats[ev] += 1
         self.stream_stats["per_kind"][kind][ev] += 1
         if item["picked"]:
