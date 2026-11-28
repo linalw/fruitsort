@@ -133,7 +133,9 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
   详见 [`docs/throughput.md`](docs/throughput.md) §6。
 - **掉落分类**（v1.117）：`metrics.json` 每局有 `drop_grasped/drop_ungrasped/drop_off_belt`。
   已查明非夹持掉落 = **果子被侧向挤下带边**（y 从 −0.05 漂到 −0.31，臂在带边外继续追），
-  不是生成/台账缺陷；物理正解是给带子加挡边（未做）。见 [`docs/drop-reduction.md`](docs/drop-reduction.md) §8。
+  不是生成/台账缺陷。**加高挡边试过并否决**：12 cm 挡边让侧掉归零，但送达 16/20→2/19，
+  因为料框在挡边外侧、机械臂必须横跨挡边搬运（带面 0.45+0.12 > 搬运高度 0.55）。
+  `FRUITSORT_BELT_RAIL` 可配（默认 0.06）。见 [`docs/drop-reduction.md`](docs/drop-reduction.md) §8–9。
 - **腕部相机兜底**（v1.101，默认开）：头部丢检时用 `hand_camera` 补 xy（z 沿用历史），
   配对 5 seeds：apple 87% → 94%、掉落 1 → 0；`--no-hand-fallback` 可关。
 - **深度修复**（v1.93）：`PerceptionPipeline` 默认开（邻域最小值填洞 + 掩码补洞），

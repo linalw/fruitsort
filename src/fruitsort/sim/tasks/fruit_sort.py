@@ -134,7 +134,12 @@ class FruitSortEnv(BaseEnv):
         super()._load_agent(options, sapien.Pose(p=list(self.robot_base), q=q))
 
     def _load_scene(self, options: dict):
-        self.conveyor_spec = ConveyorSpec(top_z=self.belt_top_z)
+        # 挡边高度可配：实测 6 cm 挡边挡不住"被机械臂挤着越过去"的果子
+        # （docs/drop-reduction.md §8）。FRUITSORT_BELT_RAIL=0.12 用于实验对照。
+        import os as _os
+        _rh = float(_os.environ.get("FRUITSORT_BELT_RAIL", "0.06"))
+        _rw = float(_os.environ.get("FRUITSORT_BELT_RAIL_W", "0.02"))
+        self.conveyor_spec = ConveyorSpec(top_z=self.belt_top_z, rail_height=_rh, rail_width=_rw)
         self.conveyor_actor = build_conveyor(self.scene, self.conveyor_spec)
         self.bins = build_bins(self.scene) if self.with_bins else {}
 
