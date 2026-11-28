@@ -91,6 +91,7 @@ class ActPureRunner:
                  close_timing: bool = False, close_timing_vdesc: float = 0.10,
                  close_timing_z: float = 0.030, close_timing_xy: float = 0.025,
                  close_timing_lat: float = 0.20,
+                 descend_servo: bool = False, descend_servo_off: float = 0.01,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -338,6 +339,14 @@ class ActPureRunner:
         # 累计量：reset() 会重建 self.stats（每次换目标都调用），计数器会被清零，
         # 所以跨目标的诊断必须放在不会被 reset 覆盖的属性里。
         self.ct_total = 0
+        # ---- 竖直伺服（--descend-servo，默认关）----
+        # 实测（docs/throughput.md §8）：phase 1 里 90%+ 时间手臂在果心上方 3–5 cm **悬停**，
+        # 下降量由模型逐 chunk 决定 → 六种"门/去抖/时机"修法全部无效。
+        # 这里改为**竖直位置伺服**：phase 1 未夹住时把竖直目标压到「果心 + off」，水平不动。
+        # 只向下（min），不会把已经在低处的目标抬起来。
+        self.descend_servo = bool(descend_servo)
+        self.descend_servo_off = float(descend_servo_off)
+        self.servo_steps = 0
         _n = max(1, self.debounce_chunks)
         self._db_phase = deque(maxlen=_n)
         self._db_grip = deque(maxlen=_n)
@@ -482,6 +491,7 @@ class ActPureRunner:
         if getattr(self, "debounce_chunks", 0) > 1:
             self._db_phase.clear()
             self._db_grip.clear()
+        self.servo_steps = 0
         self.force_target = None
         self.tac_hist = []
         self.gate_timer = 0
@@ -1241,6 +1251,17 @@ class ActPureRunner:
                 tgt[2] = max(tgt[2], float(fpos[2]) - 0.02)
                 if float(tcp[0] - fpos[0]) < -0.08 and self.phase_state == 1:
                     self.phase_state, self.same, self.phase_cand = 0, 0, 0
+
+        # ---- 竖直伺服：phase 1 且未闭爪 → 竖直目标压到「果心 + off」，水平仍归模型 ----
+        if (self.descend_servo and self.phase_state == 1 and not closed
+                and not grasping and self._commit_left == 0 and actor is not None):
+            try:
+                _fs = actor.pose.p[0].cpu().numpy().astype(np.float64)
+                tgt[2] = min(float(tgt[2]), float(_fs[2]) + self.descend_servo_off)
+                self.servo_steps += 1
+                self.stats["servo"] = self.stats.get("servo", 0) + 1
+            except Exception:  # noqa: BLE001
+                pass
 
         # ---- 闭爪承诺（见上面构造参数处的动机）----
         _cc = float(self.close_commit_map.get(kind, self.close_commit))
