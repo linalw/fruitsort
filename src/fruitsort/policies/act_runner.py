@@ -84,7 +84,7 @@ class ActPureRunner:
                  close_z_off_map: dict | None = None,
                  side_grasp_kinds: tuple = (), side_offset: float = 0.09,
                  side_carry: str = "scripted",
-                 intercept: float = 0.0,
+                 intercept: float = 0.0, zg_hold_chunks: int = 0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -307,6 +307,16 @@ class ActPureRunner:
         # intercept>0 时：模型一旦在空中想闭爪，就按"下探耗时 × 带速"预测落点，
         # 一次下探到预测点；只有 |x_err|<close_win_xy 且离果心 <close_win_z 才真正闭爪。
         self.intercept = float(intercept)
+        # 闭爪高度门触发后，把竖直目标**钉住**若干 chunk（--zg-hold-chunks）。
+        # 实测：phase 1 的 90%+ 时间不是"降不下来"，而是在果心上方 ~4 cm **来回震荡** ——
+        # 模型在空中闭爪 → 高度门压回并重设目标 → 下一个 chunk 模型又把 z 抬回去。
+        # 钉住竖直目标就能打断这个极限环（水平仍由模型决定）。
+        self.zg_hold_chunks = int(zg_hold_chunks)
+        self._zg_left = 0
+        self._zg_z = None
+        # 诊断：每次进入 phase 1 时的高度差（TCP − 果心），判断下探是不是竖直为主
+        self.p1_dz_in = []
+        self._prev_phase = 0
         self.close_win_xy = float(close_win_xy)
         self.close_win_z = float(close_win_z)
         # 抓取确认：只"碰到顶端"不算抓住（队列里会误判成 phase 2、随后水果滑走）
@@ -438,6 +448,8 @@ class ActPureRunner:
         self.open_streak = 0
         self.slip_slow = False
         self._slip_left = 0
+        self._zg_left = 0
+        self._zg_z = None
         self.force_target = None
         self.tac_hist = []
         self.gate_timer = 0
@@ -998,6 +1010,9 @@ class ActPureRunner:
                 tgt = np.array([fpos_g[0], fpos_g[1], fpos_g[2] + _off])
                 self.phase_state, self.same, self.phase_cand, self.commit = 1, 1, 1, 8
                 self.stats["zgate"] = self.stats.get("zgate", 0) + 1
+                if self.zg_hold_chunks > 0:
+                    self._zg_left = self.zg_hold_chunks
+                    self._zg_z = float(fpos_g[2]) + 0.004
         # 抓空复位（对应专家 close_steps=12）
         if closed and not grasping:
             self.closed_steps += 1
@@ -1166,6 +1181,24 @@ class ActPureRunner:
                           if float(tcp[2]) > float(fpos_c[2]) - 0.005 else float(tcp[2]))
                 grip = -1.0
                 self._commit_left -= 1
+        # 诊断：phase 1 入口高度差（每个 chunk 采样一次即可，入口值不变）
+        if self.phase_state == 1 and self._prev_phase != 1 and actor is not None:
+            try:
+                _fz0 = float(actor.pose.p[0, 2].cpu().numpy())
+                self.p1_dz_in.append(float(tcp[2]) - _fz0)
+            except Exception:  # noqa: BLE001
+                pass
+        self._prev_phase = self.phase_state
+
+        # ---- 高度门钉子：打断"闭爪被压回 → 下一 chunk 又抬起来"的极限环 ----
+        if self._zg_left > 0 and self._zg_z is not None:
+            if self.phase_state == 2 or grasping or closed:
+                self._zg_left = 0                     # 已进入下一段/已闭爪 → 解除
+            else:
+                tgt[2] = min(float(tgt[2]), float(self._zg_z))
+                self._zg_left -= 1
+                self.stats["zg_hold"] = self.stats.get("zg_hold", 0) + 1
+
         # 诊断用（不影响控制）：本步模型输出/目标点/状态
         self.last_dbg = dict(p4=np.array(p4, dtype=np.float64), tgt=np.array(tgt, dtype=np.float64),
                              tcp=np.array(tcp, dtype=np.float64), phase=int(self.phase_state),

@@ -685,6 +685,8 @@ def main() -> None:
     ap.add_argument("--lead-long-extent", type=float, default=0.11)
     ap.add_argument("--lead-long-taper", type=float, default=0.15,
                     help="前移在距果心该距离内线性衰减到 0（0=不衰减）")
+    ap.add_argument("--zg-hold-chunks", type=int, default=0,
+                    help="闭爪高度门触发后钉住竖直目标的 chunk 数（0=关，默认关）")
     ap.add_argument("--intercept", type=float, default=0.0,
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
@@ -926,6 +928,7 @@ def main() -> None:
                              yaw_hold_cap=args.yaw_hold_cap,
                              yaw_hold_fade=args.yaw_hold_fade,
                              intercept=args.intercept,
+                             zg_hold_chunks=args.zg_hold_chunks,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
@@ -1022,6 +1025,11 @@ def main() -> None:
             _v = _v.with_suffix(".mp4")
         buf = {"obs": [], "act": [], "oh": [], "wr": [], "roi": [], "kind": None, "id": None}
         _phase_t = {0: 0.0, 1: 0.0, 2: 0.0, -1: 0.0}   # 各相位耗时（秒）；-1=没有目标
+        # phase 1（下探）子状态：按**控制步**采样（act() 是按 chunk 调用的，不能在里面计数）
+        _p1 = {"steps": 0, "open": 0, "closed": 0, "commit": 0,
+               "starts": 0, "misses": 0, "zgate0": 0}
+        _p1_prev_closed = False
+        _p1_prev_cs = 0
         _prev_grip = 1.0
         _t_phase1 = None
         _t_phase2 = None
@@ -1037,6 +1045,27 @@ def main() -> None:
             _ph_now = (ctrl.runner.phase_state
                        if (ctrl.target is not None and ctrl.runner is not None) else -1)
             _phase_t[_ph_now] = _phase_t.get(_ph_now, 0.0) + 1.0 / args.control_freq
+            if _ph_now == 1:
+                _p1["steps"] += 1
+                _r = ctrl.runner
+                _cl = bool(getattr(_r, "closed", False))
+                if _cl:
+                    _p1["closed"] += 1
+                elif getattr(_r, "_commit_left", 0) > 0:
+                    _p1["commit"] += 1
+                else:
+                    _p1["open"] += 1
+                if _cl and not _p1_prev_closed:
+                    _p1["starts"] += 1
+                _p1_prev_closed = _cl
+                _cs = int(getattr(_r, "closed_steps", 0))
+                if _cs < _p1_prev_cs:            # 计数被清零 = 一次抓空复位
+                    _p1["misses"] += 1
+                _p1_prev_cs = _cs
+            elif _ph_now != 1:
+                _p1_prev_closed = False
+                _p1_prev_cs = 0
+            _p1["zgate0"] = int(getattr(ctrl.runner, "stats", {}).get("zgate", 0))
             it = ctrl.target
             if args.trace_items and it is not None and t % 20 == 0:
                 _tcp = u.agent.tcp_pose.p[0].cpu().numpy()
@@ -1254,6 +1283,15 @@ def main() -> None:
               f"| 换目标 {row['switches']}"
               + (f" | 腕部确认 {getattr(ctrl.runner, 'wrist_ok_total', 0)}" if getattr(ctrl.runner, 'wrist_checker', None) else ""),
               flush=True)
+        _f = 1.0 / args.control_freq
+        if _p1["steps"]:
+            print(f"      下探分解: 张开追件 {_p1['open']*_f:.1f}s · 闭爪等待 {_p1['closed']*_f:.1f}s"
+                  f" · 闭前下压 {_p1['commit']*_f:.1f}s | 闭爪次数 {_p1['starts']}"
+                  f" · 抓空复位 {_p1['misses']} · 高度门累计 {_p1['zgate0']}", flush=True)
+            _dz = getattr(ctrl.runner, "p1_dz_in", [])
+            if _dz:
+                print(f"      下探入口高度差: {len(_dz)} 次 · 均值 {sum(_dz)/len(_dz)*100:.1f} cm"
+                      f" · 最大 {max(_dz)*100:.1f} cm", flush=True)
         _busy = sum(r["handle_s"] for r in runs[-1:]) if runs else 0.0
         print(f"      相位耗时: 接近 {_phase_t.get(0,0):.1f}s · 下探 {_phase_t.get(1,0):.1f}s · "
               f"搬运 {_phase_t.get(2,0):.1f}s · 空闲 {_phase_t.get(-1,0):.1f}s"
