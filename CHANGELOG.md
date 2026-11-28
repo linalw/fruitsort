@@ -109,6 +109,32 @@
 - 迟滞 `--slip-hold 6`：配对 17/19 = 89.5%、**0 掉落**
 - 默认口径 20 seeds：61/70 = 87.1%（CI 77–93），3 掉落
 
+## [1.122.0] - 2026-11-28
+
+### Added — DAgger 式"继续下降 vs 现在闭爪"（`--descend-head`，默认关）
+- `stream_eval.py --dump-states`：转储**策略自跑**状态（obs49 + dz/dxy/phase/closed/grasp）；
+- `scripts/train_descend_head.py`：在这些状态上用专家几何规则标注
+  （dz≤1.2 cm 且 dxy≤3 cm → close；dz>1.2 cm 且 dxy≤6 cm → descend），
+  训互斥两分类（descend 3861 / close 55，val_acc **0.986**）；
+- `--descend-head`：`close` 闭爪；`descend` **强制张开 + 竖直压到果心** ——
+  这是与 v1.121（只补闭爪、被模型抖动打断）的关键差别。
+
+### Measured — 稀疏提升 + 掉落归零（首次正收益）
+| 协议 | 默认 v1.120 | descend-head |
+| --- | --- | --- |
+| 稀疏 20 seeds | 64/72 = 88.9%（CI 80–94），掉落 1，6.8 s | **67/73 = 91.8%（CI 83–96），掉落 0，7.4 s** |
+| 密集 10 seeds | 39/53 = 73.6%（CI 60–84），掉落 1 | 37/53 = 69.8%（CI 56–80），掉落 0 |
+
+- 稀疏 **+2.9 点**，CI 下界 80→83；密集 −3.8 点（CI 重叠，统计持平）；
+- **60 局零掉落**，包括此前无法消除的"未夹持/带外"类（根因是手指挤压，§8.3）；
+- 代价：单件 6.8→7.4 s（descend 会压到果心才闭爪）。
+
+### Note
+暂不设默认（objective 要求 default-off；密集略降 + 单件 +9%）。
+若设默认需把 `runs/descend-head/descend.pt` 移到 `assets/`（`runs/**/*.pt` 被 gitignore）。
+
+---
+
 ## [1.121.0] - 2026-11-28
 
 ### Added — 训练侧"学习式闭爪时机"（`--close-head`，默认关）

@@ -95,6 +95,7 @@ class ActPureRunner:
                  phase1_geom_xy: float = 0.0, phase1_geom_z: float = 0.0,
                  carry_z_floor: float = 0.0, approach_y_limit: float = 0.0,
                  close_head: str = "", close_head_thr: float = 0.5,
+                 descend_head: str = "",
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -375,6 +376,23 @@ class ActPureRunner:
         self.ch_total = 0
         self.ch_pmax = 0.0
         self.ch_pmin = 1.0
+        # ---- DAgger 式"继续下降 vs 现在闭爪"（--descend-head，默认关）----
+        # 在**策略自跑的状态**上标注训练（scripts/train_descend_head.py），互斥两分类：
+        # descend → 强制张开 + 竖直目标压到果心；close → 闭爪。与 v1.121 的"只补闭爪"不同，
+        # 这里的 descend 分支能打断模型的抖动闭爪，这是之前所有修法都没做到的一步。
+        self.descend_head = None
+        self.dh_total = {"descend": 0, "close": 0}
+        if descend_head:
+            try:
+                ck = torch.load(descend_head, map_location="cpu", weights_only=False)
+                from ..models.close_head import DescendHead
+                _m = DescendHead(int(ck.get("d_in", 49)))
+                _m.load_state_dict(ck["model"]); _m.eval()
+                self.descend_head = _m
+                self.dh_mu = np.asarray(ck["mu"], dtype=np.float32)
+                self.dh_sd = np.asarray(ck["sd"], dtype=np.float32)
+            except Exception as e:  # noqa: BLE001
+                print(f"[descend-head] 加载失败（已忽略，不启用）: {e}", flush=True)
         if close_head:
             try:
                 ck = torch.load(close_head, map_location="cpu", weights_only=False)
@@ -866,6 +884,27 @@ class ActPureRunner:
             self._db_grip.append(bool(closed))
             closed = self._vote(self._db_grip, bool(self.prev_closed))
             self.stats["deb_grip"] = self.stats.get("deb_grip", 0) + 1
+        # ---- DAgger 式两分类：descend（强制张开 + 压到果心）/ close（闭爪）----
+        if (self.descend_head is not None and not grasping and self.phase_state == 1
+                and actor is not None):
+            try:
+                _x = (sb49 - self.dh_mu) / self.dh_sd
+                with torch.no_grad():
+                    _lg = self.descend_head(torch.from_numpy(_x).float().unsqueeze(0))[0]
+                    _cls = int(_lg.argmax())
+                if _cls == 1:
+                    closed = True
+                    self.dh_total["close"] += 1
+                    self.stats["dh_close"] = self.stats.get("dh_close", 0) + 1
+                else:
+                    closed = False
+                    self.dh_total["descend"] += 1
+                    self.stats["dh_descend"] = self.stats.get("dh_descend", 0) + 1
+                    _fz = float(actor.pose.p[0, 2].cpu().numpy())
+                    tgt[2] = min(float(tgt[2]), _fz + 0.004)
+            except Exception:  # noqa: BLE001
+                pass
+
         # ---- 学习式闭爪时机：只加不抑制（phase 1 / 未夹住 / 未闭合）----
         if (self.close_head is not None and not grasping and self.phase_state == 1
                 and not closed):

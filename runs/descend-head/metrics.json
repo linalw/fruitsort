@@ -1,0 +1,12 @@
+{
+  "files": [
+    "/tmp/opencode/states/s60012.npz",
+    "/tmp/opencode/states/s60016.npz",
+    "/tmp/opencode/states/s60020.npz",
+    "/tmp/opencode/states/s60021.npz"
+  ],
+  "samples": 3916,
+  "descend": 3861,
+  "close": 55,
+  "val_acc": 0.9872286079182631
+}

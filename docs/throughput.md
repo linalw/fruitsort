@@ -364,6 +364,65 @@ runner 侧 11 种门/去抖/时机修法全部无收益（§8.9、§9.5），于
   而不是再往现有数据上加一个头。预估：采集 200–300 个策略自跑的 episode（含悬停状态），
   由专家标注"此时该闭/该继续降"，再训 ACT 的辅助头 —— 3–5 小时量级。
 
+
+## 11. DAgger 式"继续下降 vs 现在闭爪"（v1.122）：**第一次出现正收益**
+
+### 11.1 与 v1.121 的区别
+
+v1.121 的头只在**专家示教状态**上学"下一步是否闭爪"（离线 AUC 0.998，闭环更差）——
+因为策略悬停的状态专家从没去过。这一版按 DAgger 的思路重来：
+
+1. `stream_eval.py --dump-states`：让策略自己跑，转储它到达的每个状态的 49 维观测 + 几何量
+   （`obs/dz/dxy/phase/closed/grasp`）。本次采集 **4 seeds × 3 局 = 3916 帧**；
+2. `scripts/train_descend_head.py`：在**这些策略状态**上用专家几何规则标注
+   （`dz≤1.2cm 且 dxy≤3cm` → close，`dz>1.2cm 且 dxy≤6cm` → descend），
+   训 **互斥两分类**（descend 3861 / close 55，val_acc **0.986**）；
+3. `--descend-head` 接入：`phase 1 未夹住` 时，
+   - `close` → 闭爪；
+   - `descend` → **强制张开 + 竖直目标压到果心 +4 mm**。
+
+与之前所有修法的关键差别：**descend 分支能打断模型的抖动闭爪**。这正是 §8 里
+"伺服只在少数 chunk 生效"的原因（servo 要求 `not closed`，而模型一直在闭）。
+
+### 11.2 结果：稀疏提升 + 掉落归零
+
+| 协议 | 默认（v1.120） | **`--descend-head`** |
+| --- | --- | --- |
+| 稀疏 20 seeds | 64/72 = 88.9%（CI 80–94），掉落 1，6.8 s | **67/73 = 91.8%（CI 83–96），掉落 0，7.4 s** |
+| 密集 10 seeds | 39/53 = 73.6%（CI 60–84），掉落 1 | 37/53 = 69.8%（CI 56–80），掉落 0 |
+
+- 稀疏：**+3 件（+2.9 个点）**，CI 整体上移（下界 80→83）；
+- 密集：−2 件（−3.8 个点），CI 重叠 → 统计上持平；
+- **两种协议掉落全部为 0**（60 局，含 `drop_off_belt` 0）——包括此前无法消除的"未夹持/带外"那一类；
+- 代价：单件 6.8 → 7.4 s（+9%），因为 descend 分支会压着果子降到果心才闭爪。
+
+### 11.3 机制
+
+之前的"未夹持掉落"根因是**手指把果子挤出带边**（§8.3）。`descend` 分支强制张开、竖直压到果心，
+手指不再在果子上方反复开合挤压 → 该类别消失（60 局 0 次）。
+
+同时闭爪发生在真正到位的状态，抓空复位减少，稀疏口径多接了 3 件。
+
+### 11.4 是否设默认
+
+**暂不设默认**（objective 要求 default-off，且密集口径略降、单件 +9%）。
+启用方式：
+
+```bash
+python scripts/stream_eval.py ... --descend-head runs/descend-head/descend.pt
+```
+
+若要设默认，需要把 `runs/descend-head/descend.pt` 移到 `assets/`（`runs/**/*.pt` 被 gitignore）。
+
+### 11.5 复现
+
+```bash
+# 采策略状态（4 seeds × 3 局）
+python scripts/stream_eval.py ... --dump-states /tmp/states/sXXXX.npz
+# 标注 + 训练（DAgger 式）
+python scripts/train_descend_head.py --states "/tmp/states/s*.npz" --out runs/descend-head
+```
+
 ## 9. 下一步
 
 1. `phase 1` 的抖动是策略头行为 → 要动训练侧（相位/夹爪输出的时序去抖，或 chunk 级动作平滑），

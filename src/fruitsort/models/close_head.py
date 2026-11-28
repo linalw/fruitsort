@@ -20,3 +20,18 @@ class CloseHead(nn.Module):
 
     def forward(self, x):
         return self.net(x).squeeze(-1)
+
+
+class DescendHead(nn.Module):
+    """DAgger 式两分类：0=继续下降、1=现在闭爪（scripts/train_descend_head.py）。"""
+
+    def __init__(self, d_in: int = 49):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d_in, 64), nn.ReLU(),
+            nn.Linear(64, 64), nn.ReLU(),
+            nn.Linear(64, 2),
+        )
+
+    def forward(self, x):
+        return self.net(x)

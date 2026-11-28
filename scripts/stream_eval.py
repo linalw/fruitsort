@@ -715,6 +715,10 @@ def main() -> None:
                     help="接近段把指令目标 y 夹在 ±limit（m，0=关）；建议 0.16")
     ap.add_argument("--close-head", default="",
                     help="学习式闭爪时机分类头（runs/close-head/close.pt；空=关）")
+    ap.add_argument("--descend-head", default="",
+                    help="DAgger 式 descend/close 两分类头（runs/descend-head/descend.pt；空=关）")
+    ap.add_argument("--dump-states", default="",
+                    help="把策略自己到达的状态（obs49 + 几何）转储为 npz，供 DAgger 重标注")
     ap.add_argument("--close-head-thr", type=float, default=0.5,
                     help="闭爪头阈值（默认 0.5）")
     ap.add_argument("--intercept", type=float, default=0.0,
@@ -974,6 +978,7 @@ def main() -> None:
                              approach_y_limit=args.approach_y_limit,
                              close_head=args.close_head,
                              close_head_thr=args.close_head_thr,
+                             descend_head=args.descend_head,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
@@ -1073,6 +1078,7 @@ def main() -> None:
         # phase 1（下探）子状态：按**控制步**采样（act() 是按 chunk 调用的，不能在里面计数）
         _p1 = {"steps": 0, "open": 0, "closed": 0, "commit": 0,
                "starts": 0, "misses": 0, "zgate0": 0}
+        _st = {"obs": [], "dz": [], "dxy": [], "phase": [], "closed": [], "grasp": [], "kind": []}
         _p1_prev_closed = False
         _p1_prev_cs = 0
         _prev_grip = 1.0
@@ -1091,6 +1097,30 @@ def main() -> None:
             _ph_now = (ctrl.runner.phase_state
                        if (ctrl.target is not None and ctrl.runner is not None) else -1)
             _phase_t[_ph_now] = _phase_t.get(_ph_now, 0.0) + 1.0 / args.control_freq
+            if args.dump_states and ctrl.target is not None and ctrl.runner is not None:
+                try:
+                    _r = ctrl.runner
+                    _k = ctrl.target["kind"]
+                    _o = build_obs(u, _k, tactile=bool(getattr(_r, "tactile_dim", False)),
+                                   actors=getattr(_r, "actors", None))
+                    # 位置直接从 obs49 取（tcp=0:3；各类从 17 起每类 8 维），
+                    # 避免依赖 target["actor"] 的具体类型（SAPIEN Instance 没有 .pose）
+                    from fruitsort.learning.bc import ALL as _ALL
+                    _idx = list(_ALL).index(_k)
+                    _o = np.asarray(_o, dtype=np.float64)
+                    _tcp = _o[0:3]
+                    _fp = _o[17 + 8 * _idx: 17 + 8 * _idx + 3]
+                    _st["obs"].append(np.asarray(_o, dtype=np.float32))
+                    _st["dz"].append(float(_tcp[2] - _fp[2]))
+                    _st["dxy"].append(float(np.hypot(_tcp[0] - _fp[0], _tcp[1] - _fp[1])))
+                    _st["phase"].append(int(_ph_now))
+                    _st["closed"].append(int(getattr(_r, "closed", False)))
+                    _st["grasp"].append(int(bool(getattr(_r, "grasping", False))))
+                    _st["kind"].append(_k)
+                except Exception as _e:  # noqa: BLE001
+                    if not _st.get("_err"):
+                        _st["_err"] = True
+                        print(f"[dump-states] 跳过（首个错误）: {type(_e).__name__}: {_e}", flush=True)
             if _ph_now == 1:
                 _p1["steps"] += 1
                 _r = ctrl.runner
@@ -1371,6 +1401,8 @@ def main() -> None:
                   f" · 几何入相位 {getattr(ctrl.runner, 'geom_total', 0)} 次"
                   f" · y限幅 {getattr(ctrl.runner, 'ay_clamp_total', 0)}"
                   f" · 闭爪头 {getattr(ctrl.runner, 'ch_total', 0)}"
+                  f" · 下降头 {getattr(ctrl.runner, 'dh_total', {}).get('descend', 0)}"
+                  f"/{getattr(ctrl.runner, 'dh_total', {}).get('close', 0)}"
                   f" (p∈[{getattr(ctrl.runner,'ch_pmin',0):.3f},{getattr(ctrl.runner,'ch_pmax',0):.3f}])", flush=True)
             _cst = getattr(ctrl.runner, "stats", {})
             if _cst.get("ct_close"):
@@ -1426,6 +1458,16 @@ def main() -> None:
     if os.environ.get("FRUITSORT_AUDIT_GT"):
         from fruitsort.perception import audit as _gt_audit
         _gt_audit.report()
+    if args.dump_states and _st["obs"]:
+        np.savez_compressed(args.dump_states,
+                            obs=np.asarray(_st["obs"], dtype=np.float32),
+                            dz=np.asarray(_st["dz"], dtype=np.float32),
+                            dxy=np.asarray(_st["dxy"], dtype=np.float32),
+                            phase=np.asarray(_st["phase"], dtype=np.int8),
+                            closed=np.asarray(_st["closed"], dtype=np.int8),
+                            grasp=np.asarray(_st["grasp"], dtype=np.int8),
+                            kind=np.asarray(_st["kind"]))
+        print(f"状态转储 {len(_st['obs'])} 帧 -> {args.dump_states}")
     print(f"结果写入 {out}/metrics.json | 用时 {(time.time()-t0)/60:.1f} min")
     if _vw["w"] is not None:
         _vw["w"].release(); _vw["w"] = None
