@@ -88,6 +88,9 @@ class ActPureRunner:
                  side_carry: str = "scripted",
                  intercept: float = 0.0, zg_hold_chunks: int = 0,
                  debounce_chunks: int = 0, debounce_target: str = "both",
+                 close_timing: bool = False, close_timing_vdesc: float = 0.10,
+                 close_timing_z: float = 0.030, close_timing_xy: float = 0.025,
+                 close_timing_lat: float = 0.20,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -321,6 +324,20 @@ class ActPureRunner:
         # 这里对两者的**离散决策**做滑窗多数表决：没有足够票数就不改变当前状态。
         self.debounce_chunks = int(debounce_chunks)
         self.debounce_target = str(debounce_target)
+        # ---- 预测式闭爪时机（--close-timing，默认关）----
+        # v1.112/v1.113 的结论：抖动是"对移动目标的再决策"，后处理（去抖/钉子/门）全部无效。
+        # 这里换一种做法：**只在条件成立时补一个闭爪**（从不抑制模型闭爪），条件按"接触点"算：
+        #   t_go = dz / v_desc（到达果心高度所需时间）+ 夹爪闭合延迟
+        #   预测果心 xy(t_go) = fpos + fvel * t_go
+        #   要求 dz <= close_timing_z 且 |预测点 − TCP| <= close_timing_xy
+        self.close_timing = bool(close_timing)
+        self.close_timing_vdesc = float(close_timing_vdesc)
+        self.close_timing_z = float(close_timing_z)
+        self.close_timing_xy = float(close_timing_xy)
+        self.close_timing_lat = float(close_timing_lat)
+        # 累计量：reset() 会重建 self.stats（每次换目标都调用），计数器会被清零，
+        # 所以跨目标的诊断必须放在不会被 reset 覆盖的属性里。
+        self.ct_total = 0
         _n = max(1, self.debounce_chunks)
         self._db_phase = deque(maxlen=_n)
         self._db_grip = deque(maxlen=_n)
@@ -799,6 +816,24 @@ class ActPureRunner:
             self._db_grip.append(bool(closed))
             closed = self._vote(self._db_grip, bool(self.prev_closed))
             self.stats["deb_grip"] = self.stats.get("deb_grip", 0) + 1
+        # ---- 预测式闭爪：只加不抑制 ----
+        if (self.close_timing and not grasping and self.phase_state != 2
+                and actor is not None):
+            try:
+                _fp = actor.pose.p[0].cpu().numpy().astype(np.float64)
+                _fv = actor.linear_velocity[0].cpu().numpy().astype(np.float64)
+                _dz = float(tcp[2] - _fp[2])
+                _t = max(_dz, 0.0) / max(self.close_timing_vdesc, 1e-3) + self.close_timing_lat
+                _pred = _fp[:2] + _fv[:2] * _t
+                _gap = float(np.hypot(_pred[0] - tcp[0], _pred[1] - tcp[1]))
+                if (not closed) and _dz <= self.close_timing_z and _gap <= self.close_timing_xy:
+                    closed = True
+                    self.stats["ct_close"] = self.stats.get("ct_close", 0) + 1
+                    self.ct_total += 1
+                self.stats["ct_gap"] = min(self.stats.get("ct_gap", 1e9), _gap)
+                self.stats["ct_dz"] = min(self.stats.get("ct_dz", 1e9), _dz)
+            except Exception:  # noqa: BLE001
+                pass
         grip = self._close_cmd(kind) if closed else 1.0
         # ---- 力控闭合（--close-force-hold）：Fn 到位就冻结指令并锁存 ----
         if self.close_force_hold > 0 and closed and not grasping:

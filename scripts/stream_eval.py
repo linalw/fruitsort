@@ -691,6 +691,16 @@ def main() -> None:
                     help="相位/夹爪离散决策的滑窗多数表决长度（chunk 数，0=关）")
     ap.add_argument("--debounce-target", default="both", choices=["both", "phase", "grip"],
                     help="去抖作用在相位、夹爪还是两者（默认 both）")
+    ap.add_argument("--close-timing", action="store_true",
+                    help="预测式闭爪：用跟踪速度预测接触点，条件成立就补闭爪（只加不抑制）")
+    ap.add_argument("--close-timing-vdesc", type=float, default=0.10,
+                    help="预测用的下降速度（m/s）")
+    ap.add_argument("--close-timing-z", type=float, default=0.030,
+                    help="触发闭爪的最大高度差（m）")
+    ap.add_argument("--close-timing-xy", type=float, default=0.025,
+                    help="预测接触点的水平容差（m）")
+    ap.add_argument("--close-timing-lat", type=float, default=0.20,
+                    help="夹爪闭合延迟（s）")
     ap.add_argument("--intercept", type=float, default=0.0,
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
@@ -935,6 +945,11 @@ def main() -> None:
                              zg_hold_chunks=args.zg_hold_chunks,
                              debounce_chunks=args.debounce_chunks,
                              debounce_target=args.debounce_target,
+                             close_timing=args.close_timing,
+                             close_timing_vdesc=args.close_timing_vdesc,
+                             close_timing_z=args.close_timing_z,
+                             close_timing_xy=args.close_timing_xy,
+                             close_timing_lat=args.close_timing_lat,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
@@ -1293,7 +1308,13 @@ def main() -> None:
         if _p1["steps"]:
             print(f"      下探分解: 张开追件 {_p1['open']*_f:.1f}s · 闭爪等待 {_p1['closed']*_f:.1f}s"
                   f" · 闭前下压 {_p1['commit']*_f:.1f}s | 闭爪次数 {_p1['starts']}"
-                  f" · 抓空复位 {_p1['misses']} · 高度门累计 {_p1['zgate0']}", flush=True)
+                  f" · 抓空复位 {_p1['misses']} · 高度门累计 {_p1['zgate0']}"
+                  f" · 预测闭爪 {getattr(ctrl.runner, 'ct_total', 0)}", flush=True)
+            _cst = getattr(ctrl.runner, "stats", {})
+            if _cst.get("ct_close"):
+                print(f"      预测闭爪: 补闭 {_cst['ct_close']} 次 · 最近 gap "
+                      f"{_cst.get('ct_gap', 0)*100:.1f} cm · 最近 dz {_cst.get('ct_dz', 0)*100:.1f} cm",
+                      flush=True)
             _dz = getattr(ctrl.runner, "p1_dz_in", [])
             if _dz:
                 print(f"      下探入口高度差: {len(_dz)} 次 · 均值 {sum(_dz)/len(_dz)*100:.1f} cm"

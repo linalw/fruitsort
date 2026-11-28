@@ -121,8 +121,10 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
 - **下探段分解**（v1.112）：`stream_eval` 每局打印 `张开追件/闭爪等待/闭爪次数/抓空复位/入口高度差`。
   结论：闭爪确认只占 0.1–1.2 s，下探慢在**相位头/夹爪头抖动**（模型侧），runner 的门已到极限，
   三种修法（`--descend-min-step`/`--zg-hold-chunks`/`--grip-hyst`）实测均未采纳；
-  chunk 级去抖（`--debounce-chunks`，默认关）也实测更差（16/20 → 11/20），
-  原因是抖动是**对移动目标的再决策**、去抖只会让闭爪更晚。见 [`docs/throughput.md`](docs/throughput.md) §8。
+  chunk 级去抖（`--debounce-chunks`）16/20→11/20、预测式闭爪（`--close-timing`）16/20→13/20，
+  均更差：瓶颈是**手臂在果心上方悬停**，不是"闭爪早晚"这一维。见 [`docs/throughput.md`](docs/throughput.md) §8。
+  另：**同 seed 同配置的仿真是确定性的**（60016 连跑 3 次均 2/4），对照差异可归因配置；
+  但 `runner.reset()` 会重建 `stats`，跨目标计数要放在 `ct_total` 这类属性里。
 - **搬运保相位辅助**（v1.110，默认开）：`phase==2 且已夹住` 时只把目标**方向**转向料框，
   步长与相位切换仍归模型；稀疏口径单件 7.9→6.8 s、送达统计打平，
   密集口径 10 seeds 配对 58.0%→73.6%（单件 8.2→6.6 s，p=0.0097）。`--no-carry-assist` 关。
