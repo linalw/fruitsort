@@ -135,6 +135,7 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
   标注 descend/close 两分类（val_acc 0.986），`descend` 强制张开并把竖直压到果心 +4 mm。
   **当前主口径：稀疏 67/73 = 91.8%（CI 83–96），0 掉落，7.4 s/件**；密集 37/53 = 69.8%（CI 56–80），0 掉落。
   `--no-descend-head` 回到旧行为（88.9%）。`--descend-z-off` 试过 10 mm 更差，保持 4 mm。
+  v1.124 已在新默认下正式重跑 30 个 seed（与 flag 逐位一致）。`--dump-states` 现在连触觉一起转储。
   见 [`docs/throughput.md`](docs/throughput.md) §11。
 - **学习式闭爪时机**（v1.121，默认关）：`scripts/train_close_head.py` 用专家闭爪时刻训练（离线 AUC 0.998），
   `--close-head runs/close-head/close.pt` 接入；**闭环 9/20 vs 默认 10/20 更差** ——

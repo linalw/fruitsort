@@ -1083,7 +1083,8 @@ def main() -> None:
         # phase 1（下探）子状态：按**控制步**采样（act() 是按 chunk 调用的，不能在里面计数）
         _p1 = {"steps": 0, "open": 0, "closed": 0, "commit": 0,
                "starts": 0, "misses": 0, "zgate0": 0}
-        _st = {"obs": [], "dz": [], "dxy": [], "phase": [], "closed": [], "grasp": [], "kind": []}
+        _st = {"obs": [], "dz": [], "dxy": [], "phase": [], "closed": [], "grasp": [],
+               "kind": [], "tac": []}
         _p1_prev_closed = False
         _p1_prev_cs = 0
         _prev_grip = 1.0
@@ -1122,6 +1123,12 @@ def main() -> None:
                     _st["closed"].append(int(getattr(_r, "closed", False)))
                     _st["grasp"].append(int(bool(getattr(_r, "grasping", False))))
                     _st["kind"].append(_k)
+                    # 触觉（16 维）：descend 头并联触觉用；与训练/推理同一 build_tactile
+                    try:
+                        from fruitsort.learning.bc import build_tactile as _bt
+                        _st["tac"].append(np.asarray(_bt(u, _k), dtype=np.float32))
+                    except Exception:  # noqa: BLE001
+                        _st["tac"].append(np.zeros(16, dtype=np.float32))
                 except Exception as _e:  # noqa: BLE001
                     if not _st.get("_err"):
                         _st["_err"] = True
@@ -1471,7 +1478,8 @@ def main() -> None:
                             phase=np.asarray(_st["phase"], dtype=np.int8),
                             closed=np.asarray(_st["closed"], dtype=np.int8),
                             grasp=np.asarray(_st["grasp"], dtype=np.int8),
-                            kind=np.asarray(_st["kind"]))
+                            kind=np.asarray(_st["kind"]),
+                            tac=np.asarray(_st["tac"], dtype=np.float32))
         print(f"状态转储 {len(_st['obs'])} 帧 -> {args.dump_states}")
     print(f"结果写入 {out}/metrics.json | 用时 {(time.time()-t0)/60:.1f} min")
     if _vw["w"] is not None:
