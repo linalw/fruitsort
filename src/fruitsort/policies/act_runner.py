@@ -92,6 +92,7 @@ class ActPureRunner:
                  close_timing_z: float = 0.030, close_timing_xy: float = 0.025,
                  close_timing_lat: float = 0.20,
                  descend_servo: bool = False, descend_servo_off: float = 0.01,
+                 phase1_geom_xy: float = 0.0, phase1_geom_z: float = 0.0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -347,6 +348,13 @@ class ActPureRunner:
         self.descend_servo = bool(descend_servo)
         self.descend_servo_off = float(descend_servo_off)
         self.servo_steps = 0
+        # ---- 几何进入判据（--phase1-geom-xy / --phase1-geom-z，默认 0=关）----
+        # §8.7 的发现：悬停发生在 phase 0↔1 的**交替**里（伺服只在少数 chunk 生效）。
+        # 这里把"进入下探"的判据从相位头改成**几何**：果心在夹爪正下方 ±xy 且高度差 <z 时
+        # 强制 phase=1（并给一个短承诺，避免下一步又被翻回 0）。
+        self.phase1_geom_xy = float(phase1_geom_xy)
+        self.phase1_geom_z = float(phase1_geom_z)
+        self.geom_total = 0
         _n = max(1, self.debounce_chunks)
         self._db_phase = deque(maxlen=_n)
         self._db_grip = deque(maxlen=_n)
@@ -1002,6 +1010,22 @@ class ActPureRunner:
                     self.phase_cand, self.same = p_cls, 0
                 if self.same >= 1:
                     self.phase_state = self.phase_cand
+
+        # ---- 几何进入判据：果心在夹爪正下方且高度差够小 → 强制进入下探 ----
+        if (self.phase1_geom_xy > 0 and self.phase1_geom_z > 0
+                and not grasping and self.phase_state != 2 and actor is not None):
+            try:
+                _fg = actor.pose.p[0].cpu().numpy().astype(np.float64)
+                _gxy = float(np.hypot(tcp[0] - _fg[0], tcp[1] - _fg[1]))
+                _gdz = float(tcp[2] - _fg[2])
+                if _gxy <= self.phase1_geom_xy and 0.0 <= _gdz <= self.phase1_geom_z:
+                    if self.phase_state != 1:
+                        self.geom_total += 1
+                        self.stats["p1_geom"] = self.stats.get("p1_geom", 0) + 1
+                    self.phase_state, self.same, self.phase_cand = 1, 1, 1
+                    self.commit = max(self.commit, self.descend_commit)
+            except Exception:  # noqa: BLE001
+                pass
 
         # ---- 独立掉落预测器（触觉历史 5 帧 + 几何）----
         if self.drop_net is not None and actor is not None:

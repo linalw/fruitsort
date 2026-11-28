@@ -705,6 +705,10 @@ def main() -> None:
                     help="phase 1 未夹住时竖直伺服到果心+off（只向下；水平仍归模型）")
     ap.add_argument("--descend-servo-off", type=float, default=0.01,
                     help="伺服目标：果心 + 该高度（m，默认 0.01）")
+    ap.add_argument("--phase1-geom-xy", type=float, default=0.0,
+                    help="几何进入下探：水平容差（m，0=关，建议 0.03）")
+    ap.add_argument("--phase1-geom-z", type=float, default=0.0,
+                    help="几何进入下探：最大高度差（m，0=关，建议 0.08）")
     ap.add_argument("--intercept", type=float, default=0.0,
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
@@ -956,6 +960,8 @@ def main() -> None:
                              close_timing_lat=args.close_timing_lat,
                              descend_servo=args.descend_servo,
                              descend_servo_off=args.descend_servo_off,
+                             phase1_geom_xy=args.phase1_geom_xy,
+                             phase1_geom_z=args.phase1_geom_z,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
@@ -1316,7 +1322,8 @@ def main() -> None:
                   f" · 闭前下压 {_p1['commit']*_f:.1f}s | 闭爪次数 {_p1['starts']}"
                   f" · 抓空复位 {_p1['misses']} · 高度门累计 {_p1['zgate0']}"
                   f" · 预测闭爪 {getattr(ctrl.runner, 'ct_total', 0)}"
-                  f" · 伺服 {getattr(ctrl.runner, 'servo_steps', 0)} 步", flush=True)
+                  f" · 伺服 {getattr(ctrl.runner, 'servo_steps', 0)} 步"
+                  f" · 几何入相位 {getattr(ctrl.runner, 'geom_total', 0)} 次", flush=True)
             _cst = getattr(ctrl.runner, "stats", {})
             if _cst.get("ct_close"):
                 print(f"      预测闭爪: 补闭 {_cst['ct_close']} 次 · 最近 gap "
