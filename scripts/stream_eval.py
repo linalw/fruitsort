@@ -703,6 +703,12 @@ def main() -> None:
                     help="滑移时的搬运步长（米/步）")
     ap.add_argument("--slip-hold", type=int, default=6,
                     help="滑移解除后再保持慢速多少步（迟滞，避免快慢抖动）")
+    ap.add_argument("--carry-assist", action="store_true", default=True,
+                    help="搬运段只把目标方向转向料框（不动相位机/速度）；v1.110 起默认开")
+    ap.add_argument("--no-carry-assist", dest="carry_assist", action="store_false",
+                    help="关掉搬运辅助（对照实验用）")
+    ap.add_argument("--carry-assist-min", type=float, default=0.0,
+                    help="配合 --carry-assist：步长下限（米），>0 等于给搬运提速")
     ap.add_argument("--close-force-hold", type=float, default=0.0,
                     help="力控闭合：闭爪时指端力到 N 就冻结（标定 4 N ≈ 58.7 mm 开口）")
     ap.add_argument("--contact-force-th", type=float, default=0.2,
@@ -887,6 +893,8 @@ def main() -> None:
                              descend_commit=args.descend_commit,
                              wrist_tol=args.wrist_tol,
                              contact_force_th=args.contact_force_th,
+                             carry_assist=args.carry_assist,
+                             carry_assist_min=args.carry_assist_min,
                              close_force_hold=args.close_force_hold,
                              slip_guard=args.slip_guard, slip_thr=args.slip_thr,
                              slip_slow_step=args.slip_slow_step, slip_hold=args.slip_hold,

@@ -67,6 +67,7 @@ class ActPureRunner:
                  carry_max_step: float = 0.0, slip_guard: bool = False,
                  slip_thr: float = 0.05, slip_slow_step: float = 0.012,
                  slip_hold: int = 6,
+                 carry_assist: bool = False, carry_assist_min: float = 0.0,
                  regrasp: bool = False, regrasp_thr: float = 0.6,
                  regrasp_depth: float = 0.02, drop_ckpt: str = "",
                  grasp_gate: bool = False, gate_min_force: float = 2.0,
@@ -158,6 +159,10 @@ class ActPureRunner:
         # 自适应限速的"拖尾"：rho 掉回阈值以下后再保持 N 步慢速，避免在阈值附近抖动
         # （一步快一步慢会把果子晃松，正好是要避免的）
         self.slip_hold = int(slip_hold)
+        # 搬运段"保相位"辅助：**不动相位机、不改模型的速度指令**，只把目标点方向
+        # 旋转到"朝向料框中心"。carry_assist_min>0 时再给一个步长下限（相当于提速）。
+        self.carry_assist = bool(carry_assist)
+        self.carry_assist_min = float(carry_assist_min)
         self._slip_left = 0
         # 触觉预测驱动「闭爪前重抓」：滑移头认为这一抓会滑 → 先开爪、下沉 2cm、再闭
         self.regrasp = regrasp
@@ -1107,6 +1112,24 @@ class ActPureRunner:
             tgt = np.array([float(bx), float(by), 0.55], dtype=np.float64)
             grip = -1.0
             self.stats["suction_carry"] = self.stats.get("suction_carry", 0) + 1
+
+        # ---- 搬运段保相位辅助：只改方向，不改相位/速度 ----
+        if self.carry_assist and self.phase_state == 2 and grasping and actor is not None:
+            try:
+                from fruitsort.sim.conveyor import BIN_LAYOUT as _BLa
+                _bx, _by = _BLa[kind]
+            except Exception:  # noqa: BLE001
+                _bx, _by = 0.0, -0.30
+            _dv = np.array([float(_bx) - float(tcp[0]), float(_by) - float(tcp[1])])
+            _dist = float(np.linalg.norm(_dv))
+            if _dist > 0.04:
+                _dir = _dv / _dist
+                _step = float(np.linalg.norm((tgt - tcp)[:2]))
+                _step = max(_step, self.carry_assist_min)
+                _step = min(_step, max(self.carry_assist_min, 0.04))
+                tgt = np.array([float(tcp[0]) + _dir[0] * _step,
+                                float(tcp[1]) + _dir[1] * _step, float(tgt[2])])
+                self.stats["carry_assist"] = self.stats.get("carry_assist", 0) + 1
 
         err = tgt - tcp
         d = float(np.linalg.norm(err))
