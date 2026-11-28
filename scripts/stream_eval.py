@@ -687,6 +687,10 @@ def main() -> None:
                     help="前移在距果心该距离内线性衰减到 0（0=不衰减）")
     ap.add_argument("--zg-hold-chunks", type=int, default=0,
                     help="闭爪高度门触发后钉住竖直目标的 chunk 数（0=关，默认关）")
+    ap.add_argument("--debounce-chunks", type=int, default=0,
+                    help="相位/夹爪离散决策的滑窗多数表决长度（chunk 数，0=关）")
+    ap.add_argument("--debounce-target", default="both", choices=["both", "phase", "grip"],
+                    help="去抖作用在相位、夹爪还是两者（默认 both）")
     ap.add_argument("--intercept", type=float, default=0.0,
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
@@ -929,6 +933,8 @@ def main() -> None:
                              yaw_hold_fade=args.yaw_hold_fade,
                              intercept=args.intercept,
                              zg_hold_chunks=args.zg_hold_chunks,
+                             debounce_chunks=args.debounce_chunks,
+                             debounce_target=args.debounce_target,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),

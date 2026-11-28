@@ -15,6 +15,8 @@
 """
 from __future__ import annotations
 
+from collections import deque
+
 from pathlib import Path
 
 import cv2
@@ -85,6 +87,7 @@ class ActPureRunner:
                  side_grasp_kinds: tuple = (), side_offset: float = 0.09,
                  side_carry: str = "scripted",
                  intercept: float = 0.0, zg_hold_chunks: int = 0,
+                 debounce_chunks: int = 0, debounce_target: str = "both",
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -312,6 +315,15 @@ class ActPureRunner:
         # 模型在空中闭爪 → 高度门压回并重设目标 → 下一个 chunk 模型又把 z 抬回去。
         # 钉住竖直目标就能打断这个极限环（水平仍由模型决定）。
         self.zg_hold_chunks = int(zg_hold_chunks)
+        # ---- chunk 级去抖（--debounce-chunks N）----
+        # 实测（docs/throughput.md §8）：下探 90%+ 时间在"张开"态，一局反复进出 phase 1
+        # 7–46 次、闭爪 2–34 次 —— 相位头与夹爪头**逐 chunk 翻**是根因。
+        # 这里对两者的**离散决策**做滑窗多数表决：没有足够票数就不改变当前状态。
+        self.debounce_chunks = int(debounce_chunks)
+        self.debounce_target = str(debounce_target)
+        _n = max(1, self.debounce_chunks)
+        self._db_phase = deque(maxlen=_n)
+        self._db_grip = deque(maxlen=_n)
         self._zg_left = 0
         self._zg_z = None
         # 诊断：每次进入 phase 1 时的高度差（TCP − 果心），判断下探是不是竖直为主
@@ -450,6 +462,9 @@ class ActPureRunner:
         self._slip_left = 0
         self._zg_left = 0
         self._zg_z = None
+        if getattr(self, "debounce_chunks", 0) > 1:
+            self._db_phase.clear()
+            self._db_grip.clear()
         self.force_target = None
         self.tac_hist = []
         self.gate_timer = 0
@@ -485,6 +500,25 @@ class ActPureRunner:
                       "gate_fail": 0, "retries": 0, "fL": 0.0, "fR": 0.0,
                       "side_push": 0, "grip_w": 0.0}
         self.grasping = False
+
+    @staticmethod
+    def _vote(buf, current):
+        """滑窗多数表决：票数过半才继续保持，否则切到出现最多的值（平票维持当前）。"""
+        n = len(buf)
+        if n == 0:
+            return current
+        if isinstance(current, bool):
+            cur = bool(current)
+            same = sum(1 for v in buf if bool(v) == cur)
+        else:
+            cur = int(current)
+            same = sum(1 for v in buf if int(v) == cur)
+        if same * 2 >= n:
+            return cur
+        vals = {}
+        for v in buf:
+            vals[v] = vals.get(v, 0) + 1
+        return max(vals, key=lambda k: vals[k])
 
     # ------------------------------------------------------------------ #
     def act(self, obs) -> np.ndarray:
@@ -760,6 +794,11 @@ class ActPureRunner:
             self.stats["grip_hold"] = self.stats.get("grip_hold", 0) + int(abs(glogit) < self.grip_hyst)
         else:
             closed = bool(glogit > 0)
+        if (self.debounce_chunks > 1 and not grasping
+                and self.debounce_target in ("both", "grip")):
+            self._db_grip.append(bool(closed))
+            closed = self._vote(self._db_grip, bool(self.prev_closed))
+            self.stats["deb_grip"] = self.stats.get("deb_grip", 0) + 1
         grip = self._close_cmd(kind) if closed else 1.0
         # ---- 力控闭合（--close-force-hold）：Fn 到位就冻结指令并锁存 ----
         if self.close_force_hold > 0 and closed and not grasping:
@@ -901,6 +940,10 @@ class ActPureRunner:
             p_cls = int(logits[0, 0].argmax())
             if p_cls == 2:
                 p_cls = 1
+            if self.debounce_chunks > 1 and self.debounce_target in ("both", "phase"):
+                self._db_phase.append(p_cls)
+                p_cls = self._vote(self._db_phase, self.phase_state)
+                self.stats["deb_phase"] = self.stats.get("deb_phase", 0) + 1
             if p_cls == 1:
                 self.phase_cand, self.same = 1, 1
                 self.commit = self.descend_commit
