@@ -94,6 +94,7 @@ class ActPureRunner:
                  descend_servo: bool = False, descend_servo_off: float = 0.01,
                  phase1_geom_xy: float = 0.0, phase1_geom_z: float = 0.0,
                  carry_z_floor: float = 0.0, approach_y_limit: float = 0.0,
+                 close_head: str = "", close_head_thr: float = 0.5,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -364,6 +365,27 @@ class ActPureRunner:
         # 而挡边/搬运高度两个几何自由度都修不掉。宁可漏抓，也别把它推下去。
         self.approach_y_limit = float(approach_y_limit)
         self.ay_clamp_total = 0
+        # ---- 学习式闭爪时机（--close-head，默认关）----
+        # 训练侧显式监督（scripts/train_close_head.py）：标签=专家在下一两帧内闭爪。
+        # 推理时只**补**闭爪（不抑制模型），接入口与 --close-timing 相同，判据来自示教。
+        self.close_head = None
+        self.close_head_thr = float(close_head_thr)
+        self.close_head_mu = None
+        self.close_head_sd = None
+        self.ch_total = 0
+        self.ch_pmax = 0.0
+        self.ch_pmin = 1.0
+        if close_head:
+            try:
+                ck = torch.load(close_head, map_location="cpu", weights_only=False)
+                from ..models.close_head import CloseHead
+                _m = CloseHead(int(ck.get("d_in", 49)))
+                _m.load_state_dict(ck["model"]); _m.eval()
+                self.close_head = _m
+                self.close_head_mu = np.asarray(ck["mu"], dtype=np.float32)
+                self.close_head_sd = np.asarray(ck["sd"], dtype=np.float32)
+            except Exception as e:  # noqa: BLE001
+                print(f"[close-head] 加载失败（已忽略，不启用）: {e}", flush=True)
         _n = max(1, self.debounce_chunks)
         self._db_phase = deque(maxlen=_n)
         self._db_grip = deque(maxlen=_n)
@@ -725,6 +747,7 @@ class ActPureRunner:
             self.roi_buf.append(self.oh[-1])
         self.wr.append(prep(sd["hand_camera"]["rgb"][0].cpu().numpy(), cfg.img_size))
         sb = build_obs(u, kind, tactile=bool(self.tactile_dim), actors=self.actors)
+        sb49 = np.array(sb, dtype=np.float32)   # 训练侧同一接口（close head 用）
         if self.use_phase:
             onehot = np.zeros(3, dtype=np.float32)
             onehot[self.phase_state if self.phase_fb else 0] = 1.0
@@ -843,6 +866,23 @@ class ActPureRunner:
             self._db_grip.append(bool(closed))
             closed = self._vote(self._db_grip, bool(self.prev_closed))
             self.stats["deb_grip"] = self.stats.get("deb_grip", 0) + 1
+        # ---- 学习式闭爪时机：只加不抑制（phase 1 / 未夹住 / 未闭合）----
+        if (self.close_head is not None and not grasping and self.phase_state == 1
+                and not closed):
+            try:
+                with torch.no_grad():
+                    _x = (sb49 - self.close_head_mu) / self.close_head_sd
+                    _p = float(torch.sigmoid(self.close_head(
+                        torch.from_numpy(_x).float().unsqueeze(0))))
+                self.ch_pmax = max(self.ch_pmax, _p)
+                self.ch_pmin = min(self.ch_pmin, _p)
+                if _p >= self.close_head_thr:
+                    closed = True
+                    self.ch_total += 1
+                    self.stats["ch_close"] = self.stats.get("ch_close", 0) + 1
+            except Exception:  # noqa: BLE001
+                pass
+
         # ---- 预测式闭爪：只加不抑制 ----
         if (self.close_timing and not grasping and self.phase_state != 2
                 and actor is not None):

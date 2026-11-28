@@ -131,6 +131,9 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
   步长与相位切换仍归模型；稀疏口径单件 7.9→6.8 s、送达统计打平，
   密集口径 10 seeds 配对 58.0%→73.6%（单件 8.2→6.6 s，p=0.0097）。`--no-carry-assist` 关。
   详见 [`docs/throughput.md`](docs/throughput.md) §6。
+- **学习式闭爪时机**（v1.121，默认关）：`scripts/train_close_head.py` 用专家闭爪时刻训练（离线 AUC 0.998），
+  `--close-head runs/close-head/close.pt` 接入；**闭环 9/20 vs 默认 10/20 更差** ——
+  原因是策略悬停的状态专家没去过（分布外），头在错的状态上给高置信度闭爪。见 [`docs/throughput.md`](docs/throughput.md) §10。
 - **掉落分类**（v1.117）：`metrics.json` 每局有 `drop_grasped/drop_ungrasped/drop_off_belt`。
   已查明非夹持掉落 = **果子被侧向挤下带边**（y 从 −0.05 漂到 −0.31，臂在带边外继续追），
   不是生成/台账缺陷。**加高挡边试过并否决**：12 cm 挡边让侧掉归零，但送达 16/20→2/19，

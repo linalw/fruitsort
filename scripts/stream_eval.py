@@ -713,6 +713,10 @@ def main() -> None:
                     help="搬运高度下限（m，0=关）；配高挡边用，建议 0.62")
     ap.add_argument("--approach-y-limit", type=float, default=0.0,
                     help="接近段把指令目标 y 夹在 ±limit（m，0=关）；建议 0.16")
+    ap.add_argument("--close-head", default="",
+                    help="学习式闭爪时机分类头（runs/close-head/close.pt；空=关）")
+    ap.add_argument("--close-head-thr", type=float, default=0.5,
+                    help="闭爪头阈值（默认 0.5）")
     ap.add_argument("--intercept", type=float, default=0.0,
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
@@ -968,6 +972,8 @@ def main() -> None:
                              phase1_geom_z=args.phase1_geom_z,
                              carry_z_floor=args.carry_z_floor,
                              approach_y_limit=args.approach_y_limit,
+                             close_head=args.close_head,
+                             close_head_thr=args.close_head_thr,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
@@ -1363,7 +1369,9 @@ def main() -> None:
                   f" · 预测闭爪 {getattr(ctrl.runner, 'ct_total', 0)}"
                   f" · 伺服 {getattr(ctrl.runner, 'servo_steps', 0)} 步"
                   f" · 几何入相位 {getattr(ctrl.runner, 'geom_total', 0)} 次"
-                  f" · y限幅 {getattr(ctrl.runner, 'ay_clamp_total', 0)}", flush=True)
+                  f" · y限幅 {getattr(ctrl.runner, 'ay_clamp_total', 0)}"
+                  f" · 闭爪头 {getattr(ctrl.runner, 'ch_total', 0)}"
+                  f" (p∈[{getattr(ctrl.runner,'ch_pmin',0):.3f},{getattr(ctrl.runner,'ch_pmax',0):.3f}])", flush=True)
             _cst = getattr(ctrl.runner, "stats", {})
             if _cst.get("ct_close"):
                 print(f"      预测闭爪: 补闭 {_cst['ct_close']} 次 · 最近 gap "
