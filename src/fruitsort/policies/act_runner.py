@@ -93,6 +93,7 @@ class ActPureRunner:
                  close_timing_lat: float = 0.20,
                  descend_servo: bool = False, descend_servo_off: float = 0.01,
                  phase1_geom_xy: float = 0.0, phase1_geom_z: float = 0.0,
+                 carry_z_floor: float = 0.0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -355,6 +356,9 @@ class ActPureRunner:
         self.phase1_geom_xy = float(phase1_geom_xy)
         self.phase1_geom_z = float(phase1_geom_z)
         self.geom_total = 0
+        # 搬运高度下限（--carry-z-floor / FRUITSORT_CARRY_Z）：phase 2 且已夹住时把竖直目标
+        # 抬到至少该高度。用于"高挡边"方案：带面 0.45 + 挡边 0.12 = 顶 0.57，果实中心需 >0.58。
+        self.carry_z_floor = float(carry_z_floor)
         _n = max(1, self.debounce_chunks)
         self._db_phase = deque(maxlen=_n)
         self._db_grip = deque(maxlen=_n)
@@ -1312,6 +1316,11 @@ class ActPureRunner:
             except Exception:  # noqa: BLE001
                 pass
         self._prev_phase = self.phase_state
+
+        # ---- 搬运高度下限：抬起越过挡边（只抬不压）----
+        if self.carry_z_floor > 0 and self.phase_state == 2 and grasping:
+            tgt[2] = max(float(tgt[2]), self.carry_z_floor)
+            self.stats["carry_z"] = self.stats.get("carry_z", 0) + 1
 
         # ---- 高度门钉子：打断"闭爪被压回 → 下一 chunk 又抬起来"的极限环 ----
         if self._zg_left > 0 and self._zg_z is not None:

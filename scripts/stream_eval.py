@@ -709,6 +709,8 @@ def main() -> None:
                     help="几何进入下探：水平容差（m，0=关，建议 0.03）")
     ap.add_argument("--phase1-geom-z", type=float, default=0.0,
                     help="几何进入下探：最大高度差（m，0=关，建议 0.08）")
+    ap.add_argument("--carry-z-floor", type=float, default=0.0,
+                    help="搬运高度下限（m，0=关）；配高挡边用，建议 0.62")
     ap.add_argument("--intercept", type=float, default=0.0,
                     help="拦截式下探的垂直速度（m/s，0=关闭）：按'下探耗时×带速'预测落点")
     ap.add_argument("--close-win-xy", type=float, default=0.03)
@@ -962,6 +964,7 @@ def main() -> None:
                              descend_servo_off=args.descend_servo_off,
                              phase1_geom_xy=args.phase1_geom_xy,
                              phase1_geom_z=args.phase1_geom_z,
+                             carry_z_floor=args.carry_z_floor,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
