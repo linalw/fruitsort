@@ -1040,6 +1040,9 @@ def main() -> None:
     runs = []
     t0 = time.time()
     _vw = {"w": None}          # 跨局共用：每局重建会截断文件（实测 3×90s 只剩 90s）
+    # 状态转储容器放在 episode 循环之外：--dump-states 要累积**所有局**
+    _st = {"obs": [], "dz": [], "dxy": [], "phase": [], "closed": [], "grasp": [],
+           "kind": [], "tac": []}
     for ep in range(args.episodes):
         obs, _ = env.reset(seed=args.seed + ep)
         u = env.unwrapped
@@ -1083,8 +1086,6 @@ def main() -> None:
         # phase 1（下探）子状态：按**控制步**采样（act() 是按 chunk 调用的，不能在里面计数）
         _p1 = {"steps": 0, "open": 0, "closed": 0, "commit": 0,
                "starts": 0, "misses": 0, "zgate0": 0}
-        _st = {"obs": [], "dz": [], "dxy": [], "phase": [], "closed": [], "grasp": [],
-               "kind": [], "tac": []}
         _p1_prev_closed = False
         _p1_prev_cs = 0
         _prev_grip = 1.0

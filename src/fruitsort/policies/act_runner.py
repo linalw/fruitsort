@@ -394,6 +394,8 @@ class ActPureRunner:
                 self.descend_head = _m
                 self.dh_mu = np.asarray(ck["mu"], dtype=np.float32)
                 self.dh_sd = np.asarray(ck["sd"], dtype=np.float32)
+                # d_in>49 表示训练时并联了触觉（obs49 + tac9）：推理侧同样拼接
+                self.dh_use_tac = int(ck.get("d_in", 49)) > 49
             except Exception as e:  # noqa: BLE001
                 print(f"[descend-head] 加载失败（已忽略，不启用）: {e}", flush=True)
         if close_head:
@@ -891,7 +893,12 @@ class ActPureRunner:
         if (self.descend_head is not None and not grasping and self.phase_state == 1
                 and actor is not None):
             try:
-                _x = (sb49 - self.dh_mu) / self.dh_sd
+                _inp = sb49
+                if getattr(self, "dh_use_tac", False):
+                    from ..learning.bc import build_tactile as _bt
+                    _inp = np.concatenate([sb49, np.asarray(_bt(u, kind),
+                                                             dtype=np.float32)])
+                _x = (_inp - self.dh_mu) / self.dh_sd
                 with torch.no_grad():
                     _lg = self.descend_head(torch.from_numpy(_x).float().unsqueeze(0))[0]
                     _cls = int(_lg.argmax())

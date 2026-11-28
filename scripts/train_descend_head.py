@@ -36,7 +36,12 @@ def load_states(patterns):
         files += sorted(glob.glob(pat))
     for f in files:
         d = np.load(f, allow_pickle=False)
-        X.append(d["obs"].astype(np.float32))
+        _o = d["obs"].astype(np.float32)
+        if "tac" in d.files:                      # v1.124 起转储带触觉 → 并联成 58 维
+            _t = d["tac"].astype(np.float32)
+            if _t.shape[0] == _o.shape[0]:
+                _o = np.concatenate([_o, _t], axis=1)
+        X.append(_o)
         dz = d["dz"].astype(np.float32)
         dxy = d["dxy"].astype(np.float32)
         ok = dxy <= XY_FAR
