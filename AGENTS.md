@@ -119,7 +119,8 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
 - **放料门**（v1.89）：模型会在离料框 15–27 cm 就开爪（果子掉地上）。
   加 `--release-gate 0.10` 后开爪全部落在框内，掉落 4/15 → 1/14，见 [`docs/drop-reduction.md`](docs/drop-reduction.md)。
 - **搬运保相位辅助**（v1.110，默认开）：`phase==2 且已夹住` 时只把目标**方向**转向料框，
-  步长与相位切换仍归模型；稀疏口径单件 7.9→6.8 s，密集口径 4/9→9/11（`--no-carry-assist` 关）。
+  步长与相位切换仍归模型；稀疏口径单件 7.9→6.8 s、送达统计打平，
+  密集口径 10 seeds 配对 58.0%→73.6%（单件 8.2→6.6 s，p=0.0097）。`--no-carry-assist` 关。
   详见 [`docs/throughput.md`](docs/throughput.md) §6。
 - **腕部相机兜底**（v1.101，默认开）：头部丢检时用 `hand_camera` 补 xy（z 沿用历史），
   配对 5 seeds：apple 87% → 94%、掉落 1 → 0；`--no-hand-fallback` 可关。
