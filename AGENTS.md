@@ -137,7 +137,9 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
   因为料框在挡边外侧、机械臂必须横跨挡边搬运（带面 0.45+0.12 > 搬运高度 0.55）。
   `FRUITSORT_BELT_RAIL` 可配（默认 0.06）。再加搬运高度下限（`--carry-z-floor 0.62`）也只回到
   38.9%，且侧掉仍在（果子是在**接近/下探段**被挤下去的）→ 该类别是场景几何的固有结果，
-  只能以 `drop_ungrasped/drop_off_belt` 单独记账。见 [`docs/drop-reduction.md`](docs/drop-reduction.md) §8–9。
+  只能以 `drop_ungrasped/drop_off_belt` 单独记账。接近段 y 限幅（`--approach-y-limit 0.16`）
+  也只做到送达持平、带外掉落仍出现（手指位置由手臂+偏航决定，指令 y 管不到）。
+  见 [`docs/drop-reduction.md`](docs/drop-reduction.md) §8–9。
 - **腕部相机兜底**（v1.101，默认开）：头部丢检时用 `hand_camera` 补 xy（z 沿用历史），
   配对 5 seeds：apple 87% → 94%、掉落 1 → 0；`--no-hand-fallback` 可关。
 - **深度修复**（v1.93）：`PerceptionPipeline` 默认开（邻域最小值填洞 + 掩码补洞），

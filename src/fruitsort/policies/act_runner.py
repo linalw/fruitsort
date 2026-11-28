@@ -93,7 +93,7 @@ class ActPureRunner:
                  close_timing_lat: float = 0.20,
                  descend_servo: bool = False, descend_servo_off: float = 0.01,
                  phase1_geom_xy: float = 0.0, phase1_geom_z: float = 0.0,
-                 carry_z_floor: float = 0.0,
+                 carry_z_floor: float = 0.0, approach_y_limit: float = 0.0,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -359,6 +359,11 @@ class ActPureRunner:
         # 搬运高度下限（--carry-z-floor / FRUITSORT_CARRY_Z）：phase 2 且已夹住时把竖直目标
         # 抬到至少该高度。用于"高挡边"方案：带面 0.45 + 挡边 0.12 = 顶 0.57，果实中心需 >0.58。
         self.carry_z_floor = float(carry_z_floor)
+        # 接近段"离带边"约束（--approach-y-limit，0=关）：phase 1 未夹住时把指令目标 y 夹在
+        # ±limit 内。动机（docs/drop-reduction.md §8–9）：果子是在**接近/下探段**被手指挤出带边的，
+        # 而挡边/搬运高度两个几何自由度都修不掉。宁可漏抓，也别把它推下去。
+        self.approach_y_limit = float(approach_y_limit)
+        self.ay_clamp_total = 0
         _n = max(1, self.debounce_chunks)
         self._db_phase = deque(maxlen=_n)
         self._db_grip = deque(maxlen=_n)
@@ -1316,6 +1321,16 @@ class ActPureRunner:
             except Exception:  # noqa: BLE001
                 pass
         self._prev_phase = self.phase_state
+
+        # ---- 接近段离带边约束：只夹 y，不动相位/闭爪时机 ----
+        if (self.approach_y_limit > 0 and self.phase_state == 1 and not grasping
+                and not closed):
+            _lim = self.approach_y_limit
+            _y = float(np.clip(float(tgt[1]), -_lim, _lim))
+            if abs(_y - float(tgt[1])) > 1e-6:
+                self.ay_clamp_total += 1
+                self.stats["ay_clamp"] = self.stats.get("ay_clamp", 0) + 1
+            tgt[1] = _y
 
         # ---- 搬运高度下限：抬起越过挡边（只抬不压）----
         if self.carry_z_floor > 0 and self.phase_state == 2 and grasping:
