@@ -131,10 +131,11 @@ python scripts/stream_eval.py --policy scripted --record data/fruitsort/datasets
   步长与相位切换仍归模型；稀疏口径单件 7.9→6.8 s、送达统计打平，
   密集口径 10 seeds 配对 58.0%→73.6%（单件 8.2→6.6 s，p=0.0097）。`--no-carry-assist` 关。
   详见 [`docs/throughput.md`](docs/throughput.md) §6。
-- **DAgger 下降头**（v1.122，默认关，**唯一有正收益的改动**）：`--descend-head runs/descend-head/descend.pt`。
-  在**策略自跑状态**上标注 descend/close 两分类（val_acc 0.986），`descend` 会强制张开并压到果心。
-  稀疏 20 seeds **67/73 = 91.8%（CI 83–96）0 掉落**（默认 64/72 = 88.9%、1 掉落）；
-  密集 37/53 = 69.8%（默认 73.6%，CI 重叠）；单件 6.8→7.4 s。见 [`docs/throughput.md`](docs/throughput.md) §11。
+- **DAgger 下降头**（v1.123 起**默认开启**，权重 `assets/descend_head.pt`）：在**策略自跑状态**上
+  标注 descend/close 两分类（val_acc 0.986），`descend` 强制张开并把竖直压到果心 +4 mm。
+  **当前主口径：稀疏 67/73 = 91.8%（CI 83–96），0 掉落，7.4 s/件**；密集 37/53 = 69.8%（CI 56–80），0 掉落。
+  `--no-descend-head` 回到旧行为（88.9%）。`--descend-z-off` 试过 10 mm 更差，保持 4 mm。
+  见 [`docs/throughput.md`](docs/throughput.md) §11。
 - **学习式闭爪时机**（v1.121，默认关）：`scripts/train_close_head.py` 用专家闭爪时刻训练（离线 AUC 0.998），
   `--close-head runs/close-head/close.pt` 接入；**闭环 9/20 vs 默认 10/20 更差** ——
   原因是策略悬停的状态专家没去过（分布外），头在错的状态上给高置信度闭爪。见 [`docs/throughput.md`](docs/throughput.md) §10。

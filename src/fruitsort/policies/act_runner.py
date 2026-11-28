@@ -95,7 +95,7 @@ class ActPureRunner:
                  phase1_geom_xy: float = 0.0, phase1_geom_z: float = 0.0,
                  carry_z_floor: float = 0.0, approach_y_limit: float = 0.0,
                  close_head: str = "", close_head_thr: float = 0.5,
-                 descend_head: str = "",
+                 descend_head: str = "", descend_z_off: float = 0.004,
                  yaw_align_extent: float = 0.0, yaw_align_period: int = 10,
                  yaw_align_gain: float = 0.35, yaw_align_tol: float = 0.05,
                  yaw_align_prerotate: bool = True, yaw_align_hold_dist: float = 0.18,
@@ -382,6 +382,9 @@ class ActPureRunner:
         # 这里的 descend 分支能打断模型的抖动闭爪，这是之前所有修法都没做到的一步。
         self.descend_head = None
         self.dh_total = {"descend": 0, "close": 0}
+        # descend 分支的竖直余量（米）：压到「果心 + off」。0.004 是 v1.122 用的值，
+        # 太小会让竖直多跑一段；调到 0.010 可望在保留 0 掉落的前提下把单件拉回。
+        self.descend_z_off = float(descend_z_off)
         if descend_head:
             try:
                 ck = torch.load(descend_head, map_location="cpu", weights_only=False)
@@ -901,7 +904,7 @@ class ActPureRunner:
                     self.dh_total["descend"] += 1
                     self.stats["dh_descend"] = self.stats.get("dh_descend", 0) + 1
                     _fz = float(actor.pose.p[0, 2].cpu().numpy())
-                    tgt[2] = min(float(tgt[2]), _fz + 0.004)
+                    tgt[2] = min(float(tgt[2]), _fz + self.descend_z_off)
             except Exception:  # noqa: BLE001
                 pass
 

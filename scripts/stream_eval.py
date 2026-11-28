@@ -715,8 +715,12 @@ def main() -> None:
                     help="接近段把指令目标 y 夹在 ±limit（m，0=关）；建议 0.16")
     ap.add_argument("--close-head", default="",
                     help="学习式闭爪时机分类头（runs/close-head/close.pt；空=关）")
-    ap.add_argument("--descend-head", default="",
-                    help="DAgger 式 descend/close 两分类头（runs/descend-head/descend.pt；空=关）")
+    ap.add_argument("--descend-head", default="assets/descend_head.pt",
+                    help="DAgger 式 descend/close 两分类头（默认 assets/descend_head.pt；空=关）")
+    ap.add_argument("--no-descend-head", dest="descend_head", action="store_const", const="",
+                    help="关掉 descend 头（回到 v1.120 行为，对照用）")
+    ap.add_argument("--descend-z-off", type=float, default=0.004,
+                    help="descend 分支压到「果心 + 该余量」（米，默认 0.004）")
     ap.add_argument("--dump-states", default="",
                     help="把策略自己到达的状态（obs49 + 几何）转储为 npz，供 DAgger 重标注")
     ap.add_argument("--close-head-thr", type=float, default=0.5,
@@ -979,6 +983,7 @@ def main() -> None:
                              close_head=args.close_head,
                              close_head_thr=args.close_head_thr,
                              descend_head=args.descend_head,
+                             descend_z_off=args.descend_z_off,
                              close_win_xy=args.close_win_xy,
                              close_win_z=args.close_win_z,
                              grasp_z_bias=parse_map(args.z_bias_map),
